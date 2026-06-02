@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: ${SERVICE_NAME:inventory-service}
+  profiles:
+    default: dev
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy_inventory}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: ${DB_SCHEMA:public}
+        format_sql: true
+        jdbc:
+          time_zone: ${APP_TIMEZONE:UTC}
+  flyway:
+    enabled: true
+    schemas: ${DB_SCHEMA:public}
+    default-schema: ${DB_SCHEMA:public}
+    locations: classpath:db/migration
+
+server:
+  port: ${SERVER_PORT:8083}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  database:
+    schema: ${DB_SCHEMA:public}
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.tickefy.inventory: ${LOG_LEVEL:INFO}

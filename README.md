@@ -2,71 +2,60 @@
 
 Backend monorepo for the Tickefy concert ticketing system.
 
-This repository contains backend service source code, shared contracts, and backend-level documentation. It is designed as a monorepo so the team can bootstrap, review, and integrate multiple Spring Boot microservices consistently during the Software Design project.
+This repository contains Spring Boot backend service skeletons for the Tickefy microservice architecture. It is organized as a monorepo so the team can bootstrap, review, and integrate backend services with a consistent structure.
 
-## 1. Purpose
-
-`tickefy-backend` is responsible for backend business services such as authentication, concert management, ticket inventory, order booking, payment, e-ticket issuing, check-in, notifications, AI Bio, and CSV/VIP guest ingestion.
-
-This repository does **not** own the full infrastructure setup. API Gateway, Docker Compose for the whole system, Redis, RabbitMQ, PostgreSQL, MinIO, and cloud/deployment configuration may be managed by the DevOps/infrastructure repository.
-
-## 2. Repository Structure
+## Repository Structure
 
 ```text
 tickefy-backend/
 ├── services/
-│   └── auth-service/
+│   ├── auth-service/
+│   ├── event-service/
+│   ├── inventory-service/
+│   ├── order-service/
+│   ├── payment-service/
+│   ├── notification-service/
+│   ├── e-ticket-service/
+│   ├── checkin-service/
+│   ├── ai-bio-service/
+│   └── csv-ingestion-service/
 ├── shared/
 │   └── contracts/
 ├── docs/
-│   └── AUTH_SERVICE_BOOTSTRAP_REPORT.md
 ├── .gitignore
+├── .gitattributes
 └── README.md
 ```
 
-Current state:
+## Current Status
 
-- `services/auth-service/` has been bootstrapped from the Spring Boot service template.
-- Other service folders will be added after the first service skeleton is verified and the copy/rename process is stable.
+All 10 Spring Boot service skeletons have been bootstrapped.
 
-## 3. Planned Services
+Current scope:
 
-The backend architecture is planned around 10 services:
+- Common Spring Boot structure is ready for each service.
+- Real business logic is not implemented yet.
+- Service-specific specs and contracts must be confirmed before implementation.
+- Redis, RabbitMQ, and service-specific database entities will be added later only when needed.
 
-| Service | Purpose |
-|---|---|
-| `auth-service` | Authentication, users, roles, and RBAC |
-| `event-service` | Concerts, artists, venues, event status, seat map metadata |
-| `inventory-service` | Ticket types, availability, reservation, anti-over-selling |
-| `order-service` | Booking/order state machine and purchase orchestration |
-| `payment-service` | Payment transaction, callbacks, idempotency, provider integration |
-| `notification-service` | Email, in-app notification, reminders |
-| `e-ticket-service` | Ticket issuing, QR payload, ticket lifecycle |
-| `checkin-service` | Online/offline check-in, sync, conflict detection |
-| `ai-bio-service` | PDF extraction and AI-generated artist bio |
-| `csv-ingestion-service` | CSV/VIP guest import jobs and validation |
+## Services
 
-## 4. Current Status
+| Service | Port | Package | Database | Responsibility |
+|---|---:|---|---|---|
+| `auth-service` | 8081 | `com.tickefy.auth` | `tickefy_auth` | Authentication, users, roles, RBAC |
+| `event-service` | 8082 | `com.tickefy.event` | `tickefy_event` | Concerts, artists, venues, event lifecycle, seat map metadata |
+| `inventory-service` | 8083 | `com.tickefy.inventory` | `tickefy_inventory` | Ticket types, availability, reservations, anti-over-selling |
+| `order-service` | 8084 | `com.tickefy.order` | `tickefy_order` | Booking/order state machine and purchase orchestration |
+| `payment-service` | 8085 | `com.tickefy.payment` | `tickefy_payment` | Payment transactions, callbacks, idempotency |
+| `notification-service` | 8086 | `com.tickefy.notification` | `tickefy_notification` | Email/in-app notifications, reminders, delivery logs |
+| `e-ticket-service` | 8087 | `com.tickefy.eticket` | `tickefy_eticket` | E-ticket issuing, QR payloads, ticket lifecycle |
+| `checkin-service` | 8088 | `com.tickefy.checkin` | `tickefy_checkin` | Online/offline check-in, sync, conflict prevention |
+| `ai-bio-service` | 8089 | `com.tickefy.aibio` | `tickefy_ai_bio` | AI artist bio jobs and PDF/text processing pipeline |
+| `csv-ingestion-service` | 8090 | `com.tickefy.csvingestion` | `tickefy_csv_ingestion` | CSV/VIP guest import jobs and validation |
 
-The first bootstrapped service is:
+## Tech Stack Standard
 
-```text
-services/auth-service
-```
-
-Current verification status:
-
-```text
-spotless:check  -> BUILD SUCCESS
-test            -> BUILD SUCCESS
-package         -> BUILD SUCCESS
-```
-
-`auth-service` is currently a Spring Boot skeleton only. Real Auth business logic has not been implemented yet.
-
-## 5. Tech Stack Standard
-
-Each backend service should follow the common Spring Boot service template:
+Each service follows the same backend service baseline:
 
 - Java 21
 - Spring Boot 3.x
@@ -81,13 +70,13 @@ Each backend service should follow the common Spring Boot service template:
 - Docker multi-stage build
 - Spotless formatting
 
-## 6. Development Rule
+## Development Rule
 
 No spec, no code.
 
-Before implementing a service or feature, the related spec and contract should be confirmed or updated first.
+Before implementing a service or feature, the team must confirm or update the related spec and contract.
 
-At minimum, a service implementation should clarify:
+At minimum, each implementation should clarify:
 
 - API request/response contract
 - Error codes
@@ -97,11 +86,11 @@ At minimum, a service implementation should clarify:
 - Health check endpoint
 - Dependencies on other services
 
-## 7. Working With One Service
+## Working With One Service
 
-Example for `auth-service`.
+Each service is independently buildable with its own Maven Wrapper.
 
-### Windows PowerShell
+Example for `auth-service` on Windows PowerShell:
 
 ```powershell
 cd services/auth-service
@@ -110,7 +99,7 @@ cd services/auth-service
 .\mvnw.cmd package
 ```
 
-### Linux/macOS
+Example on Linux/macOS:
 
 ```bash
 cd services/auth-service
@@ -119,11 +108,11 @@ cd services/auth-service
 ./mvnw package
 ```
 
-## 8. Running a Service Locally
+## Running a Service Locally
 
-Each service should provide its own `.env.example`.
+Each service has its own `.env.example`.
 
-For `auth-service`:
+Example for `auth-service`:
 
 ```powershell
 cd services/auth-service
@@ -131,7 +120,7 @@ Copy-Item .env.example .env
 .\mvnw.cmd spring-boot:run
 ```
 
-Useful endpoints:
+Useful endpoints for each service:
 
 ```http
 GET /actuator/health
@@ -140,77 +129,121 @@ GET /swagger-ui/index.html
 GET /v3/api-docs
 ```
 
-## 9. Service README
+## Service READMEs
 
-Each service should have its own README for local development and service-specific notes.
-
-Current service README:
+Each service owns its local development instructions, metadata, endpoints, Docker command, and TODO list in:
 
 ```text
-services/auth-service/README.md
+services/[service-name]/README.md
 ```
 
-The root README explains the backend monorepo. Service README files explain individual service details.
+The root README describes the backend monorepo. Service READMEs describe individual services.
 
-## 10. Shared Contracts
+## Shared Contracts
 
-The folder below is reserved for shared API/event contracts if the team decides to keep common contracts in the backend monorepo:
+The folder below is reserved for shared API/event contracts if the team decides to keep common contracts in this backend repository:
 
 ```text
 shared/contracts/
 ```
 
-Possible future contents:
+Possible future structure:
 
 ```text
 shared/contracts/
 ├── api/
 ├── events/
-└── errors/
+├── errors/
+└── enums/
 ```
+
+Suggested contract examples:
+
+- `shared/contracts/api/common-response.md`
+- `shared/contracts/api/auth-api.md`
+- `shared/contracts/events/order-paid.md`
+- `shared/contracts/events/payment-succeeded.md`
+- `shared/contracts/errors/error-codes.md`
 
 Do not put business implementation code in `shared/contracts/`.
 
-## 11. Documentation
+## Local Infrastructure
 
-Current backend bootstrap report:
+Full infrastructure may be managed by a separate DevOps/infrastructure repository.
 
-```text
-docs/AUTH_SERVICE_BOOTSTRAP_REPORT.md
+For local development, this backend repo may later include a lightweight `docker-compose.yml` for dependencies such as:
+
+- PostgreSQL
+- Redis
+- RabbitMQ
+
+Recommended local development strategy:
+
+- Run infrastructure dependencies with Docker Compose.
+- Run individual services with Maven for easier debugging.
+- Use mock/stub dependencies for isolated service development.
+- Use real service calls only when testing integration flows.
+
+The team still needs to decide the PostgreSQL local strategy:
+
+1. One local database per service, or
+2. One local database such as `tickefy_local` with one schema per service.
+
+## Docker
+
+Each service has its own `Dockerfile`.
+
+Example:
+
+```powershell
+cd services/auth-service
+docker build -t tickefy/auth-service .
+docker run --rm -p 8081:8081 --env-file .env tickefy/auth-service
 ```
 
-Future docs may include:
+Docker image names should follow:
 
 ```text
-docs/
-├── workflows/
-├── service-contracts/
-├── integration-notes/
-└── runbooks/
+tickefy/[service-name]
 ```
 
-## 12. Next Steps
+## Verification Status
 
-Recommended next steps:
+The generated service skeletons were verified with:
 
-1. Commit the current `auth-service` skeleton.
-2. Use the verified copy/rename process to bootstrap the remaining service skeletons.
-3. Add service-specific ports, database names, and README metadata for each service.
-4. Add backend workflow docs if needed.
-5. Implement real business logic only after specs/contracts are confirmed.
+```powershell
+.\mvnw.cmd spotless:check
+.\mvnw.cmd test
+.\mvnw.cmd package
+```
 
-## 13. Commit Checklist
+All service skeletons should pass these checks before business logic is added.
 
-Before committing backend skeleton changes:
+## Commit Checklist
+
+Before committing backend skeleton or service changes:
 
 ```text
 [ ] No nested .git folder inside services/*
 [ ] No target/ folder is tracked by Git
 [ ] No log files are tracked by Git
-[ ] README files are in the correct scope
+[ ] Root README describes the monorepo
+[ ] Service README describes only that service
 [ ] Service package names are correct
 [ ] Service ports and DB names are correct
+[ ] Dockerfile EXPOSE matches service port
 [ ] spotless:check passes
 [ ] test passes
 [ ] package passes
 ```
+
+## Next Steps
+
+Recommended next steps after this bootstrap commit:
+
+1. Confirm service specs and API contracts.
+2. Decide local PostgreSQL strategy.
+3. Add local infrastructure setup if needed.
+4. Start implementing services one by one according to ownership.
+5. Add Redis/RabbitMQ only to services that need them.
+6. Keep service READMEs updated as implementation grows.

@@ -22,7 +22,7 @@ Current status:
 
 ## 2. Tech Stack
 
-- Java 21
+- Java 25 LTS
 - Spring Boot 3.x
 - Maven Wrapper
 - PostgreSQL

@@ -57,7 +57,7 @@ Current scope:
 
 Each service follows the same backend service baseline:
 
-- Java 21
+- Java 25 LTS
 - Spring Boot 3.x
 - Maven Wrapper
 - PostgreSQL
@@ -70,6 +70,19 @@ Each service follows the same backend service baseline:
 - Docker multi-stage build
 - Spotless formatting
 
+## Java Version
+
+This backend uses JDK 25 LTS as the project baseline.
+
+All backend developers should use JDK 25 locally.
+
+Recommended distribution: Eclipse Temurin 25.
+
+Check your Java version:
+
+```powershell
+java -version
+```
 ## Development Rule
 
 No spec, no code.

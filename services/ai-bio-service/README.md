@@ -70,12 +70,14 @@ GET /v3/api-docs
 
 See `.env.example`.
 
+Local PostgreSQL/Redis/RabbitMQ are managed by the external `tickefy-infrastructure` repository. When running services with Maven on the host machine, use localhost-based values from `.env.example`.
+
 Important values:
 
 ```env
 SERVICE_NAME=ai-bio-service
-SERVER_PORT=8089
-DB_NAME=tickefy_ai_bio
+DB_NAME=tickefy
+DB_SCHEMA=ai_bio_service
 ```
 
 ## 7. Docker

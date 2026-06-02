@@ -40,18 +40,18 @@ Current scope:
 
 ## Services
 
-| Service | Port | Package | Database | Responsibility |
+| Service | Port | Package | DB schema | Responsibility |
 |---|---:|---|---|---|
-| `auth-service` | 8081 | `com.tickefy.auth` | `tickefy_auth` | Authentication, users, roles, RBAC |
-| `event-service` | 8082 | `com.tickefy.event` | `tickefy_event` | Concerts, artists, venues, event lifecycle, seat map metadata |
-| `inventory-service` | 8083 | `com.tickefy.inventory` | `tickefy_inventory` | Ticket types, availability, reservations, anti-over-selling |
-| `order-service` | 8084 | `com.tickefy.order` | `tickefy_order` | Booking/order state machine and purchase orchestration |
-| `payment-service` | 8085 | `com.tickefy.payment` | `tickefy_payment` | Payment transactions, callbacks, idempotency |
-| `notification-service` | 8086 | `com.tickefy.notification` | `tickefy_notification` | Email/in-app notifications, reminders, delivery logs |
-| `e-ticket-service` | 8087 | `com.tickefy.eticket` | `tickefy_eticket` | E-ticket issuing, QR payloads, ticket lifecycle |
-| `checkin-service` | 8088 | `com.tickefy.checkin` | `tickefy_checkin` | Online/offline check-in, sync, conflict prevention |
-| `ai-bio-service` | 8089 | `com.tickefy.aibio` | `tickefy_ai_bio` | AI artist bio jobs and PDF/text processing pipeline |
-| `csv-ingestion-service` | 8090 | `com.tickefy.csvingestion` | `tickefy_csv_ingestion` | CSV/VIP guest import jobs and validation |
+| `auth-service` | 8081 | `com.tickefy.auth` | `auth_service` | Authentication, users, roles, RBAC |
+| `event-service` | 8082 | `com.tickefy.event` | `event_service` | Concerts, artists, venues, event lifecycle, seat map metadata |
+| `inventory-service` | 8083 | `com.tickefy.inventory` | `inventory_service` | Ticket types, availability, reservations, anti-over-selling |
+| `order-service` | 8084 | `com.tickefy.order` | `order_service` | Booking/order state machine and purchase orchestration |
+| `payment-service` | 8085 | `com.tickefy.payment` | `payment_service` | Payment transactions, callbacks, idempotency |
+| `notification-service` | 8086 | `com.tickefy.notification` | `notification_service` | Email/in-app notifications, reminders, delivery logs |
+| `e-ticket-service` | 8087 | `com.tickefy.eticket` | `eticket_service` | E-ticket issuing, QR payloads, ticket lifecycle |
+| `checkin-service` | 8088 | `com.tickefy.checkin` | `checkin_service` | Online/offline check-in, sync, conflict prevention |
+| `ai-bio-service` | 8089 | `com.tickefy.aibio` | `ai_bio_service` | AI artist bio jobs and PDF/text processing pipeline |
+| `csv-ingestion-service` | 8090 | `com.tickefy.csvingestion` | `csv_ingestion_service` | CSV/VIP guest import jobs and validation |
 
 ## Tech Stack Standard
 
@@ -169,25 +169,36 @@ Do not put business implementation code in `shared/contracts/`.
 
 ## Local Infrastructure
 
-Full infrastructure may be managed by a separate DevOps/infrastructure repository.
+Local infrastructure is managed by the separate `tickefy-infrastructure` repository.
 
-For local development, this backend repo may later include a lightweight `docker-compose.yml` for dependencies such as:
+Use that repo to run:
 
 - PostgreSQL
 - Redis
 - RabbitMQ
+- RabbitMQ Management UI
 
-Recommended local development strategy:
+When running backend services locally with Maven, use:
 
-- Run infrastructure dependencies with Docker Compose.
-- Run individual services with Maven for easier debugging.
-- Use mock/stub dependencies for isolated service development.
-- Use real service calls only when testing integration flows.
+```env
+DB_HOST=localhost
+REDIS_HOST=localhost
+RABBITMQ_HOST=localhost
+```
 
-The team still needs to decide the PostgreSQL local strategy:
+The default local database values expected by this backend repo are:
 
-1. One local database per service, or
-2. One local database such as `tickefy_local` with one schema per service.
+```env
+DB_NAME=tickefy
+DB_USERNAME=tickefy
+DB_PASSWORD=change_me
+```
+
+Each service uses its own schema through `DB_SCHEMA`.
+
+If a service fails with a schema-not-found error, either ask the infrastructure owner to add the service schemas later or temporarily set `DB_SCHEMA=public` locally for quick testing.
+
+Redis and RabbitMQ environment variables are provided in `.env.example` for future integration testing, but Redis/RabbitMQ dependencies should be added service-by-service only when a service actually needs them.
 
 ## Docker
 

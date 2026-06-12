@@ -4,6 +4,7 @@ import com.tickefy.eticket.common.constants.HeaderConstants;
 import com.tickefy.eticket.common.response.ApiResponse;
 import com.tickefy.eticket.common.response.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -23,62 +24,41 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValid(
-            MethodArgumentNotValidException ex) {
-        Map<String, String> details =
-                ex.getBindingResult().getFieldErrors().stream()
-                        .collect(
-                                Collectors.toMap(
-                                        FieldError::getField,
-                                        fieldError ->
-                                                fieldError.getDefaultMessage() != null
-                                                        ? fieldError.getDefaultMessage()
-                                                        : "Invalid value",
-                                        (first, second) -> first,
-                                        LinkedHashMap::new));
-
-        return buildErrorResponse(
-                HttpStatus.BAD_REQUEST,
-                ErrorCode.VALIDATION_ERROR,
-                "Invalid request data",
-                details);
+    public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
+        Map<String, String> details = ex.getBindingResult().getFieldErrors().stream()
+                .collect(Collectors.toMap(
+                        FieldError::getField,
+                        fieldError -> fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : "Invalid value",
+                        (first, second) -> first,
+                        LinkedHashMap::new));
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR, "Invalid request data", details);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException ex) {
-        Map<String, String> details =
-                ex.getConstraintViolations().stream()
-                        .collect(
-                                Collectors.toMap(
-                                        violation -> violation.getPropertyPath().toString(),
-                                        violation -> violation.getMessage(),
-                                        (first, second) -> first,
-                                        LinkedHashMap::new));
-
-        return buildErrorResponse(
-                HttpStatus.BAD_REQUEST,
-                ErrorCode.VALIDATION_ERROR,
-                "Invalid request data",
-                details);
+        Map<String, String> details = ex.getConstraintViolations().stream()
+                .collect(Collectors.toMap(
+                        violation -> violation.getPropertyPath().toString(),
+                        violation -> violation.getMessage(),
+                        (first, second) -> first,
+                        LinkedHashMap::new));
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR, "Invalid request data", details);
     }
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiResponse<Void>> handleApiException(ApiException ex) {
+        log.warn("ApiException [{}] requestId=[{}]: {}", ex.getErrorCode(), MDC.get(HeaderConstants.REQUEST_ID), ex.getMessage());
         return buildErrorResponse(ex.getStatus(), ex.getErrorCode(), ex.getMessage(), ex.getDetails());
     }
 
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception ex) {
-        log.error("Unhandled exception", ex);
-        return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                ErrorCode.INTERNAL_SERVER_ERROR,
-                "An unexpected error occurred",
-                null);
+        log.error("Unhandled exception requestId=[{}]", MDC.get(HeaderConstants.REQUEST_ID), ex);
+        return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_SERVER_ERROR, "An unexpected error occurred", Collections.emptyMap());
     }
 
-    private ResponseEntity<ApiResponse<Void>> buildErrorResponse(
-            HttpStatus status, ErrorCode errorCode, String message, Object details) {
+    private ResponseEntity<ApiResponse<Void>> buildErrorResponse(HttpStatus status, ErrorCode errorCode, String message, Object details) {
         String requestId = MDC.get(HeaderConstants.REQUEST_ID);
         ErrorResponse errorResponse = new ErrorResponse(errorCode.name(), message, details);
         ApiResponse<Void> body = ApiResponse.error(errorResponse, requestId);

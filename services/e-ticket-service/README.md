@@ -77,7 +77,7 @@ Important values:
 ```env
 SERVICE_NAME=e-ticket-service
 DB_NAME=tickefy
-DB_SCHEMA=eticket_service
+DB_SCHEMA=ticket_schema
 ```
 
 ## 7. Docker

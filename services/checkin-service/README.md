@@ -77,7 +77,7 @@ Important values:
 ```env
 SERVICE_NAME=checkin-service
 DB_NAME=tickefy
-DB_SCHEMA=checkin_service
+DB_SCHEMA=checkin_schema
 ```
 
 ## 7. Docker

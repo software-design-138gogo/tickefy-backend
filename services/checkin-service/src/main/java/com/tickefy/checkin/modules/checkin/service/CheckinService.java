@@ -116,9 +116,13 @@ public class CheckinService {
         Optional<SyncBatch> existing = syncBatchRepository.findBySyncBatchId(req.syncBatchId());
         if (existing.isPresent() && existing.get().getResultPayload() != null) {
             try {
-                return objectMapper.readValue(existing.get().getResultPayload(), SyncResponse.class);
+                String payload = existing.get().getResultPayload();
+                if (payload.startsWith("\"") && payload.endsWith("\"")) {
+                    payload = objectMapper.readValue(payload, String.class);
+                }
+                return objectMapper.readValue(payload, SyncResponse.class);
             } catch (Exception e) {
-                log.warn("Failed to deserialize cached sync result for batchId={}", req.syncBatchId());
+                log.warn("Failed to deserialize cached sync result for batchId={}", req.syncBatchId(), e);
             }
         }
 
@@ -147,6 +151,28 @@ public class CheckinService {
                 rejected.add(new SyncResponse.SyncItemResult(item.qrToken(), "WRONG_EVENT", ticketId));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
                         "WRONG_EVENT", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        req.syncBatchId());
+                continue;
+            }
+
+            if ("CANCELLED".equals(status)) {
+                rejected.add(new SyncResponse.SyncItemResult(item.qrToken(), "CANCELLED_TICKET", ticketId));
+                logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
+                        "CANCELLED_TICKET", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        req.syncBatchId());
+                continue;
+            }
+            if ("REFUNDED".equals(status)) {
+                rejected.add(new SyncResponse.SyncItemResult(item.qrToken(), "REFUNDED_TICKET", ticketId));
+                logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
+                        "REFUNDED_TICKET", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        req.syncBatchId());
+                continue;
+            }
+            if ("CHECKED_IN".equals(status)) {
+                conflicts.add(new SyncResponse.SyncItemResult(item.qrToken(), "DUPLICATE_REJECTED", ticketId));
+                logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
+                        "DUPLICATE_REJECTED", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
                 continue;
             }

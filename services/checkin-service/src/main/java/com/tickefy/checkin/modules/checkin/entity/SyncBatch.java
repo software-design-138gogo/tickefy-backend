@@ -29,7 +29,7 @@ public class SyncBatch {
     @Column(name = "item_count", nullable = false)
     private int itemCount = 0;
 
-    @Column(name = "result_payload", columnDefinition = "jsonb")
+    @Column(name = "result_payload", length = 4000)
     private String resultPayload;
 
     @Column(name = "processed_at")

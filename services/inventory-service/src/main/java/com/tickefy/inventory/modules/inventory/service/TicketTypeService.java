@@ -69,7 +69,7 @@ public class TicketTypeService {
         // Seed Redis after commit (transaction commits first due to @Transactional boundary)
         // We seed here — if Redis is down, M3 will load on next access
         redisService.seedStock(ttId, totalQty);
-        redisService.seedMeta(ttId, req.perUserLimit(), req.saleStartAt(), req.saleEndAt());
+        redisService.seedMeta(ttId, req.perUserLimit(), req.price(), req.saleStartAt(), req.saleEndAt());
 
         log.info("Created ticket type id={} concertId={} totalQty={}", ttId, concertId, totalQty);
         return mapper.toResponse(entity, totalQty);

@@ -50,7 +50,7 @@ public class ReservationPersistence {
      */
     @Transactional
     public ReservationResponse writeReservationToDb(
-            UUID ticketTypeId, UUID userId, UUID orderId, int qty) {
+            UUID ticketTypeId, UUID userId, UUID orderId, int qty, long unitPrice) {
 
         int rows = inventoryRepository.incrementReservedConditional(ticketTypeId, qty);
         if (rows == 0) {
@@ -71,7 +71,7 @@ public class ReservationPersistence {
                 .expiresAt(expiresAt)
                 .build();
         reservation = reservationRepository.save(reservation);
-        return toResponse(reservation);
+        return toResponse(reservation, unitPrice);
     }
 
     /**
@@ -83,7 +83,7 @@ public class ReservationPersistence {
      */
     @Transactional
     public ReservationResponse writeReservationFallback(
-            UUID ticketTypeId, UUID userId, UUID orderId, int qty, int perUserLimit) {
+            UUID ticketTypeId, UUID userId, UUID orderId, int qty, int perUserLimit, long unitPrice) {
 
         if (perUserLimit >= 0) {
             int owned = reservationRepository.sumActiveQuantity(userId, ticketTypeId);
@@ -118,19 +118,22 @@ public class ReservationPersistence {
                     "Duplicate reservation (fallback path) for orderId={} ticketTypeId={}. Returning existing.",
                     orderId, ticketTypeId);
             return reservationRepository.findByOrderIdAndTicketTypeId(orderId, ticketTypeId)
-                    .map(this::toResponse)
+                    .map(r -> toResponse(r, unitPrice))
                     .orElseThrow(() -> new ApiException(
                             ErrorCode.INTERNAL_SERVER_ERROR, "Reservation state inconsistent",
                             HttpStatus.INTERNAL_SERVER_ERROR));
         }
-        return toResponse(reservation);
+        return toResponse(reservation, unitPrice);
     }
 
-    public ReservationResponse toResponse(TicketReservationEntity entity) {
+    public ReservationResponse toResponse(TicketReservationEntity entity, long unitPrice) {
+        long totalAmount = unitPrice * entity.getQuantity();
         return new ReservationResponse(
                 entity.getId(),
                 entity.getTicketTypeId(),
                 entity.getQuantity(),
+                unitPrice,
+                totalAmount,
                 entity.getExpiresAt());
     }
 }

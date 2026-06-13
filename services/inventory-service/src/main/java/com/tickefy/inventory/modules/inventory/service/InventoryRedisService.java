@@ -106,11 +106,13 @@ public class InventoryRedisService {
     /**
      * Seed meta hash (M2). perUserLimit=-1 means unlimited.
      */
-    public void seedMeta(UUID ticketTypeId, Integer perUserLimit, Instant saleStartAt, Instant saleEndAt) {
+    public void seedMeta(
+            UUID ticketTypeId, Integer perUserLimit, int price, Instant saleStartAt, Instant saleEndAt) {
         try {
             String key = metaKey(ticketTypeId);
             redisTemplate.opsForHash().putAll(key, Map.of(
                     "perUserLimit", perUserLimit == null ? "-1" : String.valueOf(perUserLimit),
+                    "price", String.valueOf(price),
                     "saleStartAt", String.valueOf(saleStartAt.toEpochMilli()),
                     "saleEndAt", String.valueOf(saleEndAt.toEpochMilli())));
             log.debug("Seeded meta key={}", key);

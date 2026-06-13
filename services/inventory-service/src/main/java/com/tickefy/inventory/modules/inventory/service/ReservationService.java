@@ -58,7 +58,9 @@ public class ReservationService {
             log.info(
                     "Idempotent reserve: found existing reservation for orderId={} ticketTypeId={}",
                     orderId, ticketTypeId);
-            return persistence.toResponse(existing.get());
+            // M1: still return correct price — load meta (Redis cache, DB only if missing) for unitPrice
+            long unitPrice = ensureMetaLoaded(ticketTypeId).price();
+            return persistence.toResponse(existing.get(), unitPrice);
         }
 
         // Step 1 [M2]: load meta (perUserLimit, saleStartAt, saleEndAt) from Redis or DB
@@ -115,7 +117,7 @@ public class ReservationService {
 
         // result == 1: Lua succeeded — write to DB via proxy bean (TX applies)
         try {
-            return persistence.writeReservationToDb(ticketTypeId, userId, orderId, qty);
+            return persistence.writeReservationToDb(ticketTypeId, userId, orderId, qty, meta.price());
         } catch (DataIntegrityViolationException e) {
             // UNIQUE(order_id, ticket_type_id) violated — inner TX already rolled back.
             // Compensate Redis, then re-read existing (outer is non-transactional, fresh query).
@@ -124,7 +126,7 @@ public class ReservationService {
                     orderId, ticketTypeId);
             redisService.compensateReserve(ticketTypeId, userId, qty);
             return reservationRepository.findByOrderIdAndTicketTypeId(orderId, ticketTypeId)
-                    .map(persistence::toResponse)
+                    .map(r -> persistence.toResponse(r, meta.price()))
                     .orElseThrow(() -> new ApiException(
                             ErrorCode.INTERNAL_SERVER_ERROR,
                             "Reservation state inconsistent",
@@ -146,7 +148,8 @@ public class ReservationService {
             TicketTypeMetaHolder meta,
             UUID ticketTypeId, UUID userId, UUID orderId, int qty) {
 
-        return persistence.writeReservationFallback(ticketTypeId, userId, orderId, qty, meta.perUserLimit());
+        return persistence.writeReservationFallback(
+                ticketTypeId, userId, orderId, qty, meta.perUserLimit(), meta.price());
     }
 
     /**
@@ -157,10 +160,11 @@ public class ReservationService {
         if (redisMeta != null && !redisMeta.isEmpty()) {
             try {
                 int perUserLimit = Integer.parseInt((String) redisMeta.get("perUserLimit"));
+                long price = Long.parseLong((String) redisMeta.get("price"));
                 long startMs = Long.parseLong((String) redisMeta.get("saleStartAt"));
                 long endMs = Long.parseLong((String) redisMeta.get("saleEndAt"));
                 return new TicketTypeMetaHolder(
-                        perUserLimit, Instant.ofEpochMilli(startMs), Instant.ofEpochMilli(endMs));
+                        perUserLimit, price, Instant.ofEpochMilli(startMs), Instant.ofEpochMilli(endMs));
             } catch (Exception e) {
                 log.warn(
                         "Failed to parse Redis meta for ticketTypeId={}, rebuilding from DB",
@@ -173,9 +177,10 @@ public class ReservationService {
                 .orElseThrow(() -> new ApiException(
                         ErrorCode.RESOURCE_NOT_FOUND, "Ticket type not found", HttpStatus.NOT_FOUND));
         int perUserLimit = tt.getPerUserLimit() == null ? -1 : tt.getPerUserLimit();
-        redisService.seedMeta(ticketTypeId, tt.getPerUserLimit(), tt.getSaleStartAt(), tt.getSaleEndAt());
+        redisService.seedMeta(
+                ticketTypeId, tt.getPerUserLimit(), tt.getPrice(), tt.getSaleStartAt(), tt.getSaleEndAt());
         log.debug("M3 rebuilt meta from DB for ticketTypeId={}", ticketTypeId);
-        return new TicketTypeMetaHolder(perUserLimit, tt.getSaleStartAt(), tt.getSaleEndAt());
+        return new TicketTypeMetaHolder(perUserLimit, tt.getPrice(), tt.getSaleStartAt(), tt.getSaleEndAt());
     }
 
     /**
@@ -204,5 +209,5 @@ public class ReservationService {
      * Immutable holder for ticket type meta needed in reserve path.
      * perUserLimit: -1 means unlimited.
      */
-    record TicketTypeMetaHolder(int perUserLimit, Instant saleStartAt, Instant saleEndAt) {}
+    record TicketTypeMetaHolder(int perUserLimit, long price, Instant saleStartAt, Instant saleEndAt) {}
 }

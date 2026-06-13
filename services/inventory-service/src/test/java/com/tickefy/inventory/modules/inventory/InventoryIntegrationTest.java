@@ -513,6 +513,13 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
                 .as("M1: idempotent — same reservationId returned on retry")
                 .isEqualTo(data2.get("reservationId"));
 
+        // unitPrice + totalAmount present on both happy path (r1) and idempotent path (r2).
+        // fixture price=100000, qty=2 → unitPrice=100000, totalAmount=200000
+        assertThat(((Number) data1.get("unitPrice")).longValue()).isEqualTo(100000L);
+        assertThat(((Number) data1.get("totalAmount")).longValue()).isEqualTo(200000L);
+        assertThat(((Number) data2.get("unitPrice")).longValue()).isEqualTo(100000L);
+        assertThat(((Number) data2.get("totalAmount")).longValue()).isEqualTo(200000L);
+
         // Redis stock key should only have been decremented once (qty=2, not 4)
         Integer available = redisService.getAvailable(ticketTypeId);
         assertThat(available)

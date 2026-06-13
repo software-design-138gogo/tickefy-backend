@@ -117,10 +117,11 @@ class ReservationServiceFallbackTest {
 
         // persistence.writeReservationFallback() returns a valid response (DB has stock)
         UUID reservationId = UUID.randomUUID();
+        // tt.price=1000, qty=1 → unitPrice=1000, totalAmount=1000
         ReservationResponse expected = new ReservationResponse(
-                reservationId, ticketTypeId, 1, Instant.now().plusSeconds(900));
-        // perUserLimit=null → -1 (unlimited), so writeReservationFallback called with -1
-        when(persistence.writeReservationFallback(ticketTypeId, userId, orderId, 1, -1))
+                reservationId, ticketTypeId, 1, 1000L, 1000L, Instant.now().plusSeconds(900));
+        // perUserLimit=null → -1 (unlimited); unitPrice=1000 from DB-rebuilt meta
+        when(persistence.writeReservationFallback(ticketTypeId, userId, orderId, 1, -1, 1000L))
                 .thenReturn(expected);
 
         // Act
@@ -131,7 +132,10 @@ class ReservationServiceFallbackTest {
         assertThat(response.quantity()).isEqualTo(1);
         assertThat(response.reservationId()).isEqualTo(reservationId);
         // Verify fallback path delegated to persistence (not direct repo access)
-        verify(persistence).writeReservationFallback(ticketTypeId, userId, orderId, 1, -1);
+        verify(persistence).writeReservationFallback(ticketTypeId, userId, orderId, 1, -1, 1000L);
+        // unitPrice + totalAmount propagated from DB-rebuilt meta
+        assertThat(response.unitPrice()).isEqualTo(1000L);
+        assertThat(response.totalAmount()).isEqualTo(1000L);
         // Verify compensateReserve was NOT called (Redis path never succeeded)
         verify(redisService, never()).compensateReserve(any(), any(), anyInt());
         // Verify sumActiveQuantity NOT called directly by ReservationService (lives in persistence now)
@@ -167,7 +171,7 @@ class ReservationServiceFallbackTest {
                 .thenThrow(new RedisConnectionFailureException("Redis down"));
 
         // DB fallback: no available stock → persistence throws TICKET_SOLD_OUT
-        when(persistence.writeReservationFallback(ticketTypeId, userId, orderId, 1, -1))
+        when(persistence.writeReservationFallback(ticketTypeId, userId, orderId, 1, -1, 1000L))
                 .thenThrow(new ApiException(ErrorCode.TICKET_SOLD_OUT, "Tickets are sold out", HttpStatus.CONFLICT));
 
         ApiException ex = org.junit.jupiter.api.Assertions.assertThrows(
@@ -206,7 +210,7 @@ class ReservationServiceFallbackTest {
                 .thenThrow(new RedisConnectionFailureException("Redis down"));
 
         // persistence throws PER_USER_LIMIT_EXCEEDED (user already owns 3, requesting 3 more = exceeds limit=4)
-        when(persistence.writeReservationFallback(ticketTypeId, userId, orderId, 3, perUserLimit))
+        when(persistence.writeReservationFallback(ticketTypeId, userId, orderId, 3, perUserLimit, 1000L))
                 .thenThrow(new ApiException(
                         ErrorCode.PER_USER_LIMIT_EXCEEDED,
                         "Per-user limit exceeded",

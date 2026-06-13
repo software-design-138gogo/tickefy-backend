@@ -15,9 +15,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -75,6 +77,39 @@ public class TicketServiceTest {
     }
 
     @Test
+    void issueTicket_concurrentSameOrderItem_shouldReturnSameTicketWithoutDuplicateRows() throws Exception {
+        IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
+
+        int numberOfThreads = 10;
+        ExecutorService executorService = Executors.newFixedThreadPool(numberOfThreads);
+        CountDownLatch ready = new CountDownLatch(numberOfThreads);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<TicketDto>> futures = new ArrayList<>();
+
+        for (int i = 0; i < numberOfThreads; i++) {
+            futures.add(executorService.submit((Callable<TicketDto>) () -> {
+                ready.countDown();
+                start.await();
+                return ticketService.issueTicket(req);
+            }));
+        }
+
+        ready.await();
+        start.countDown();
+
+        List<TicketDto> results = new ArrayList<>();
+        for (Future<TicketDto> future : futures) {
+            results.add(future.get());
+        }
+        executorService.shutdown();
+
+        assertThat(results).hasSize(numberOfThreads);
+        assertThat(results.stream().map(TicketDto::id).distinct()).hasSize(1);
+        assertThat(results.stream().map(TicketDto::qrToken).distinct()).hasSize(1);
+        assertThat(ticketRepository.findAll()).hasSize(1);
+    }
+
+    @Test
     void getByToken_shouldReturnTicket() {
         IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
         TicketDto ticketDto = ticketService.issueTicket(req);
@@ -88,6 +123,51 @@ public class TicketServiceTest {
         assertThatThrownBy(() -> ticketService.getByToken("invalid-token"))
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_QR_TOKEN);
+    }
+
+    @Test
+    void getTicketById_whenOwner_shouldReturnTicket() {
+        IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
+        TicketDto ticketDto = ticketService.issueTicket(req);
+
+        TicketDto found = ticketService.getTicketById(ticketDto.id(), "user-1");
+
+        assertThat(found.id()).isEqualTo(ticketDto.id());
+        assertThat(found.userId()).isEqualTo("user-1");
+    }
+
+    @Test
+    void getTicketById_whenDifferentUser_shouldThrowAccessDenied() {
+        IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
+        TicketDto ticketDto = ticketService.issueTicket(req);
+
+        assertThatThrownBy(() -> ticketService.getTicketById(ticketDto.id(), "user-2"))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TICKET_ACCESS_DENIED);
+    }
+
+    @Test
+    void cancelTicket_whenDifferentUserAndNotAdmin_shouldThrowAccessDenied() {
+        IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
+        TicketDto ticketDto = ticketService.issueTicket(req);
+
+        assertThatThrownBy(() -> ticketService.cancelTicket(ticketDto.id(), "user-2", false))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TICKET_ACCESS_DENIED);
+
+        Ticket ticket = ticketRepository.findById(ticketDto.id()).orElseThrow();
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.ISSUED);
+    }
+
+    @Test
+    void cancelTicket_whenAdmin_shouldCancelTicket() {
+        IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
+        TicketDto ticketDto = ticketService.issueTicket(req);
+
+        ticketService.cancelTicket(ticketDto.id(), "admin-1", true);
+
+        Ticket ticket = ticketRepository.findById(ticketDto.id()).orElseThrow();
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CANCELLED);
     }
 
     @Test
@@ -112,6 +192,41 @@ public class TicketServiceTest {
         CheckInResult result2 = ticketService.checkIn(ticketDto.id()); // Second check-in
 
         assertThat(result2.result()).isEqualTo("DUPLICATE_REJECTED");
+    }
+
+    @Test
+    void checkIn_atomic_shouldThrowWhenTicketDoesNotExist() {
+        UUID missingId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> ticketService.checkIn(missingId))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
+    void checkIn_atomic_shouldReturnCancelledWhenTicketCancelled() {
+        IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
+        TicketDto ticketDto = ticketService.issueTicket(req);
+        Ticket ticket = ticketRepository.findById(ticketDto.id()).orElseThrow();
+        ticket.setStatus(TicketStatus.CANCELLED);
+        ticketRepository.saveAndFlush(ticket);
+
+        CheckInResult result = ticketService.checkIn(ticketDto.id());
+
+        assertThat(result.result()).isEqualTo("TICKET_CANCELLED");
+    }
+
+    @Test
+    void checkIn_atomic_shouldReturnRefundedWhenTicketRefunded() {
+        IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
+        TicketDto ticketDto = ticketService.issueTicket(req);
+        Ticket ticket = ticketRepository.findById(ticketDto.id()).orElseThrow();
+        ticket.setStatus(TicketStatus.REFUNDED);
+        ticketRepository.saveAndFlush(ticket);
+
+        CheckInResult result = ticketService.checkIn(ticketDto.id());
+
+        assertThat(result.result()).isEqualTo("TICKET_REFUNDED");
     }
 
     @Test

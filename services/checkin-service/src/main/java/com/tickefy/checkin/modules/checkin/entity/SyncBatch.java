@@ -3,6 +3,8 @@ package com.tickefy.checkin.modules.checkin.entity;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "sync_batches")
@@ -29,7 +31,8 @@ public class SyncBatch {
     @Column(name = "item_count", nullable = false)
     private int itemCount = 0;
 
-    @Column(name = "result_payload", length = 4000)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "result_payload", columnDefinition = "jsonb")
     private String resultPayload;
 
     @Column(name = "processed_at")

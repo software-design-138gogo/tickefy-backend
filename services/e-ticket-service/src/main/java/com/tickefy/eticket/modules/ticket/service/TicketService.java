@@ -5,13 +5,16 @@ import com.tickefy.eticket.common.exception.ErrorCode;
 import com.tickefy.eticket.modules.ticket.dto.CheckInResult;
 import com.tickefy.eticket.modules.ticket.dto.IssueRequest;
 import com.tickefy.eticket.modules.ticket.dto.TicketDto;
+import com.tickefy.eticket.modules.ticket.dto.TicketSnapshotResponse;
 import com.tickefy.eticket.modules.ticket.entity.Ticket;
 import com.tickefy.eticket.modules.ticket.entity.TicketStatus;
 import com.tickefy.eticket.modules.ticket.repository.TicketRepository;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +33,6 @@ public class TicketService {
     /**
      * Idempotent ticket issuance. Re-issuing same orderItemId returns existing ticket.
      */
-    @Transactional
     public TicketDto issueTicket(IssueRequest req) {
         return ticketRepository.findByOrderItemId(req.orderItemId())
                 .map(existing -> {
@@ -48,10 +50,21 @@ public class TicketService {
                     ticket.setTicketName(req.ticketName());
                     ticket.setStatus(TicketStatus.ISSUED);
                     ticket.setQrToken(UUID.randomUUID().toString());
-                    Ticket saved = ticketRepository.save(ticket);
-                    log.info("Ticket issued ticketId={} orderId={} orderItemId={} eventId={}",
-                            saved.getId(), saved.getOrderId(), saved.getOrderItemId(), saved.getEventId());
-                    return toDto(saved);
+                    try {
+                        Ticket saved = ticketRepository.saveAndFlush(ticket);
+                        log.info("Ticket issued ticketId={} orderId={} orderItemId={} eventId={}",
+                                saved.getId(), saved.getOrderId(), saved.getOrderItemId(), saved.getEventId());
+                        return toDto(saved);
+                    } catch (DataIntegrityViolationException ex) {
+                        Ticket existing = ticketRepository.findByOrderItemId(req.orderItemId())
+                                .orElseThrow(() -> new ApiException(
+                                        ErrorCode.TICKET_ISSUE_UNAVAILABLE,
+                                        "Ticket issue replay could not be resolved",
+                                        HttpStatus.SERVICE_UNAVAILABLE));
+                        log.info("Concurrent replay resolved for orderItemId={} ticketId={}",
+                                req.orderItemId(), existing.getId());
+                        return toDto(existing);
+                    }
                 });
     }
 
@@ -87,15 +100,35 @@ public class TicketService {
     @Transactional
     public CheckInResult checkIn(UUID id) {
         int rows = ticketRepository.checkIn(id, java.time.Instant.now());
-        String result = rows == 1 ? "ACCEPTED" : "DUPLICATE_REJECTED";
+        String result = rows == 1 ? "ACCEPTED" : classifyCheckInMiss(id);
         log.info("CheckIn ticketId={} result={}", id, result);
         return new CheckInResult(result, id);
     }
 
+    @Transactional(readOnly = true)
+    public TicketSnapshotResponse getSnapshot(String concertId) {
+        List<TicketSnapshotResponse.TicketSnapshotItem> tickets =
+                ticketRepository.findByEventIdAndStatus(concertId, TicketStatus.ISSUED).stream()
+                        .map(ticket -> new TicketSnapshotResponse.TicketSnapshotItem(
+                                ticket.getId().toString(),
+                                ticket.getQrToken(),
+                                ticket.getEventId(),
+                                ticket.getZoneId(),
+                                zoneName(ticket),
+                                ticket.getUserId(),
+                                ticket.getStatus().name(),
+                                ticket.getUpdatedAt()))
+                        .toList();
+        return new TicketSnapshotResponse(concertId, Instant.now(), tickets.size(), tickets);
+    }
+
     @Transactional
-    public void cancelTicket(UUID id) {
+    public void cancelTicket(UUID id, String currentUserId, boolean admin) {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new ApiException(ErrorCode.TICKET_NOT_FOUND, "Ticket not found: " + id, HttpStatus.NOT_FOUND));
+        if (!admin && !ticket.getUserId().equals(currentUserId)) {
+            throw new ApiException(ErrorCode.TICKET_ACCESS_DENIED, "Access denied to ticket: " + id, HttpStatus.FORBIDDEN);
+        }
         if (ticket.getStatus() != TicketStatus.ISSUED) {
             throw new ApiException(ErrorCode.TICKET_INVALID_STATE, "Cannot cancel ticket in state: " + ticket.getStatus(), HttpStatus.UNPROCESSABLE_ENTITY);
         }
@@ -110,5 +143,24 @@ public class TicketService {
                 t.getEventId(), t.getTicketTypeId(), t.getZoneId(), t.getTicketName(),
                 t.getStatus().name(), t.getQrToken(), t.getCheckedInAt(), t.getCreatedAt()
         );
+    }
+
+    private String classifyCheckInMiss(UUID id) {
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.TICKET_NOT_FOUND, "Ticket not found: " + id, HttpStatus.NOT_FOUND));
+        return switch (ticket.getStatus()) {
+            case CHECKED_IN -> "DUPLICATE_REJECTED";
+            case CANCELLED -> "TICKET_CANCELLED";
+            case REFUNDED -> "TICKET_REFUNDED";
+            case ISSUED -> "DUPLICATE_REJECTED";
+        };
+    }
+
+    private String zoneName(Ticket ticket) {
+        if (ticket.getTicketName() != null && !ticket.getTicketName().isBlank()) {
+            return ticket.getTicketName();
+        }
+        return ticket.getZoneId();
     }
 }

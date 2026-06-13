@@ -1,26 +1,22 @@
-package com.tickefy.checkin.modules.checkin.dto;
+package com.tickefy.eticket.modules.ticket.dto;
 
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Snapshot DTO returned to mobile for offline scan preparation.
- */
-public record SnapshotResponse(
+public record TicketSnapshotResponse(
         String concertId,
-        String gate,
         Instant generatedAt,
-        Instant expiresAt,
         int totalCount,
-        List<SnapshotTicket> tickets
+        List<TicketSnapshotItem> tickets
 ) {
-    public record SnapshotTicket(
+    public record TicketSnapshotItem(
             String ticketId,
             String qrToken,
             String eventId,
             String zoneId,
             String zoneName,
             String holderName,
-            String status
+            String status,
+            Instant updatedAt
     ) {}
 }

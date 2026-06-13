@@ -13,7 +13,9 @@ public record SyncRequest(
         @NotEmpty List<SyncItem> items
 ) {
     public record SyncItem(
+            String localId,
             @NotBlank String qrToken,
+            String localResult,
             Instant scannedAt
     ) {}
 }

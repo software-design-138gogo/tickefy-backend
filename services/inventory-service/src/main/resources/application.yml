@@ -23,6 +23,11 @@ spring:
     schemas: ${DB_SCHEMA:public}
     default-schema: ${DB_SCHEMA:public}
     locations: classpath:db/migration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
 
 server:
   port: ${SERVER_PORT:8083}
@@ -40,6 +45,18 @@ management:
 app:
   database:
     schema: ${DB_SCHEMA:public}
+  jwt:
+    issuer: tickefy-auth
+    public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
+  redis:
+    stock-key-prefix: "tickefy:inventory:available:"
+    user-limit-key-prefix: "tickefy:inventory:user-limit:"
+    meta-key-prefix: "tickefy:inventory:meta:"
+  inventory:
+    reservation-ttl: ${RESERVATION_TTL:PT15M}
+    validate-concert: ${VALIDATE_CONCERT:false}
+    lua:
+      reserve-script: classpath:lua/reserve.lua
 
 logging:
   level:

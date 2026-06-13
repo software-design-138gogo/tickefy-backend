@@ -1,14 +1,14 @@
 package com.tickefy.inventory;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest
-@ActiveProfiles("test")
-class InventoryServiceApplicationTests {
+/**
+ * Context loads test — uses same Testcontainers singleton from BaseIntegrationTest.
+ */
+class InventoryServiceApplicationTests extends BaseIntegrationTest {
 
     @Test
     void contextLoads() {
+        // Spring context loaded successfully if this passes
     }
 }

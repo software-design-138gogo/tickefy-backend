@@ -44,7 +44,7 @@ app:
     access-ttl: PT15M
     refresh-ttl: P7D
   redis:
-    blacklist-prefix: "blacklist:"
+    blacklist-prefix: "tickefy:auth:token:blacklist:"
   security:
     # Low cost for fast tests
     bcrypt-strength: 4

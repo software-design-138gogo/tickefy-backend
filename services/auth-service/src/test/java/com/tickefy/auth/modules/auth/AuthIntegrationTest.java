@@ -297,13 +297,17 @@ class AuthIntegrationTest extends BaseIntegrationTest {
 
         logout(accessToken);
 
-        // Check Redis TTL
-        Long ttl = stringRedisTemplate.getExpire("blacklist:" + jti,
+        // Check Redis TTL — key uses new prefix per PLAN-2.13 §5
+        Long ttl = stringRedisTemplate.getExpire("tickefy:auth:token:blacklist:" + jti,
                 java.util.concurrent.TimeUnit.SECONDS);
 
         assertThat(ttl).isNotNull();
         assertThat(ttl).isGreaterThan(0L);
         assertThat(ttl).isLessThanOrEqualTo(900L); // access TTL = 15m = 900s
+
+        // OLD key must NOT exist
+        Boolean oldKeyExists = stringRedisTemplate.hasKey("blacklist:" + jti);
+        assertThat(oldKeyExists).isFalse();
     }
 
     // ---------------------------------------------------------------------------

@@ -52,9 +52,14 @@ app:
     access-ttl: ${JWT_ACCESS_TTL:PT15M}
     refresh-ttl: ${JWT_REFRESH_TTL:P7D}
   redis:
-    blacklist-prefix: "blacklist:"
+    blacklist-prefix: "tickefy:auth:token:blacklist:"
   security:
     bcrypt-strength: ${BCRYPT_STRENGTH:10}
+  bootstrap:
+    admin:
+      email: ${BOOTSTRAP_ADMIN_EMAIL:}
+      password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+      full-name: ${BOOTSTRAP_ADMIN_NAME:System Admin}
 
 logging:
   level:

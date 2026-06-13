@@ -34,7 +34,7 @@ class JwtBlacklistServiceFailSafeTest {
         mockRedisTemplate = mock(StringRedisTemplate.class);
         mockValueOps = mock(ValueOperations.class);
         when(mockRedisTemplate.opsForValue()).thenReturn(mockValueOps);
-        blacklistService = new JwtBlacklistService(mockRedisTemplate, "blacklist:");
+        blacklistService = new JwtBlacklistService(mockRedisTemplate, "tickefy:auth:token:blacklist:");
     }
 
     // ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ class JwtBlacklistServiceFailSafeTest {
     @DisplayName("AC#13 bonus: isBlacklisted returns true when Redis returns true for key")
     void isBlacklisted_redisHasKey_returnsTrue() {
         String jti = "blacklisted-jti";
-        when(mockRedisTemplate.hasKey("blacklist:" + jti)).thenReturn(Boolean.TRUE);
+        when(mockRedisTemplate.hasKey("tickefy:auth:token:blacklist:" + jti)).thenReturn(Boolean.TRUE);
 
         assertThat(blacklistService.isBlacklisted(jti)).isTrue();
     }
@@ -90,7 +90,7 @@ class JwtBlacklistServiceFailSafeTest {
     @DisplayName("AC#13 bonus: isBlacklisted returns false when Redis key absent")
     void isBlacklisted_redisNoKey_returnsFalse() {
         String jti = "clean-jti";
-        when(mockRedisTemplate.hasKey("blacklist:" + jti)).thenReturn(Boolean.FALSE);
+        when(mockRedisTemplate.hasKey("tickefy:auth:token:blacklist:" + jti)).thenReturn(Boolean.FALSE);
 
         assertThat(blacklistService.isBlacklisted(jti)).isFalse();
     }

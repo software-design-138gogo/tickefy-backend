@@ -40,6 +40,16 @@ management:
 app:
   database:
     schema: ${DB_SCHEMA:public}
+  jwt:
+    issuer: tickefy-auth
+    public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
+  inventory:
+    base-url: ${INVENTORY_SERVICE_URL:http://localhost:8083}
+  payment:
+    base-url: ${PAYMENT_SERVICE_URL:http://localhost:8085}
+    stub: ${PAYMENT_STUB:true}
+  order:
+    expiry-ttl: ${ORDER_EXPIRY_TTL:PT15M}
 
 logging:
   level:

@@ -18,7 +18,7 @@ public class JwtBlacklistService {
 
     public JwtBlacklistService(
             StringRedisTemplate redisTemplate,
-            @Value("${app.redis.blacklist-prefix:blacklist:}") String blacklistPrefix) {
+            @Value("${app.redis.blacklist-prefix:tickefy:auth:token:blacklist:}") String blacklistPrefix) {
         this.redisTemplate = redisTemplate;
         this.blacklistPrefix = blacklistPrefix;
     }

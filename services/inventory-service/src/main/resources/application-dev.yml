@@ -2,7 +2,16 @@ spring:
   config:
     activate:
       on-profile: dev
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: 8083
 
 logging:
   level:
     root: ${LOG_LEVEL:INFO}
+    com.tickefy.inventory.modules.inventory: DEBUG
+    org.springframework.security: INFO

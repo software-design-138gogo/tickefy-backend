@@ -3,6 +3,15 @@ spring:
     activate:
       on-profile: dev
 
+server:
+  port: 8084
+
+app:
+  inventory:
+    base-url: ${INVENTORY_SERVICE_URL:http://localhost:8083}
+
 logging:
   level:
     root: ${LOG_LEVEL:INFO}
+    com.tickefy.order.modules.order: DEBUG
+    org.springframework.security: INFO

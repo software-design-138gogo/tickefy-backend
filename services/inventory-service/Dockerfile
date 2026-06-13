@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM maven:3.9.9-eclipse-temurin-25 AS build
+FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /app
 
 COPY .mvn .mvn
@@ -22,7 +22,7 @@ COPY --from=build /app/target/*.jar app.jar
 ENV SPRING_PROFILES_ACTIVE=prod
 ENV TZ=UTC
 ENV JAVA_TOOL_OPTIONS="-Duser.timezone=UTC"
-EXPOSE 8083
+EXPOSE 8080
 
 USER spring
 ENTRYPOINT ["java", "-jar", "app.jar"]

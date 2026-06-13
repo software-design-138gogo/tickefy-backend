@@ -10,6 +10,9 @@ target/
 .env.*
 !.env.example
 
+# Secrets — prod private keys never committed (dev throwaway keys are OK)
+*-prod*.pem
+
 # Logs
 *.log
 run.err.log

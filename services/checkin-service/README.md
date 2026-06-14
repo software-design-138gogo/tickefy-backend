@@ -42,7 +42,7 @@ Evidence lives under `evidence/checkin-service/` in the `tickefy-backend` reposi
 | Spring application name | checkin-service |
 | Default port | 8088 |
 | Database name | tickefy |
-| Database schema | `checkin_schema` by default |
+| Database schema | `checkin_service` by default |
 | Java package | `com.tickefy.checkin` |
 | Docker image | `tickefy/checkin-service:local` |
 
@@ -138,7 +138,7 @@ Important values:
 ```env
 SERVER_PORT=8088
 DB_NAME=tickefy
-DB_SCHEMA=checkin_schema
+DB_SCHEMA=checkin_service
 JWT_SECRET=dev-only-secret-minimum-32-chars-long
 ETICKET_SERVICE_URL=http://localhost:8087
 ```

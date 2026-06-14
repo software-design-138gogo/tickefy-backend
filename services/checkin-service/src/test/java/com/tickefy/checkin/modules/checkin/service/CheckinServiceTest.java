@@ -63,10 +63,9 @@ public class CheckinServiceTest {
 
     @Test
     void scan_online_shouldReturnAccepted() {
-        ETicketClient.TicketInfo mockTicket =
-                new ETicketClient.TicketInfo("ticket-1", "concert-1", "ISSUED", "GA", "General Admission", "user-1");
-        when(eTicketClient.getTicketByToken("valid-token")).thenReturn(Optional.of(mockTicket));
-        when(eTicketClient.checkIn("ticket-1")).thenReturn("ACCEPTED");
+        when(eTicketClient.checkInByToken("valid-token", "concert-1"))
+                .thenReturn(new ETicketClient.CheckInTicketResult(
+                        "ACCEPTED", "ticket-1", "concert-1", "GA", "General Admission", "user-1", "CHECKED_IN"));
 
         ScanRequest req = new ScanRequest("valid-token", "concert-1", "device-1", "gate-A");
         ScanResponse response = checkinService.scan(req, "staff-1");
@@ -81,9 +80,9 @@ public class CheckinServiceTest {
 
     @Test
     void scan_online_shouldLogDuplicateRejected() {
-        ETicketClient.TicketInfo mockTicket =
-                new ETicketClient.TicketInfo("ticket-1", "concert-1", "CHECKED_IN", "GA", "General Admission", "user-1");
-        when(eTicketClient.getTicketByToken("already-used-token")).thenReturn(Optional.of(mockTicket));
+        when(eTicketClient.checkInByToken("already-used-token", "concert-1"))
+                .thenReturn(new ETicketClient.CheckInTicketResult(
+                        "DUPLICATE_REJECTED", "ticket-1", "concert-1", "GA", "General Admission", "user-1", "CHECKED_IN"));
 
         ScanRequest req = new ScanRequest("already-used-token", "concert-1", "device-1", "gate-A");
         ScanResponse response = checkinService.scan(req, "staff-1");
@@ -97,12 +96,15 @@ public class CheckinServiceTest {
 
     @Test
     void scan_online_shouldReturnInvalidQrWhenTicketNotFound() {
-        when(eTicketClient.getTicketByToken("invalid-token")).thenReturn(Optional.empty());
+        when(eTicketClient.checkInByToken("invalid-token", "concert-1"))
+                .thenReturn(new ETicketClient.CheckInTicketResult(
+                        "INVALID_QR_TOKEN", null, "concert-1", null, null, null, null));
 
         ScanRequest req = new ScanRequest("invalid-token", "concert-1", "device-1", "gate-A");
         ScanResponse response = checkinService.scan(req, "staff-1");
 
         assertThat(response.result()).isEqualTo("INVALID_QR_TOKEN");
+        verify(eTicketClient, never()).getTicketByToken(anyString());
         verify(eTicketClient, never()).checkIn(anyString());
 
         List<CheckinEvent> events = checkinEventRepository.findAll();
@@ -112,9 +114,9 @@ public class CheckinServiceTest {
 
     @Test
     void scan_online_shouldReturnWrongEventWhenTicketBelongsToDifferentConcert() {
-        ETicketClient.TicketInfo mockTicket =
-                new ETicketClient.TicketInfo("ticket-1", "concert-2", "ISSUED", "GA", "General Admission", "user-1");
-        when(eTicketClient.getTicketByToken("wrong-event-token")).thenReturn(Optional.of(mockTicket));
+        when(eTicketClient.checkInByToken("wrong-event-token", "concert-1"))
+                .thenReturn(new ETicketClient.CheckInTicketResult(
+                        "WRONG_EVENT", "ticket-1", "concert-2", "GA", "General Admission", "user-1", "ISSUED"));
 
         ScanRequest req = new ScanRequest("wrong-event-token", "concert-1", "device-1", "gate-A");
         ScanResponse response = checkinService.scan(req, "staff-1");
@@ -129,10 +131,9 @@ public class CheckinServiceTest {
 
     @Test
     void scan_whenTicketCancelledBetweenLookupAndCheckIn_returnsCancelledTicket() {
-        ETicketClient.TicketInfo mockTicket =
-                new ETicketClient.TicketInfo("ticket-1", "concert-1", "ISSUED", "GA", "General Admission", "user-1");
-        when(eTicketClient.getTicketByToken("race-cancel-token")).thenReturn(Optional.of(mockTicket));
-        when(eTicketClient.checkIn("ticket-1")).thenReturn("TICKET_CANCELLED");
+        when(eTicketClient.checkInByToken("race-cancel-token", "concert-1"))
+                .thenReturn(new ETicketClient.CheckInTicketResult(
+                        "TICKET_CANCELLED", "ticket-1", "concert-1", "GA", "General Admission", "user-1", "CANCELLED"));
 
         ScanRequest req = new ScanRequest("race-cancel-token", "concert-1", "device-1", "gate-A");
         ScanResponse response = checkinService.scan(req, "staff-1");
@@ -143,10 +144,9 @@ public class CheckinServiceTest {
 
     @Test
     void scan_whenTicketRefundedBetweenLookupAndCheckIn_returnsRefundedTicket() {
-        ETicketClient.TicketInfo mockTicket =
-                new ETicketClient.TicketInfo("ticket-1", "concert-1", "ISSUED", "GA", "General Admission", "user-1");
-        when(eTicketClient.getTicketByToken("race-refund-token")).thenReturn(Optional.of(mockTicket));
-        when(eTicketClient.checkIn("ticket-1")).thenReturn("TICKET_REFUNDED");
+        when(eTicketClient.checkInByToken("race-refund-token", "concert-1"))
+                .thenReturn(new ETicketClient.CheckInTicketResult(
+                        "TICKET_REFUNDED", "ticket-1", "concert-1", "GA", "General Admission", "user-1", "REFUNDED"));
 
         ScanRequest req = new ScanRequest("race-refund-token", "concert-1", "device-1", "gate-A");
         ScanResponse response = checkinService.scan(req, "staff-1");
@@ -157,7 +157,7 @@ public class CheckinServiceTest {
 
     @Test
     void scan_online_shouldSurfaceETicketOutageInsteadOfInvalidQr() {
-        when(eTicketClient.getTicketByToken("valid-looking-token"))
+        when(eTicketClient.checkInByToken("valid-looking-token", "concert-1"))
                 .thenThrow(new ApiException(
                         ErrorCode.ETICKET_SERVICE_UNAVAILABLE,
                         "e-ticket unavailable",

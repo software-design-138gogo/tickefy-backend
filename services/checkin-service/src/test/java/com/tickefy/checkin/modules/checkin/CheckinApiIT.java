@@ -46,18 +46,18 @@ class CheckinApiIT extends PostgresContainerITBase {
 
     @Test
     void scan_shouldReturnBusinessRejectionsAsHttp200Results() {
-        when(eTicketClient.getTicketByToken("valid-token")).thenReturn(Optional.of(
-                new ETicketClient.TicketInfo("ticket-ok", "concert-1", "ISSUED", "GA", "General Admission", "user-1")));
-        when(eTicketClient.checkIn("ticket-ok")).thenReturn("ACCEPTED");
-        when(eTicketClient.getTicketByToken("invalid-token")).thenReturn(Optional.empty());
-        when(eTicketClient.getTicketByToken("wrong-concert-token")).thenReturn(Optional.of(
-                new ETicketClient.TicketInfo("ticket-1", "concert-2", "ISSUED", "GA", "General Admission", "user-1")));
-        when(eTicketClient.getTicketByToken("duplicate-token")).thenReturn(Optional.of(
-                new ETicketClient.TicketInfo("ticket-2", "concert-1", "CHECKED_IN", "GA", "General Admission", "user-1")));
-        when(eTicketClient.getTicketByToken("cancelled-token")).thenReturn(Optional.of(
-                new ETicketClient.TicketInfo("ticket-3", "concert-1", "CANCELLED", "GA", "General Admission", "user-1")));
-        when(eTicketClient.getTicketByToken("refunded-token")).thenReturn(Optional.of(
-                new ETicketClient.TicketInfo("ticket-4", "concert-1", "REFUNDED", "GA", "General Admission", "user-1")));
+        when(eTicketClient.checkInByToken("valid-token", "concert-1")).thenReturn(
+                new ETicketClient.CheckInTicketResult("ACCEPTED", "ticket-ok", "concert-1", "GA", "General Admission", "user-1", "CHECKED_IN"));
+        when(eTicketClient.checkInByToken("invalid-token", "concert-1")).thenReturn(
+                new ETicketClient.CheckInTicketResult("INVALID_QR_TOKEN", null, "concert-1", null, null, null, null));
+        when(eTicketClient.checkInByToken("wrong-concert-token", "concert-1")).thenReturn(
+                new ETicketClient.CheckInTicketResult("WRONG_EVENT", "ticket-1", "concert-2", "GA", "General Admission", "user-1", "ISSUED"));
+        when(eTicketClient.checkInByToken("duplicate-token", "concert-1")).thenReturn(
+                new ETicketClient.CheckInTicketResult("DUPLICATE_REJECTED", "ticket-2", "concert-1", "GA", "General Admission", "user-1", "CHECKED_IN"));
+        when(eTicketClient.checkInByToken("cancelled-token", "concert-1")).thenReturn(
+                new ETicketClient.CheckInTicketResult("TICKET_CANCELLED", "ticket-3", "concert-1", "GA", "General Admission", "user-1", "CANCELLED"));
+        when(eTicketClient.checkInByToken("refunded-token", "concert-1")).thenReturn(
+                new ETicketClient.CheckInTicketResult("TICKET_REFUNDED", "ticket-4", "concert-1", "GA", "General Admission", "user-1", "REFUNDED"));
 
         scan("valid-token", "concert-1")
                 .then()

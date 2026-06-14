@@ -92,6 +92,33 @@ public class ETicketClient {
         }
     }
 
+    public CheckInTicketResult checkInByToken(String token, String concertId) {
+        try {
+            URI uri = UriComponentsBuilder.fromUriString(baseUrl)
+                    .path("/internal/tickets/by-token/{token}/check-in")
+                    .queryParam("concertId", concertId)
+                    .build(token);
+            ResponseEntity<String> response = restTemplate.exchange(
+                    uri,
+                    HttpMethod.PUT,
+                    authorizedEntity(),
+                    String.class);
+            return readData(response.getBody(), CheckInTicketResult.class);
+        } catch (HttpClientErrorException.NotFound ex) {
+            return new CheckInTicketResult(
+                    "INVALID_QR_TOKEN", null, concertId, null, null, null, null);
+        } catch (HttpClientErrorException ex) {
+            String code = errorCode(ex.getResponseBodyAsString());
+            if ("INVALID_QR_TOKEN".equals(code) || "TICKET_NOT_FOUND".equals(code)) {
+                return new CheckInTicketResult(
+                        "INVALID_QR_TOKEN", null, concertId, null, null, null, null);
+            }
+            throw downstreamUnavailable("e-ticket rejected QR check-in", ex);
+        } catch (HttpServerErrorException | ResourceAccessException ex) {
+            throw downstreamUnavailable("e-ticket unavailable during QR check-in", ex);
+        }
+    }
+
     public List<SnapshotTicket> getSnapshot(String concertId) {
         try {
             URI uri = UriComponentsBuilder.fromUriString(baseUrl)
@@ -110,7 +137,7 @@ public class ETicketClient {
                 tickets.add(new SnapshotTicket(
                         text(ticket, "ticketId"),
                         text(ticket, "qrToken"),
-                        text(ticket, "eventId"),
+                        text(ticket, "concertId"),
                         text(ticket, "zoneId"),
                         text(ticket, "zoneName"),
                         text(ticket, "holderName"),
@@ -190,17 +217,27 @@ public class ETicketClient {
 
     public record TicketInfo(
             String id,
-            String eventId,
+            String concertId,
             String status,
             String zoneId,
             String zoneName,
             String holderName
     ) {}
 
+    public record CheckInTicketResult(
+            String result,
+            String ticketId,
+            String concertId,
+            String zoneId,
+            String zoneName,
+            String holderName,
+            String status
+    ) {}
+
     public record SnapshotTicket(
             String ticketId,
             String qrToken,
-            String eventId,
+            String concertId,
             String zoneId,
             String zoneName,
             String holderName,

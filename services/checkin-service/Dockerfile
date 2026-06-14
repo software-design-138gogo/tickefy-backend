@@ -22,7 +22,8 @@ COPY --from=build /app/target/*.jar app.jar
 ENV SPRING_PROFILES_ACTIVE=prod
 ENV TZ=UTC
 ENV JAVA_TOOL_OPTIONS="-Duser.timezone=UTC"
-EXPOSE 8088
+ENV SERVER_PORT=8080
+EXPOSE 8080
 
 USER spring
 ENTRYPOINT ["java", "-jar", "app.jar"]

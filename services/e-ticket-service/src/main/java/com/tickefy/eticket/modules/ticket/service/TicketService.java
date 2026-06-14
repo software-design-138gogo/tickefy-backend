@@ -2,6 +2,7 @@ package com.tickefy.eticket.modules.ticket.service;
 
 import com.tickefy.eticket.common.exception.ApiException;
 import com.tickefy.eticket.common.exception.ErrorCode;
+import com.tickefy.eticket.modules.ticket.dto.CheckInByTokenResult;
 import com.tickefy.eticket.modules.ticket.dto.CheckInResult;
 import com.tickefy.eticket.modules.ticket.dto.IssueRequest;
 import com.tickefy.eticket.modules.ticket.dto.TicketDto;
@@ -44,7 +45,7 @@ public class TicketService {
                     ticket.setOrderId(req.orderId());
                     ticket.setOrderItemId(req.orderItemId());
                     ticket.setUserId(req.userId());
-                    ticket.setEventId(req.eventId());
+                    ticket.setConcertId(req.concertId());
                     ticket.setTicketTypeId(req.ticketTypeId());
                     ticket.setZoneId(req.zoneId());
                     ticket.setTicketName(req.ticketName());
@@ -52,8 +53,8 @@ public class TicketService {
                     ticket.setQrToken(UUID.randomUUID().toString());
                     try {
                         Ticket saved = ticketRepository.saveAndFlush(ticket);
-                        log.info("Ticket issued ticketId={} orderId={} orderItemId={} eventId={}",
-                                saved.getId(), saved.getOrderId(), saved.getOrderItemId(), saved.getEventId());
+                        log.info("Ticket issued ticketId={} orderId={} orderItemId={} concertId={}",
+                                saved.getId(), saved.getOrderId(), saved.getOrderItemId(), saved.getConcertId());
                         return toDto(saved);
                     } catch (DataIntegrityViolationException ex) {
                         Ticket existing = ticketRepository.findByOrderItemId(req.orderItemId())
@@ -105,14 +106,54 @@ public class TicketService {
         return new CheckInResult(result, id);
     }
 
+    /**
+     * Atomic internal QR scan path for checkin-service.
+     * Performs token lookup, concert validation, state classification, and
+     * check-in in one service call while keeping the state mutation conditional.
+     */
+    @Transactional
+    public CheckInByTokenResult checkInByToken(String token, String requestedConcertId) {
+        Ticket ticket = ticketRepository.findByQrToken(token)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.INVALID_QR_TOKEN, "Invalid QR token", HttpStatus.NOT_FOUND));
+
+        if (!ticket.getConcertId().equals(requestedConcertId)) {
+            return toCheckInByTokenResult("WRONG_EVENT", ticket);
+        }
+
+        if (ticket.getStatus() != TicketStatus.ISSUED) {
+            return toCheckInByTokenResult(classifyStatus(ticket.getStatus()), ticket);
+        }
+
+        Instant now = Instant.now();
+        int rows = ticketRepository.checkInByQrTokenAndConcertId(token, requestedConcertId, now);
+        if (rows == 1) {
+            ticket.setStatus(TicketStatus.CHECKED_IN);
+            ticket.setCheckedInAt(now);
+            log.info("CheckInByToken ticketId={} concertId={} result=ACCEPTED",
+                    ticket.getId(), requestedConcertId);
+            return toCheckInByTokenResult("ACCEPTED", ticket);
+        }
+
+        Ticket current = ticketRepository.findByQrToken(token)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.INVALID_QR_TOKEN, "Invalid QR token", HttpStatus.NOT_FOUND));
+        String result = current.getConcertId().equals(requestedConcertId)
+                ? classifyStatus(current.getStatus())
+                : "WRONG_EVENT";
+        log.info("CheckInByToken ticketId={} concertId={} result={}",
+                current.getId(), requestedConcertId, result);
+        return toCheckInByTokenResult(result, current);
+    }
+
     @Transactional(readOnly = true)
     public TicketSnapshotResponse getSnapshot(String concertId) {
         List<TicketSnapshotResponse.TicketSnapshotItem> tickets =
-                ticketRepository.findByEventIdAndStatus(concertId, TicketStatus.ISSUED).stream()
+                ticketRepository.findByConcertIdAndStatus(concertId, TicketStatus.ISSUED).stream()
                         .map(ticket -> new TicketSnapshotResponse.TicketSnapshotItem(
                                 ticket.getId().toString(),
                                 ticket.getQrToken(),
-                                ticket.getEventId(),
+                                ticket.getConcertId(),
                                 ticket.getZoneId(),
                                 zoneName(ticket),
                                 ticket.getUserId(),
@@ -140,9 +181,20 @@ public class TicketService {
     private TicketDto toDto(Ticket t) {
         return new TicketDto(
                 t.getId(), t.getOrderId(), t.getOrderItemId(), t.getUserId(),
-                t.getEventId(), t.getTicketTypeId(), t.getZoneId(), t.getTicketName(),
+                t.getConcertId(), t.getTicketTypeId(), t.getZoneId(), t.getTicketName(),
                 t.getStatus().name(), t.getQrToken(), t.getCheckedInAt(), t.getCreatedAt()
         );
+    }
+
+    private CheckInByTokenResult toCheckInByTokenResult(String result, Ticket ticket) {
+        return new CheckInByTokenResult(
+                result,
+                ticket.getId().toString(),
+                ticket.getConcertId(),
+                ticket.getZoneId(),
+                zoneName(ticket),
+                ticket.getUserId(),
+                ticket.getStatus().name());
     }
 
     private String classifyCheckInMiss(UUID id) {
@@ -154,6 +206,15 @@ public class TicketService {
             case CANCELLED -> "TICKET_CANCELLED";
             case REFUNDED -> "TICKET_REFUNDED";
             case ISSUED -> "DUPLICATE_REJECTED";
+        };
+    }
+
+    private String classifyStatus(TicketStatus status) {
+        return switch (status) {
+            case ISSUED -> "DUPLICATE_REJECTED";
+            case CHECKED_IN -> "DUPLICATE_REJECTED";
+            case CANCELLED -> "TICKET_CANCELLED";
+            case REFUNDED -> "TICKET_REFUNDED";
         };
     }
 

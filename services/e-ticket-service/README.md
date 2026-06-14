@@ -40,7 +40,7 @@ Evidence lives under `evidence/e-ticket-service/` in the `tickefy-backend` repos
 | Spring application name | e-ticket-service |
 | Default port | 8087 |
 | Database name | tickefy |
-| Database schema | `ticket_schema` by default |
+| Database schema | `eticket_service` by default |
 | Java package | `com.tickefy.eticket` |
 | Docker image | `tickefy/e-ticket-service:local` |
 
@@ -120,7 +120,7 @@ Important values:
 ```env
 SERVER_PORT=8087
 DB_NAME=tickefy
-DB_SCHEMA=ticket_schema
+DB_SCHEMA=eticket_service
 JWT_SECRET=dev-only-secret-minimum-32-chars-long
 ```
 

@@ -43,7 +43,7 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/internal/tickets/issue").hasAnyRole("ADMIN", "ORGANIZER")
-                        .requestMatchers("/internal/tickets/**").hasAnyRole("CHECKIN_STAFF", "STAFF", "ADMIN")
+                        .requestMatchers("/internal/tickets/**").hasAnyRole("CHECKIN_STAFF", "ADMIN")
                         .requestMatchers("/api/tickets/**").authenticated()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors

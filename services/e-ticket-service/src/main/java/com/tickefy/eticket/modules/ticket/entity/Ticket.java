@@ -28,8 +28,8 @@ public class Ticket {
     @Column(name = "user_id", nullable = false)
     private String userId;
 
-    @Column(name = "event_id", nullable = false)
-    private String eventId;
+    @Column(name = "concert_id", nullable = false)
+    private String concertId;
 
     @Column(name = "ticket_type_id")
     private String ticketTypeId;
@@ -82,8 +82,8 @@ public class Ticket {
     public String getUserId() { return userId; }
     public void setUserId(String userId) { this.userId = userId; }
 
-    public String getEventId() { return eventId; }
-    public void setEventId(String eventId) { this.eventId = eventId; }
+    public String getConcertId() { return concertId; }
+    public void setConcertId(String concertId) { this.concertId = concertId; }
 
     public String getTicketTypeId() { return ticketTypeId; }
     public void setTicketTypeId(String ticketTypeId) { this.ticketTypeId = ticketTypeId; }

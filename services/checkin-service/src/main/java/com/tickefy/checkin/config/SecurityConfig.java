@@ -41,7 +41,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                         .permitAll()
-                        .requestMatchers("/api/checkin/**").hasAnyRole("CHECKIN_STAFF", "STAFF", "ADMIN")
+                        .requestMatchers("/api/checkin/**").hasAnyRole("CHECKIN_STAFF", "ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((request, response, ex) -> writeSecurityError(

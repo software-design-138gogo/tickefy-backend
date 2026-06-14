@@ -30,11 +30,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtService jwtService;
+    private final JwtVerifier jwtVerifier;
     private final ObjectMapper objectMapper;
 
-    public JwtAuthenticationFilter(JwtService jwtService, ObjectMapper objectMapper) {
-        this.jwtService = jwtService;
+    public JwtAuthenticationFilter(JwtVerifier jwtVerifier, ObjectMapper objectMapper) {
+        this.jwtVerifier = jwtVerifier;
         this.objectMapper = objectMapper;
     }
 
@@ -48,7 +48,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
-            var claims = jwtService.validateAndExtract(authHeader.substring(7));
+            var claims = jwtVerifier.parseAndValidate(authHeader.substring(7));
             String userId = claims.getSubject();
             List<SimpleGrantedAuthority> authorities = authoritiesFromClaims(claims);
             if (userId != null && !authorities.isEmpty()) {

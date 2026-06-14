@@ -14,9 +14,13 @@ import com.tickefy.checkin.modules.checkin.dto.ScanRequest;
 import com.tickefy.checkin.modules.checkin.dto.ScanResponse;
 import com.tickefy.checkin.modules.checkin.service.CheckinService;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.PrivateKey;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -32,8 +36,6 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class CheckinControllerSecurityTest {
-
-    private static final String SECRET = "dev-only-secret-minimum-32-chars-long";
 
     @Autowired
     private MockMvc mockMvc;
@@ -105,14 +107,34 @@ class CheckinControllerSecurityTest {
     }
 
     private static String bearer(String subject, String role) {
-        Instant now = Instant.now();
-        String token = Jwts.builder()
-                .subject(subject)
-                .claim("roles", List.of(role))
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(3600)))
-                .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)))
-                .compact();
-        return "Bearer " + token;
+        try {
+            PrivateKey privateKey = loadPrivateKey();
+            Instant now = Instant.now();
+            String token = Jwts.builder()
+                    .subject(subject)
+                    .issuer("tickefy-auth")
+                    .claim("roles", List.of(role))
+                    .issuedAt(Date.from(now))
+                    .expiration(Date.from(now.plusSeconds(3600)))
+                    .signWith(privateKey)
+                    .compact();
+            return "Bearer " + token;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build test JWT", e);
+        }
+    }
+
+    private static PrivateKey loadPrivateKey() throws Exception {
+        try (InputStream is = CheckinControllerSecurityTest.class
+                .getResourceAsStream("/keys/jwt-dev-private.pem")) {
+            String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            String stripped = pem
+                    .replaceAll("-----BEGIN [^-]+-----", "")
+                    .replaceAll("-----END [^-]+-----", "")
+                    .replaceAll("\\s+", "");
+            byte[] keyBytes = Base64.getDecoder().decode(stripped);
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+            return KeyFactory.getInstance("RSA").generatePrivate(spec);
+        }
     }
 }

@@ -12,7 +12,7 @@ public record TicketSnapshotResponse(
     public record TicketSnapshotItem(
             String ticketId,
             String qrToken,
-            String eventId,
+            String concertId,
             String zoneId,
             String zoneName,
             String holderName,

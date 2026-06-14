@@ -44,7 +44,7 @@ public class TicketService {
                     ticket.setOrderId(req.orderId());
                     ticket.setOrderItemId(req.orderItemId());
                     ticket.setUserId(req.userId());
-                    ticket.setEventId(req.eventId());
+                    ticket.setConcertId(req.concertId());
                     ticket.setTicketTypeId(req.ticketTypeId());
                     ticket.setZoneId(req.zoneId());
                     ticket.setTicketName(req.ticketName());
@@ -52,8 +52,8 @@ public class TicketService {
                     ticket.setQrToken(UUID.randomUUID().toString());
                     try {
                         Ticket saved = ticketRepository.saveAndFlush(ticket);
-                        log.info("Ticket issued ticketId={} orderId={} orderItemId={} eventId={}",
-                                saved.getId(), saved.getOrderId(), saved.getOrderItemId(), saved.getEventId());
+                        log.info("Ticket issued ticketId={} orderId={} orderItemId={} concertId={}",
+                                saved.getId(), saved.getOrderId(), saved.getOrderItemId(), saved.getConcertId());
                         return toDto(saved);
                     } catch (DataIntegrityViolationException ex) {
                         Ticket existing = ticketRepository.findByOrderItemId(req.orderItemId())
@@ -108,11 +108,11 @@ public class TicketService {
     @Transactional(readOnly = true)
     public TicketSnapshotResponse getSnapshot(String concertId) {
         List<TicketSnapshotResponse.TicketSnapshotItem> tickets =
-                ticketRepository.findByEventIdAndStatus(concertId, TicketStatus.ISSUED).stream()
+                ticketRepository.findByConcertIdAndStatus(concertId, TicketStatus.ISSUED).stream()
                         .map(ticket -> new TicketSnapshotResponse.TicketSnapshotItem(
                                 ticket.getId().toString(),
                                 ticket.getQrToken(),
-                                ticket.getEventId(),
+                                ticket.getConcertId(),
                                 ticket.getZoneId(),
                                 zoneName(ticket),
                                 ticket.getUserId(),
@@ -140,7 +140,7 @@ public class TicketService {
     private TicketDto toDto(Ticket t) {
         return new TicketDto(
                 t.getId(), t.getOrderId(), t.getOrderItemId(), t.getUserId(),
-                t.getEventId(), t.getTicketTypeId(), t.getZoneId(), t.getTicketName(),
+                t.getConcertId(), t.getTicketTypeId(), t.getZoneId(), t.getTicketName(),
                 t.getStatus().name(), t.getQrToken(), t.getCheckedInAt(), t.getCreatedAt()
         );
     }

@@ -8,7 +8,7 @@ public record TicketDto(
         String orderId,
         String orderItemId,
         String userId,
-        String eventId,
+        String concertId,
         String ticketTypeId,
         String zoneId,
         String ticketName,

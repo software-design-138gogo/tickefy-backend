@@ -1,101 +1,183 @@
 # Tickefy Check-in Service
 
-Tickefy Check-in Service for the Tickefy backend system.
+Spring Boot service responsible for staff check-in scans, audit history, offline ticket snapshot download, offline sync, and conflict/idempotency handling.
 
-## 1. Responsibilities
+## Status
 
-Responsible for online check-in, offline snapshot/sync, check-in logs, and conflict/double-spending prevention.
+Implemented and validated for the current backend service scope.
 
-Current status:
+Evidence lives under `evidence/checkin-service/` in the `tickefy-backend` repository.
 
-- Spring Boot service skeleton is ready.
-- Real business logic is not implemented yet.
+## Responsibilities
 
-## 2. Tech Stack
+- Accept online scan requests from authenticated check-in staff.
+- Resolve QR tokens through protected e-ticket internal APIs.
+- Keep expected scan rejections as successful API responses with stable result codes.
+- Distinguish invalid QR from e-ticket downstream outage.
+- Log accepted and rejected scan outcomes.
+- Download real ticket snapshots from e-ticket service.
+- Process offline sync batches with first-valid-server-side-wins behavior.
+- Return cached sync result for duplicate `syncBatchId`.
+- Expose paginated check-in history.
 
-- Java 25 LTS
-- Spring Boot 3.x
-- Maven Wrapper
+## Tech Stack
+
+- Java 25
+- Spring Boot 3.5
+- Maven
 - PostgreSQL
 - Spring Data JPA / Hibernate
 - Flyway
+- Spring Security with local JWT validation
+- RestTemplate client for e-ticket internal APIs
 - Swagger/OpenAPI
 - Spring Boot Actuator
-- Global exception handler
-- Request ID logging
 - Docker multi-stage build
-- Spotless formatting
 
-## 3. Service Metadata
+## Service Metadata
 
 | Item | Value |
 |---|---|
 | Service name | checkin-service |
 | Spring application name | checkin-service |
 | Default port | 8088 |
-| Database name | tickefy_checkin |
-| Java package | com.tickefy.checkin |
-| Docker image | tickefy/checkin-service |
+| Database name | tickefy |
+| Database schema | `checkin_schema` by default |
+| Java package | `com.tickefy.checkin` |
+| Docker image | `tickefy/checkin-service:local` |
 
-## 4. Local Development
+## Security
 
-Linux/macOS:
+JWT is validated locally using `JWT_SECRET`; the service does not call auth-service to validate tokens.
 
-```bash
-cp .env.example .env
-./mvnw test
-./mvnw clean package
-./mvnw spring-boot:run
+All check-in APIs require `CHECKIN_STAFF` or `ADMIN`. Legacy `STAFF` is accepted for local compatibility. Role values are normalized, so both `CHECKIN_STAFF` and `ROLE_CHECKIN_STAFF` work.
+
+Staff id is read from `SecurityContext`; it is not accepted from `X-User-Id` or request body.
+
+The current `Authorization` header is forwarded to e-ticket internal endpoints.
+
+## Endpoints
+
+```http
+POST /api/checkin/scan
+GET /api/checkin/snapshot/{concertId}
+POST /api/checkin/sync
+GET /api/checkin/events/{concertId}?page={page}&size={size}&gate={gate}&staffId={staffId}&result={result}
 ```
+
+Operational endpoints:
+
+```http
+GET /health
+GET /actuator/health
+GET /swagger-ui/index.html
+GET /v3/api-docs
+```
+
+When the service starts, it logs direct links for `/health`, Swagger UI, and `/v3/api-docs`.
+
+## Canonical Sync Contract
+
+Request:
+
+```json
+{
+  "syncBatchId": "batch-1",
+  "deviceId": "device-1",
+  "concertId": "concert-1",
+  "gate": "A1",
+  "items": [
+    {
+      "localId": "local-1",
+      "qrToken": "opaque-token",
+      "localResult": "OFFLINE_ACCEPTED",
+      "scannedAt": "2026-06-13T01:00:00Z"
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "syncBatchId": "batch-1",
+  "processed": 1,
+  "accepted": [],
+  "rejected": [],
+  "conflicts": []
+}
+```
+
+## Local Development
 
 Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
-.\mvnw.cmd test
-.\mvnw.cmd clean package
+.\mvnw.cmd clean test
 .\mvnw.cmd spring-boot:run
 ```
 
-## 5. Useful Endpoints
+Linux/macOS:
 
-```http
-GET /actuator/health
-GET /health
-GET /swagger-ui/index.html
-GET /v3/api-docs
+```bash
+cp .env.example .env
+./mvnw clean test
+./mvnw spring-boot:run
 ```
 
-## 6. Environment Variables
+Local PostgreSQL/Redis/RabbitMQ are managed by the external `tickefy-infrastructure` repository. Use localhost-based values from `.env.example` when running with Maven on the host.
+
+## Environment Variables
 
 See `.env.example`.
-
-Local PostgreSQL/Redis/RabbitMQ are managed by the external `tickefy-infrastructure` repository. When running services with Maven on the host machine, use localhost-based values from `.env.example`.
 
 Important values:
 
 ```env
-SERVICE_NAME=checkin-service
+SERVER_PORT=8088
 DB_NAME=tickefy
-DB_SCHEMA=checkin_service
+DB_SCHEMA=checkin_schema
+JWT_SECRET=dev-only-secret-minimum-32-chars-long
+ETICKET_SERVICE_URL=http://localhost:8087
 ```
 
-## 7. Docker
+## Tests
+
+```powershell
+.\mvnw.cmd clean test
+.\mvnw.cmd -Dtest=CheckinServiceTest test
+```
+
+Current focused coverage includes:
+
+- accepted, duplicate, invalid QR, wrong event, cancelled, refunded scan results
+- e-ticket unavailable mapping
+- snapshot from e-ticket service
+- idempotent duplicate sync batch
+- concurrent duplicate sync batch
+- first-valid-server-side-wins conflict behavior
+- history audit records
+
+## API Smoke
+
+From repository root:
+
+```powershell
+.\scripts\test-checkin-service-api.ps1 -BaseUrl http://localhost:8088 -Token $env:CHECKIN_STAFF_JWT
+```
+
+## Docker
 
 ```bash
-docker build -t tickefy/checkin-service .
-docker run --rm -p 8088:8088 --env-file .env tickefy/checkin-service
+docker build -t tickefy/checkin-service:local .
+docker run --rm -p 8088:8088 --env-file .env tickefy/checkin-service:local
 ```
 
-## 8. Development Rule
+Docker build/run evidence is stored under `evidence/checkin-service/`.
 
-No spec, no code.
+## Deferred
 
-Before implementing real service logic, update or confirm the related spec and contract.
-
-## 9. TODO
-
-- Confirm service API contract.
-- Add service-specific database migrations.
-- Add OpenAPI contract for service APIs.
-- Implement service business logic after spec approval.
+- Snapshot is full-snapshot only. Add incremental snapshot support if event sizes become large.
+- `@MockBean` in tests is deprecated by Spring Boot and can be migrated later.

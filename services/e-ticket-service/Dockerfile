@@ -1,16 +1,16 @@
 # syntax=docker/dockerfile:1.7
 
-FROM maven:3.9.9-eclipse-temurin-25 AS build
+FROM maven:3.9.11-eclipse-temurin-25 AS build
 WORKDIR /app
 
 COPY .mvn .mvn
 COPY mvnw mvnw
 COPY mvnw.cmd mvnw.cmd
 COPY pom.xml pom.xml
-RUN chmod +x mvnw && ./mvnw -q -DskipTests dependency:go-offline
+RUN mvn -q -DskipTests dependency:go-offline
 
 COPY src src
-RUN ./mvnw -q clean package -DskipTests
+RUN mvn -q clean package -DskipTests
 
 FROM eclipse-temurin:25-jre
 WORKDIR /app

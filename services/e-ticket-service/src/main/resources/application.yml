@@ -1,4 +1,7 @@
 spring:
+  output:
+    ansi:
+      enabled: always
   application:
     name: ${SERVICE_NAME:e-ticket-service}
   profiles:
@@ -40,6 +43,9 @@ management:
 app:
   database:
     schema: ${DB_SCHEMA:public}
+
+jwt:
+  secret: ${JWT_SECRET:dev-only-secret-minimum-32-chars-long}
 
 logging:
   level:

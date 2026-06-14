@@ -11,7 +11,7 @@ public record SyncResponse(
 ) {
     public record SyncItemResult(
             String localId,
-            String qrToken,
+            String qrTokenMasked,
             String serverResult,
             String ticketId
     ) {}

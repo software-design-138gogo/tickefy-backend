@@ -110,7 +110,7 @@ public class ETicketClient {
                 tickets.add(new SnapshotTicket(
                         text(ticket, "ticketId"),
                         text(ticket, "qrToken"),
-                        text(ticket, "eventId"),
+                        text(ticket, "concertId"),
                         text(ticket, "zoneId"),
                         text(ticket, "zoneName"),
                         text(ticket, "holderName"),
@@ -190,7 +190,7 @@ public class ETicketClient {
 
     public record TicketInfo(
             String id,
-            String eventId,
+            String concertId,
             String status,
             String zoneId,
             String zoneName,
@@ -200,7 +200,7 @@ public class ETicketClient {
     public record SnapshotTicket(
             String ticketId,
             String qrToken,
-            String eventId,
+            String concertId,
             String zoneId,
             String zoneName,
             String holderName,

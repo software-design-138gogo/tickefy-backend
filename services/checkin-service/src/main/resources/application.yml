@@ -40,13 +40,13 @@ management:
 app:
   database:
     schema: ${DB_SCHEMA:public}
+  jwt:
+    public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
+    issuer: ${JWT_ISSUER:tickefy-auth}
 
 eticket:
   service:
     url: ${ETICKET_SERVICE_URL:http://localhost:8087}
-
-jwt:
-  secret: ${JWT_SECRET:dev-only-secret-minimum-32-chars-long}
 
 logging:
   level:

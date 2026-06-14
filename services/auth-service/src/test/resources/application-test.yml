@@ -45,6 +45,14 @@ app:
     refresh-ttl: P7D
   redis:
     blacklist-prefix: "tickefy:auth:token:blacklist:"
+  cookie:
+    access-name: access_token
+    refresh-name: refresh_token
+    refresh-path: /auth
+    secure: false
+    same-site: Lax
+  cors:
+    allowed-origins: http://localhost:3000
   security:
     # Low cost for fast tests
     bcrypt-strength: 4

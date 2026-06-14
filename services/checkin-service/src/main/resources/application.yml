@@ -8,6 +8,10 @@ spring:
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:30}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:30000}
   jpa:
     open-in-view: false
     hibernate:
@@ -26,6 +30,11 @@ spring:
 
 server:
   port: ${SERVER_PORT:8088}
+  tomcat:
+    threads:
+      max: ${TOMCAT_MAX_THREADS:400}
+      min-spare: ${TOMCAT_MIN_SPARE_THREADS:50}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:1000}
 
 management:
   endpoints:
@@ -43,10 +52,15 @@ app:
   jwt:
     public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
     issuer: ${JWT_ISSUER:tickefy-auth}
+    cache-max-size: ${JWT_CACHE_MAX_SIZE:2048}
 
 eticket:
   service:
     url: ${ETICKET_SERVICE_URL:http://localhost:8087}
+  http:
+    connect-timeout-ms: ${ETICKET_HTTP_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${ETICKET_HTTP_READ_TIMEOUT_MS:5000}
+    executor-threads: ${ETICKET_HTTP_EXECUTOR_THREADS:256}
 
 logging:
   level:

@@ -4,6 +4,9 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
+import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -18,12 +21,16 @@ public class JwtVerifier {
 
     private final JwtPublicKeyProvider keyProvider;
     private final String issuer;
+    private final int cacheMaxSize;
+    private final ConcurrentMap<String, CachedClaims> verifiedTokenCache = new ConcurrentHashMap<>();
 
     public JwtVerifier(
             JwtPublicKeyProvider keyProvider,
-            @Value("${app.jwt.issuer:tickefy-auth}") String issuer) {
+            @Value("${app.jwt.issuer:tickefy-auth}") String issuer,
+            @Value("${app.jwt.cache-max-size:2048}") int cacheMaxSize) {
         this.keyProvider = keyProvider;
         this.issuer = issuer;
+        this.cacheMaxSize = cacheMaxSize;
     }
 
     /**
@@ -35,11 +42,38 @@ public class JwtVerifier {
      * @throws JwtException         if token is invalid (wrong alg, bad sig, wrong issuer)
      */
     public Claims parseAndValidate(String token) {
-        return Jwts.parser()
+        Instant now = Instant.now();
+        CachedClaims cached = verifiedTokenCache.get(token);
+        if (cached != null && cached.expiresAt().isAfter(now)) {
+            return cached.claims();
+        }
+        if (cached != null) {
+            verifiedTokenCache.remove(token, cached);
+        }
+
+        Claims claims = Jwts.parser()
                 .verifyWith(keyProvider.getPublicKey())
                 .requireIssuer(issuer)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+        cacheUntilExpiration(token, claims, now);
+        return claims;
     }
+
+    private void cacheUntilExpiration(String token, Claims claims, Instant now) {
+        if (cacheMaxSize <= 0 || claims.getExpiration() == null) {
+            return;
+        }
+        Instant expiresAt = claims.getExpiration().toInstant();
+        if (!expiresAt.isAfter(now)) {
+            return;
+        }
+        if (verifiedTokenCache.size() >= cacheMaxSize) {
+            verifiedTokenCache.clear();
+        }
+        verifiedTokenCache.put(token, new CachedClaims(claims, expiresAt));
+    }
+
+    private record CachedClaims(Claims claims, Instant expiresAt) {}
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.rabbitmq.client.ConnectionFactory;
+import com.tickefy.eticket.modules.ticket.dto.CheckInByTokenResult;
 import com.tickefy.eticket.modules.ticket.dto.CheckInResult;
 import com.tickefy.eticket.modules.ticket.dto.IssueRequest;
 import com.tickefy.eticket.modules.ticket.dto.TicketDto;
@@ -133,6 +134,36 @@ class TicketRealDbIT extends PostgresContainerITBase {
                     ready.countDown();
                     start.await();
                     results.add(ticketService.checkIn(issued.id()));
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+
+        assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+        start.countDown();
+        executor.shutdown();
+        assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(results).hasSize(10);
+        assertThat(results.stream().filter(r -> "ACCEPTED".equals(r.result()))).hasSize(1);
+        assertThat(results.stream().filter(r -> "DUPLICATE_REJECTED".equals(r.result()))).hasSize(9);
+    }
+
+    @Test
+    void checkInByToken_whenTenConcurrentRequestsForSameTicket_acceptsExactlyOne() throws Exception {
+        TicketDto issued = ticketService.issueTicket(issueRequest("order-token-scan", "item-token-scan"));
+        var executor = Executors.newFixedThreadPool(10);
+        var ready = new CountDownLatch(10);
+        var start = new CountDownLatch(1);
+        List<CheckInByTokenResult> results = Collections.synchronizedList(new ArrayList<>());
+
+        for (int i = 0; i < 10; i++) {
+            executor.submit(() -> {
+                try {
+                    ready.countDown();
+                    start.await();
+                    results.add(ticketService.checkInByToken(issued.qrToken(), issued.concertId()));
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 }

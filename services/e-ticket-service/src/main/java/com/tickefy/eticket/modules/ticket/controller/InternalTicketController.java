@@ -2,6 +2,7 @@ package com.tickefy.eticket.modules.ticket.controller;
 
 import com.tickefy.eticket.common.constants.HeaderConstants;
 import com.tickefy.eticket.common.response.ApiResponse;
+import com.tickefy.eticket.modules.ticket.dto.CheckInByTokenResult;
 import com.tickefy.eticket.modules.ticket.dto.CheckInResult;
 import com.tickefy.eticket.modules.ticket.dto.IssueRequest;
 import com.tickefy.eticket.modules.ticket.dto.TicketDto;
@@ -45,6 +46,14 @@ public class InternalTicketController {
     @PutMapping("/{id}/check-in")
     public ResponseEntity<ApiResponse<CheckInResult>> checkIn(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(ticketService.checkIn(id), requestId()));
+    }
+
+    @PutMapping("/by-token/{token}/check-in")
+    public ResponseEntity<ApiResponse<CheckInByTokenResult>> checkInByToken(
+            @PathVariable String token,
+            @RequestParam String concertId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                ticketService.checkInByToken(token, concertId), requestId()));
     }
 
     @GetMapping("/snapshot")

@@ -2,6 +2,7 @@ package com.tickefy.eticket.modules.ticket.service;
 
 import com.tickefy.eticket.common.exception.ApiException;
 import com.tickefy.eticket.common.exception.ErrorCode;
+import com.tickefy.eticket.modules.ticket.dto.CheckInByTokenResult;
 import com.tickefy.eticket.modules.ticket.dto.CheckInResult;
 import com.tickefy.eticket.modules.ticket.dto.IssueRequest;
 import com.tickefy.eticket.modules.ticket.dto.TicketDto;
@@ -105,6 +106,46 @@ public class TicketService {
         return new CheckInResult(result, id);
     }
 
+    /**
+     * Atomic internal QR scan path for checkin-service.
+     * Performs token lookup, concert validation, state classification, and
+     * check-in in one service call while keeping the state mutation conditional.
+     */
+    @Transactional
+    public CheckInByTokenResult checkInByToken(String token, String requestedConcertId) {
+        Ticket ticket = ticketRepository.findByQrToken(token)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.INVALID_QR_TOKEN, "Invalid QR token", HttpStatus.NOT_FOUND));
+
+        if (!ticket.getConcertId().equals(requestedConcertId)) {
+            return toCheckInByTokenResult("WRONG_EVENT", ticket);
+        }
+
+        if (ticket.getStatus() != TicketStatus.ISSUED) {
+            return toCheckInByTokenResult(classifyStatus(ticket.getStatus()), ticket);
+        }
+
+        Instant now = Instant.now();
+        int rows = ticketRepository.checkInByQrTokenAndConcertId(token, requestedConcertId, now);
+        if (rows == 1) {
+            ticket.setStatus(TicketStatus.CHECKED_IN);
+            ticket.setCheckedInAt(now);
+            log.info("CheckInByToken ticketId={} concertId={} result=ACCEPTED",
+                    ticket.getId(), requestedConcertId);
+            return toCheckInByTokenResult("ACCEPTED", ticket);
+        }
+
+        Ticket current = ticketRepository.findByQrToken(token)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.INVALID_QR_TOKEN, "Invalid QR token", HttpStatus.NOT_FOUND));
+        String result = current.getConcertId().equals(requestedConcertId)
+                ? classifyStatus(current.getStatus())
+                : "WRONG_EVENT";
+        log.info("CheckInByToken ticketId={} concertId={} result={}",
+                current.getId(), requestedConcertId, result);
+        return toCheckInByTokenResult(result, current);
+    }
+
     @Transactional(readOnly = true)
     public TicketSnapshotResponse getSnapshot(String concertId) {
         List<TicketSnapshotResponse.TicketSnapshotItem> tickets =
@@ -145,6 +186,17 @@ public class TicketService {
         );
     }
 
+    private CheckInByTokenResult toCheckInByTokenResult(String result, Ticket ticket) {
+        return new CheckInByTokenResult(
+                result,
+                ticket.getId().toString(),
+                ticket.getConcertId(),
+                ticket.getZoneId(),
+                zoneName(ticket),
+                ticket.getUserId(),
+                ticket.getStatus().name());
+    }
+
     private String classifyCheckInMiss(UUID id) {
         Ticket ticket = ticketRepository.findById(id)
                 .orElseThrow(() -> new ApiException(
@@ -154,6 +206,15 @@ public class TicketService {
             case CANCELLED -> "TICKET_CANCELLED";
             case REFUNDED -> "TICKET_REFUNDED";
             case ISSUED -> "DUPLICATE_REJECTED";
+        };
+    }
+
+    private String classifyStatus(TicketStatus status) {
+        return switch (status) {
+            case ISSUED -> "DUPLICATE_REJECTED";
+            case CHECKED_IN -> "DUPLICATE_REJECTED";
+            case CANCELLED -> "TICKET_CANCELLED";
+            case REFUNDED -> "TICKET_REFUNDED";
         };
     }
 

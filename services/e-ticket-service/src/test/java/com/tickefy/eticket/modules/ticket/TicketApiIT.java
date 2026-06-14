@@ -121,6 +121,59 @@ class TicketApiIT extends PostgresContainerITBase {
     }
 
     @Test
+    void internalCheckInByToken_shouldValidateConcertBeforeMutatingTicket() {
+        String qrToken = issueTicket("order-token", "item-token")
+                .then()
+                .statusCode(201)
+                .extract()
+                .path("data.qrToken");
+
+        given()
+                .header("Authorization", bearer("staff-1", "CHECKIN_STAFF"))
+                .queryParam("concertId", "wrong-concert")
+                .when()
+                .put("/internal/tickets/by-token/{token}/check-in", qrToken)
+                .then()
+                .statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.result", equalTo("WRONG_EVENT"))
+                .body("data.concertId", equalTo("concert-1"));
+
+        given()
+                .header("Authorization", bearer("staff-1", "CHECKIN_STAFF"))
+                .queryParam("concertId", "concert-1")
+                .when()
+                .put("/internal/tickets/by-token/{token}/check-in", qrToken)
+                .then()
+                .statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.result", equalTo("ACCEPTED"));
+
+        given()
+                .header("Authorization", bearer("staff-1", "CHECKIN_STAFF"))
+                .queryParam("concertId", "concert-1")
+                .when()
+                .put("/internal/tickets/by-token/{token}/check-in", qrToken)
+                .then()
+                .statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.result", equalTo("DUPLICATE_REJECTED"));
+    }
+
+    @Test
+    void internalCheckInByToken_whenTokenInvalid_returnsInvalidQrEnvelope() {
+        given()
+                .header("Authorization", bearer("staff-1", "CHECKIN_STAFF"))
+                .queryParam("concertId", "concert-1")
+                .when()
+                .put("/internal/tickets/by-token/{token}/check-in", "missing-token")
+                .then()
+                .statusCode(404)
+                .body("success", equalTo(false))
+                .body("error.code", equalTo("INVALID_QR_TOKEN"));
+    }
+
+    @Test
     void customerTicketDetail_whenDifferentJwtSubject_returnsForbiddenEnvelope() {
         String ticketId = issueTicket("order-1", "item-1")
                 .then()

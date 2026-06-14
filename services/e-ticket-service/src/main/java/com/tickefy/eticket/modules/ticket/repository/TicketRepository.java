@@ -35,4 +35,23 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
               AND t.status = com.tickefy.eticket.modules.ticket.entity.TicketStatus.ISSUED
             """)
     int checkIn(@Param("id") UUID id, @Param("now") java.time.Instant now);
+
+    /**
+     * Atomic QR check-in used by checkin-service. The concert predicate prevents
+     * a wrong-concert scan from mutating ticket state before validation.
+     */
+    @Modifying
+    @Query("""
+            UPDATE Ticket t
+            SET t.status = com.tickefy.eticket.modules.ticket.entity.TicketStatus.CHECKED_IN,
+                t.checkedInAt = :now,
+                t.updatedAt   = :now
+            WHERE t.qrToken = :qrToken
+              AND t.concertId = :concertId
+              AND t.status = com.tickefy.eticket.modules.ticket.entity.TicketStatus.ISSUED
+            """)
+    int checkInByQrTokenAndConcertId(
+            @Param("qrToken") String qrToken,
+            @Param("concertId") String concertId,
+            @Param("now") java.time.Instant now);
 }

@@ -19,7 +19,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
     Optional<Ticket> findByIdAndUserId(UUID id, String userId);
 
-    List<Ticket> findByEventIdAndStatus(String eventId, com.tickefy.eticket.modules.ticket.entity.TicketStatus status);
+    List<Ticket> findByConcertIdAndStatus(String concertId, com.tickefy.eticket.modules.ticket.entity.TicketStatus status);
 
     /**
      * Atomic check-in: sets CHECKED_IN only when current status = ISSUED.

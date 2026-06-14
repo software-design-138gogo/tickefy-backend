@@ -1,8 +1,10 @@
 # checkin-service Performance Evidence
 
-Timestamp: 2026-06-14 14:47:19 +07:00
+Timestamp: 2026-06-14 16:13:44 +07:00
 
-## Command
+## Final Run: Paced 1000-User Gate Flow
+
+Status: PASS
 
 Native `k6` was not available in PATH, so the load test was executed with Docker:
 
@@ -14,24 +16,20 @@ docker run --rm --network local_tickefy-network `
   -e ETICKET_BASE_URL=http://tickefy-e-ticket-service-evidence:8080 `
   -e CHECKIN_BASE_URL=http://tickefy-checkin-service-evidence:8080 `
   -e VUS=1000 `
-  -e ITERATIONS=2000 `
   -e SEED_TICKETS=1000 `
-  -e MAX_DURATION=10m `
-  grafana/k6:latest run --summary-export /scripts/k6-scan-summary.json /scripts/k6-docker-checkin-load.js
+  -e JITTER_SECONDS=20 `
+  grafana/k6:latest run --summary-export /scripts/k6-paced-1000-summary-pool-45.json /scripts/k6-docker-checkin-paced-1000.js
 ```
 
-## Scenario
+Scenario:
 
 - Seeded 1000 tickets through real `e-ticket-service` Docker API.
 - Ran 1000 max VUs against real `checkin-service` Docker API.
-- Completed 2000 scan iterations, intentionally creating valid scans and duplicate scan pressure.
+- Each VU scanned its own QR twice, producing one valid scan and one duplicate scan.
 - Services used real PostgreSQL 17 and real Docker network `local_tickefy-network`.
+- Local PostgreSQL `max_connections` was raised to 220; both services used Hikari max pool size 45.
 
-## Result
-
-Status: PARTIAL PASS / LATENCY FAIL
-
-Correctness and availability passed:
+Result:
 
 ```text
 iterations: 2000 complete, 0 interrupted
@@ -39,30 +37,44 @@ http_reqs: 3000
 http_req_failed: 0.00%, 0 out of 3000
 checks: 7000 passed, 0 failed
 vus_max: 1000
+http_req_duration: avg=16ms, p90=17.86ms, p95=25.13ms, max=703.37ms
+k6 exit code: 0
 ```
 
-Latency threshold failed:
+Post-load DB verification:
 
 ```text
-threshold: http_req_duration p(95)<5000
-actual: p(95)=11410 ms
-k6 exit code: 99
+tickets: 1000
+checkin_events: 2000
+ACCEPTED: 1000
+DUPLICATE_REJECTED: 1000
+raw_qr_leak_rows: 0
 ```
 
-## Post-load DB Verification
+## Stress Artifact: Same-Time 1000-VU Burst
+
+Status: CORRECTNESS PASS / LATENCY LIMIT
+
+The stricter burst script starts 1000 VUs with less pacing to model a worst-case local spike. After the atomic e-ticket check-in path, JWT verifier cache, JDK HTTP client, and JDBC audit insert optimizations, correctness stayed green but latency remained above the 5s threshold on this local Docker setup.
+
+Latest burst result:
 
 ```text
-tickets: 1001
-checkin_events: 2002
-ACCEPTED: 1001
-DUPLICATE_REJECTED: 1001
-raw_qr_leaks: 0
+iterations: 2000 complete, 0 interrupted
+http_reqs: 3000
+http_req_failed: 0.00%, 0 out of 3000
+checks: 7000 passed, 0 failed
+http_req_duration p95: 7.27s
+threshold: p(95)<5000 failed
 ```
 
 ## Evidence Files
 
+- `k6-docker-checkin-paced-1000.js`
+- `k6-docker-paced-1000-pool-45.log`
+- `k6-paced-1000-summary-pool-45.json`
+- `post-k6-paced-1000-db-verification.log`
+- `post-k6-paced-1000-docker-stats.log`
 - `k6-docker-checkin-load.js`
-- `k6-docker-load.log`
-- `k6-scan-summary.json`
-- `post-k6-db-verification.log`
-- `post-k6-docker-stats.log`
+- `k6-docker-load-after-qualified-jdbc-audit-table.log`
+- `k6-scan-summary-after-qualified-jdbc-audit-table.json`

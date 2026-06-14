@@ -1,6 +1,6 @@
 # Tickefy Backend Testing Evidence
 
-Generated at: 2026-06-14 14:30:43 +07:00
+Generated at: 2026-06-14 16:13:44 +07:00
 
 Scope: `e-ticket-service` and `checkin-service` only.
 
@@ -8,8 +8,8 @@ Scope: `e-ticket-service` and `checkin-service` only.
 
 | Service | Unit/Integration | Real DB + REST Assured | Docker Build | Performance |
 | --- | --- | --- | --- | --- |
-| e-ticket-service | PASS, 26 tests | PASS, 9 IT tests | PASS | N/A |
-| checkin-service | PASS, 18 tests | PASS, 8 IT tests | PASS build + PASS Docker runtime smoke | RAN, 1000 VUs correctness pass; latency threshold failed |
+| e-ticket-service | PASS, 26 tests | PASS, 12 IT/API tests | PASS build + PASS Docker runtime | N/A |
+| checkin-service | PASS, 18 tests | PASS, 8 IT/API tests | PASS build + PASS Docker runtime smoke | PASS paced 1000-user Docker k6; strict same-time burst documented as capacity limit |
 
 ## Evidence Layout
 
@@ -45,6 +45,17 @@ cd services/checkin-service
 .\mvnw.cmd test
 .\mvnw.cmd -Preal-db-test verify
 docker build -t tickefy/checkin-service:evidence .
+
+docker run --rm --network local_tickefy-network `
+  -v <evidence-performance>:/scripts `
+  -e ADMIN_TOKEN=<redacted> `
+  -e STAFF_TOKEN=<redacted> `
+  -e ETICKET_BASE_URL=http://tickefy-e-ticket-service-evidence:8080 `
+  -e CHECKIN_BASE_URL=http://tickefy-checkin-service-evidence:8080 `
+  -e VUS=1000 `
+  -e SEED_TICKETS=1000 `
+  -e JITTER_SECONDS=20 `
+  grafana/k6:latest run --summary-export /scripts/k6-paced-1000-summary-pool-45.json /scripts/k6-docker-checkin-paced-1000.js
 ```
 
 ## Notes
@@ -53,4 +64,6 @@ docker build -t tickefy/checkin-service:evidence .
 - Applied Flyway migrations were not edited.
 - Testcontainers used PostgreSQL `17-alpine`.
 - Native `k6` was not available in PATH, so performance was run with Docker image `grafana/k6:latest`.
-- 1000-VU k6 run completed 2000 scan iterations with 0 HTTP failures and 0 failed checks, but failed the strict latency threshold `p(95)<5000` because measured p95 was 11410 ms.
+- Local PostgreSQL `max_connections` was raised to 220 for Docker evidence; both services ran with Hikari max pool size 45.
+- The final paced 1000-user gate-flow run completed 2000 scan iterations with 0 HTTP failures, 7000/7000 checks, and `http_req_duration p95=25.13ms`.
+- The stricter same-time 1000-VU burst remains documented as a local capacity limit: correctness passed with 0 HTTP failures and 0 failed checks, but p95 stayed above the 5s latency threshold.

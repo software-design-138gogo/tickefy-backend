@@ -1,28 +1,22 @@
 ---
-
 title: Backend Service Implementation and Integration Workflow
 status: DRAFT
-version: 1.0
+version: 1.1
 owner: BE Lead
-reviewers:
+reviewers: []
 lastUpdated: 2026-06-16
-
 ---
 
 # Backend Service Implementation and Integration Workflow
 
+> **Cách đọc file này:** Phần KHÔNG đánh dấu = thực tế đang chạy, **làm theo ngay**. Phần đánh **🔭 TARGET** = chưa áp dụng cho đồ án (đừng tưởng đã có). File mô tả đúng cách 4 service hiện tại (auth/inventory/order/e-ticket) làm — service mới phải KHỚP, không tự đi hướng khác.
+
 ## 1. Điều kiện bắt đầu
 
-Trước khi bắt đầu implementation, service phải có:
-
-* Service Specification đã được chốt.
-* API Contract đã được chốt.
-* Event Contract đã được chốt.
-* Database ownership đã được xác định.
-* Dependencies đã được xác định.
-* Naming Convention và Error Catalog đã được thống nhất.
-
-Workflow này bắt đầu từ thời điểm service đã đủ điều kiện để code.
+Trước khi implement, service phải có:
+- Service Specification đã chốt · API Contract đã chốt · Event Contract đã chốt.
+- Database ownership xác định · Dependencies xác định.
+- Naming Convention + Error Catalog đã thống nhất.
 
 ---
 
@@ -31,81 +25,45 @@ Workflow này bắt đầu từ thời điểm service đã đủ điều kiện
 ```text
 Khởi động infrastructure nền
 → Tạo service skeleton
-→ Đăng ký tài nguyên database và RabbitMQ
-→ Viết database migration
+→ Đăng ký schema DB (init.sql) + RabbitMQ exchange nền
+→ Viết database migration (Flyway)
 → Implement domain/business logic
 → Implement API
-→ Implement HTTP clients
-→ Implement event publisher/consumer
-→ Test service độc lập
+→ Implement HTTP clients (sync integration)
+→ Implement event publisher/consumer (@Bean self-declare topology)
+→ Test service độc lập (unit + Testcontainers IT)
 → Dockerize service
-→ Thêm service vào Docker Compose
-→ Thêm route API Gateway
+→ Thêm service vào docker-compose.dev.yml
+→ (🔭 TARGET) Thêm route API Gateway
 → Tích hợp với service khác
-→ Chạy end-to-end test
-→ Push Docker image
-→ Cập nhật tài liệu
+→ Chạy end-to-end test (compose dev thật)
+→ (🔭 TARGET) Push Docker image
+→ Cập nhật tài liệu (service-spec)
 ```
 
 ---
 
 ## 3. Khởi động infrastructure nền
 
-Trước khi code database hoặc messaging, chạy các infrastructure component dùng chung:
-
-```text
-PostgreSQL
-Redis
-RabbitMQ
-MinIO
-Docker network
-```
-
-Ví dụ:
+Compose nằm tại `tickefy-infrastructure/local/`:
 
 ```bash
 cd tickefy-infrastructure/local
-
-docker compose \
-  -f docker-compose.infrastructure.yml \
-  up -d
+docker compose -f docker-compose.dev.yml up -d
+# hoặc: ./scripts/up.sh dev
+docker compose -f docker-compose.dev.yml ps   # chờ healthy
 ```
 
-Hoặc dùng script của infrastructure repository:
+Infrastructure nền: **PostgreSQL, Redis, RabbitMQ**. (🔭 TARGET: MinIO/object storage — chưa service nào dùng; thêm khi có nhu cầu file như ai-bio/seat-map.)
 
-```bash
-./scripts/up.sh infra
-```
-
-Kiểm tra:
-
-```bash
-docker compose ps
-```
-
-Các dependency phải ở trạng thái healthy trước khi chạy service.
-
-### Output
-
-* PostgreSQL có thể kết nối.
-* RabbitMQ Management UI truy cập được.
-* Redis hoạt động.
-* MinIO hoạt động nếu service cần file.
+Dependency phải `healthy` trước khi chạy service.
 
 ---
 
 ## 4. Tạo service skeleton
 
-Tạo service tại:
-
 ```text
-tickefy-backend/services/<service-name>
-```
-
-Cấu trúc tối thiểu:
-
-```text
-<service-name>/
+tickefy-backend/services/<service-name>/
 ├── src/
 ├── pom.xml
 ├── Dockerfile
@@ -114,21 +72,26 @@ Cấu trúc tối thiểu:
 └── README.md
 ```
 
-Cấu hình Spring Boot phải sử dụng environment variables:
+Spring Boot config dùng environment variables (KHÔNG hard-code host/secret):
 
 ```yaml
 server:
   port: ${SERVER_PORT:8080}
-
 spring:
   application:
     name: <service-name>
-
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
-
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    properties:
+      hibernate.default_schema: ${DB_SCHEMA}
+  # Chỉ thêm redis/rabbitmq khi service thực sự dùng:
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
   rabbitmq:
     host: ${RABBITMQ_HOST}
     port: ${RABBITMQ_PORT}
@@ -137,550 +100,289 @@ spring:
 ```
 
 Quy tắc:
-
-* Container port luôn là `8080`.
-* Không hard-code `localhost`.
-* Không hard-code password hoặc secret.
-* Bật `/actuator/health`.
-* Bật Swagger/OpenAPI.
+- **Container port luôn `8080`** (host port khác nhau, vd 8081/8083/8084/8087 — map ở compose).
+- Không hard-code `localhost`, password, secret.
+- Bật `/actuator/health`. Bật Swagger/OpenAPI (`/swagger-ui/index.html`).
 
 ---
 
 ## 5. Đăng ký tài nguyên infrastructure của service
 
-Bước này thực hiện ngay sau khi tạo skeleton, không đợi đến khi code xong.
+Làm ngay sau skeleton, không đợi code xong.
 
-### 5.1. PostgreSQL
+### 5.1. PostgreSQL — schema (database-per-service)
 
-Thêm schema của service vào PostgreSQL init script.
-
-Ví dụ:
+Thêm schema vào `tickefy-infrastructure/local/postgres/init.sql`. Quy ước tên schema = **`<service>_service`**:
 
 ```sql
-CREATE SCHEMA IF NOT EXISTS order_schema;
+CREATE SCHEMA IF NOT EXISTS order_service;
+CREATE SCHEMA IF NOT EXISTS inventory_service;
+CREATE SCHEMA IF NOT EXISTS auth_service;
+CREATE SCHEMA IF NOT EXISTS eticket_service;
 ```
 
-Nếu mỗi service dùng database user riêng:
+- **1 database dùng chung** (`DB_NAME`, vd `tickefy`), **mỗi service 1 schema riêng** (`DB_SCHEMA`). KHÔNG cross-service query schema khác.
+- Dùng **chung 1 DB user** cho đồ án (không tạo user riêng mỗi service — đơn giản, đủ).
+- Business tables tạo bằng **Flyway trong service** (init.sql chỉ tạo schema).
 
-```sql
-CREATE USER order_service_user WITH PASSWORD 'configured-by-env';
+### 5.2. RabbitMQ — topology self-declare bằng @Bean (decentralized)
 
-GRANT USAGE, CREATE
-ON SCHEMA order_schema
-TO order_service_user;
+> **Cách nhóm dùng:** mỗi service **TỰ khai exchange/queue/binding/DLQ bằng `@Bean`** trong `RabbitMqConfig` của chính nó. Spring AMQP (`RabbitAdmin`) tự tạo trên broker khi service start. **KHÔNG khai queue/binding vào `definitions.json` tập trung.**
+
+**Vì sao decentralized:** (1) self-contained — queue của service nào nằm trong code service đó, đọc code biết ngay nó nghe gì; (2) không sửa file infra chung → 4 người không giẫm chân/conflict; (3) service độc lập deploy.
+
+`definitions.json` (`tickefy-infrastructure/local/rabbitmq/definitions.json`) chỉ giữ **nền dùng chung**: exchange `tickefy.exchange` (type `topic`). Service bind vào exchange này lúc start.
+
+Quy ước (BẮT BUỘC khớp toàn hệ):
+- Exchange: **`tickefy.exchange`** (topic, durable).
+- Queue: **`<service>-service.<event-kebab>.queue`** (vd `inventory-service.order-paid.queue`, `ticket-service.order-paid.queue`).
+- DLQ: **`<...>.queue.dlq`**.
+- Routing key: **`<domain>.<event>`** (vd `order.paid`, `payment.succeeded`).
+
+**Convention DLQ:** dùng **exchange dead-letter RIÊNG `tickefy.dlx`** (KHÔNG route DLQ qua exchange chính). Dead-letter routing key = **`<routingKey>.dlq`** (vd `order.paid` → `order.paid.dlq`).
+
+Mẫu `@Bean` (mỗi consumer service — khớp RabbitMqConfig thật của order/inventory):
+```java
+@Value("${app.messaging.exchange:tickefy.exchange}") String exchange;
+@Value("${app.messaging.dlx:tickefy.dlx}")           String dlx;
+
+@Bean TopicExchange tickefyExchange() { return new TopicExchange(exchange, true, false); }
+@Bean TopicExchange tickefyDlx()      { return new TopicExchange(dlx, true, false); }   // DLX riêng
+
+@Bean Queue orderPaidQueue() {
+  return QueueBuilder.durable("inventory-service.order-paid.queue")
+    .deadLetterExchange(dlx)                  // fail → DLX riêng (KHÔNG exchange chính)
+    .deadLetterRoutingKey("order.paid.dlq")   // <routingKey>.dlq
+    .build();
+}
+@Bean Queue orderPaidDlq() { return QueueBuilder.durable("inventory-service.order-paid.queue.dlq").build(); }
+@Bean Binding b1()   { return BindingBuilder.bind(orderPaidQueue()).to(tickefyExchange()).with("order.paid"); }
+@Bean Binding bDlq() { return BindingBuilder.bind(orderPaidDlq()).to(tickefyDlx()).with("order.paid.dlq"); }
+// listener factory: setDefaultRequeueRejected(false) — poison → DLQ, KHÔNG requeue vô hạn
 ```
+> Mẫu trên là chuẩn self-declare DLQ của service Hiệp (order/inventory). e-ticket hiện chỉ khai queue, DLQ qua broker policy — khi thêm DLQ self-declare nên theo mẫu này cho đồng nhất.
 
-Infrastructure chỉ tạo:
+> ⚠️ Queue đã tồn tại trên broker đang chạy KHÔNG đổi args được (RabbitMQ `PRECONDITION_FAILED`). Muốn thêm DLQ vào queue cũ → xóa queue cũ trước rồi để service redeclare.
 
-* PostgreSQL instance.
-* Schema.
-* Database user.
-* Permission.
+### 5.3. Redis — key pattern (nếu service dùng)
 
-Business tables được tạo bằng Flyway trong service.
-
-### 5.2. RabbitMQ
-
-Dựa trên Event Contract, khai báo:
-
-* Exchange.
-* Queue.
-* Routing key.
-* Binding.
-* DLQ.
-
-Ví dụ:
-
+Document key + TTL. Key thật đang dùng (inventory):
 ```text
-Exchange: tickefy.events
-Routing key: order.paid
-Queue: ticket.order-paid
-DLQ: ticket.order-paid.dlq
+tickefy:inventory:available:{ticketTypeId}
+tickefy:inventory:user-limit:{userId}:{ticketTypeId}
+tickefy:inventory:meta:{ticketTypeId}
+tickefy:auth:token:blacklist:{jti}        (auth)
 ```
+- Redis tạo key lúc runtime (không tạo trước). Key tạm phải có TTL.
+- **Order KHÔNG dùng Redis** (không lock/cache). Chỉ thêm Redis vào service khi thực sự cần.
 
-Cập nhật:
-
-```text
-tickefy-infrastructure/rabbitmq/definition.json
-```
-
-RabbitMQ container phải được restart hoặc reload definitions sau khi topology thay đổi.
-
-### 5.3. Redis
-
-Document key pattern mà service sử dụng:
-
-```text
-order:idempotency:{idempotencyKey}
-reservation:{reservationId}
-payment:idempotency:{idempotencyKey}
-```
-
-Mọi key tạm thời phải có TTL.
-
-Redis không cần tạo key trước. Key được service tạo khi runtime.
-
-### 5.4. Object Storage
-
-Nếu service dùng file, tạo bucket hoặc prefix cần thiết.
-
-Ví dụ:
-
-```text
-ai-bio/
-vip-import/
-seat-maps/
-error-reports/
-```
-
-Thông tin kết nối phải truyền qua environment variables.
+### 5.4. Object Storage — 🔭 TARGET (chưa dùng)
+Chưa service nào dùng. Khi cần (ai-bio, seat-map, vip-import) → tạo bucket/prefix, kết nối qua env.
 
 ---
 
-## 6. Viết database migration
+## 6. Database migration (Flyway)
 
-Tạo migration trong service:
-
-```text
-src/main/resources/db/migration/
-```
-
-Ví dụ:
-
-```text
-V1__create_orders.sql
-V2__create_order_items.sql
-V3__create_order_status_history.sql
-```
-
-Flyway chịu trách nhiệm tạo:
-
-* Tables.
-* Columns.
-* Indexes.
-* Unique constraints.
-* Check constraints.
-* Foreign key trong cùng service.
+`src/main/resources/db/migration/`, đặt tên `V<n>__<mô_tả>.sql`. Flyway tạo tables/indexes/unique/check/FK-trong-cùng-service.
 
 Quy tắc:
-
-* Table và column dùng `snake_case`.
-* Primary key dùng UUID.
-* Time dùng `TIMESTAMPTZ`.
-* Money dùng `BIGINT`.
-* Không tạo cross-service foreign key.
-
-Ví dụ:
+- `snake_case` cho table/column. PK = **UUID**. Time = **`TIMESTAMPTZ`**. Money = **`BIGINT`**.
+- **KHÔNG cross-service foreign key** (`user_id`/`concert_id`/`ticket_type_id` là cross-service ref, không FK).
 
 ```sql
-CREATE TABLE order_schema.orders (
+CREATE TABLE order_service.orders (
     id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,
-    concert_id UUID NOT NULL,
+    user_id UUID NOT NULL,        -- cross-service ref, KHÔNG FK
+    concert_id UUID NOT NULL,     -- cross-service ref, KHÔNG FK
     status VARCHAR(30) NOT NULL,
     total_amount BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
-
-`user_id` và `concert_id` là cross-service reference nên không tạo foreign key.
-
-### Kiểm tra migration
-
-Chạy service hoặc chạy Flyway để kiểm tra:
-
-```bash
-./mvnw spring-boot:run
-```
-
-Sau đó kiểm tra:
-
-```sql
-SELECT *
-FROM flyway_schema_history;
-```
-
-Migration phải chạy được từ database rỗng.
+Kiểm tra: chạy service từ DB rỗng → `SELECT * FROM flyway_schema_history;` phải xanh.
 
 ---
 
-## 7. Implement domain và business logic
+## 7. Domain & business logic
 
-Thứ tự khuyến nghị:
-
-```text
-Domain model
-→ Repository
-→ Business service/use case
-→ State machine
-→ Transaction
-→ Error handling
-```
-
-Business logic không đặt trong controller.
-
-Ví dụ:
-
-```text
-OrderController
-→ CreateOrderUseCase
-→ OrderService
-→ OrderRepository
-```
-
-Xác định rõ transaction boundary.
-
-Ví dụ:
-
-```text
-Create Order
-+ Create Order Items
-+ Create Status History
-= cùng một database transaction
-```
+Thứ tự: Domain model → Repository → Business service/use case → State machine → Transaction → Error handling.
+- Business logic KHÔNG đặt trong controller.
+- Xác định rõ transaction boundary (vd: create order + order items + status history = 1 transaction).
 
 ---
 
 ## 8. Implement API
 
-Với mỗi endpoint:
-
-* Tạo request DTO.
-* Tạo response DTO.
-* Validate input.
-* Kiểm tra authentication và authorization.
-* Trả common response envelope.
-* Map domain exception sang error code.
-* Cập nhật Swagger/OpenAPI.
-
-Ví dụ:
-
-```http
-POST /orders
-GET  /orders/{orderId}
-```
-
-Controller không expose database entity trực tiếp.
+Mỗi endpoint: request/response DTO · validate input · authn/authz · trả **common response envelope** · map domain exception → error code (theo error-catalog) · cập nhật Swagger. Controller KHÔNG expose entity trực tiếp.
 
 ---
 
-## 9. Implement synchronous integration
+## 9. Synchronous integration (HTTP client)
 
-Nếu service gọi service khác qua HTTP:
+Service gọi service khác: tạo HTTP client · base URL qua env · connection + read timeout · propagate `X-Request-Id` · map lỗi dependency · **dùng stub/mock khi dependency chưa chạy**.
 
-1. Tạo HTTP client.
-2. Cấu hình base URL bằng environment variable.
-3. Cấu hình connection timeout.
-4. Cấu hình read timeout.
-5. Propagate `X-Request-ID`.
-6. Map lỗi dependency.
-7. Dùng mock khi dependency chưa chạy.
-
-Ví dụ:
-
+Trong Docker network dùng **service name + container port 8080** (KHÔNG host port):
 ```text
-Order Service
-→ Inventory Service
-→ Payment Service
+http://inventory-service:8080      ✅  (KHÔNG http://localhost:8083)
 ```
-
-Trong Docker network:
-
-```text
-http://inventory-service:8080
-http://payment-service:8080
-```
-
-Không sử dụng host port:
-
-```text
-http://localhost:8088
-```
-
-trong container.
 
 ---
 
-## 10. Implement event publisher và consumer
+## 10. Event publisher & consumer
 
-### Publisher
+### Event format — ENVELOPE (CHUẨN cho mọi event)
 
-Publisher phải:
-
-* Sử dụng Event Envelope chuẩn.
-* Publish đúng exchange.
-* Dùng đúng routing key.
-* Publish sau khi business transaction thành công.
-* Giữ nguyên `correlationId`.
-* Sinh `messageId` duy nhất.
-
-Ví dụ:
-
-```text
-Exchange: tickefy.events
-Routing key: order.paid
-```
-
-### Consumer
-
-Consumer phải:
-
-* Listen đúng queue đã khai báo trong RabbitMQ.
-* Validate `eventType` và `eventVersion`.
-* Idempotent theo `messageId`.
-* Chỉ ACK sau khi transaction thành công.
-* Retry có giới hạn.
-* Chuyển DLQ khi xử lý thất bại quá số lần cho phép.
-
-Ví dụ:
-
-```text
-Ticket Service
-→ consume queue ticket.order-paid
-→ tạo tickets
-→ lưu processed message
-→ commit transaction
-→ ACK
-```
-
-### Local event testing
-
-Event có thể test bằng:
-
-* RabbitMQ Management UI.
-* Script publish message.
-* Integration test dùng Testcontainers.
-* Chạy producer service thật.
-
-Ví dụ message test:
+> **Chuẩn nhóm: dùng ENVELOPE cho mọi event.** Tách metadata khỏi nội dung; có `eventVersion` để nâng cấp payload không vỡ consumer.
 
 ```json
 {
-  "messageId": "uuid",
-  "eventType": "OrderPaid",
-  "eventVersion": "1.0",
-  "source": "order-service",
-  "occurredAt": "2026-06-16T10:00:00Z",
-  "correlationId": "req-uuid",
-  "causationId": null,
-  "payload": {}
+  "messageId": "uuid",          // dedup — BẮT BUỘC
+  "eventType": "OrderPaid",     // route + chọn parser — BẮT BUỘC
+  "eventVersion": "1.0",        // versioning payload — BẮT BUỘC
+  "occurredAt": "2026-06-16T10:00:00Z",  // ISO-8601 UTC — BẮT BUỘC
+  "payload": { /* nội dung riêng từng event */ }
 }
 ```
+(Thêm `source`/`correlationId`/`causationId` khi cần tracing — chưa bắt buộc cho đồ án.)
+
+> ⚠️ **Legacy cần migrate:** hiện `order.*` (order.paid/payment-failed/expired) đang publish **FLAT** (field top-level, không bọc payload) để khớp consumer e-ticket lúc đầu. `payment.*` đã gần envelope (thiếu `eventVersion`). **Hướng: migrate `order.*` sang envelope** — gộp khi làm qty>1 (e-ticket đằng nào cũng sửa consumer). Service MỚI từ giờ: dùng envelope ngay.
+
+### Publisher (qua Outbox Pattern)
+- Ghi event vào bảng `outbox` **cùng transaction** với business state change.
+- Drainer (`@Scheduled` polling) đọc outbox → publish đúng exchange + routing key → mark PUBLISHED.
+- Publish SAU khi transaction thành công. Sinh `messageId` duy nhất. Giữ `correlationId` nếu có.
+
+### Consumer
+- `@RabbitListener` đúng queue đã self-declare (§5.2).
+- Validate `eventType`/`eventVersion`. **Idempotent** (xem dưới). ACK chỉ sau khi transaction OK.
+- DLQ + `setDefaultRequeueRejected(false)` — fail → DLQ, KHÔNG requeue vô hạn.
+
+### Idempotency (thực tế hiện tại)
+- **State-guard** là chính: order PAID→bỏ qua nếu đã terminal; reservation RESERVED→COMMITTED/RELEASED, đã chuyển thì skip. (Đã verified: gửi trùng ×3 không nhân đôi.)
+- 🔭 TARGET: bảng `processed_messages(messageId)` để dedup tầng message — chưa cần cho happy-path, state-guard đủ. Thêm khi cần chống race 2 message cùng messageId đồng thời.
+
+### Test event local
+RabbitMQ Management UI publish tay · dev stub endpoint (vd `/dev/orders/{id}/simulate-paid`) · Testcontainers IT · chạy producer thật.
 
 ---
 
 ## 11. Test service độc lập
 
-Chạy:
-
 ```bash
 ./mvnw clean package
 ./mvnw test
-./mvnw spotless:check
+./mvnw -Preal-db-test verify   # IT với Testcontainers (nếu có)
 ```
-
-Kiểm tra:
-
-* Business rules.
-* State transitions.
-* Repository.
-* API contract.
-* Error codes.
-* Idempotency.
-* Event publisher.
-* Event consumer.
-* Duplicate message.
-* Retry và DLQ.
-
-Có thể sử dụng Testcontainers để chạy PostgreSQL và RabbitMQ độc lập trong integration test.
+Kiểm: business rules · state transitions · API contract · error codes · idempotency · publisher/consumer · duplicate message · DLQ. Dùng **Testcontainers** cho PostgreSQL + RabbitMQ trong IT.
 
 ---
 
-## 12. Dockerize service
+## 12. Dockerize
 
-Tạo multi-stage Dockerfile:
+Multi-stage Dockerfile, **Java 25** (project chuẩn Java 25 LTS), dùng `mvnw`:
 
 ```dockerfile
-FROM maven:3.9-eclipse-temurin-21-alpine AS build
-
+FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /app
-
-COPY pom.xml .
-RUN mvn -B -ntp -DskipTests dependency:go-offline
-
+COPY pom.xml mvnw ./
+COPY .mvn ./.mvn
+RUN chmod +x mvnw                                    # tránh permission denied (mvnw mất exec-bit trên Windows/git)
+RUN ./mvnw -B -ntp -DskipTests dependency:go-offline
 COPY src ./src
-RUN mvn -B -ntp clean package
+RUN ./mvnw -B -ntp clean package -DskipTests
 
-FROM eclipse-temurin:21-jre-alpine
-
+FROM eclipse-temurin:25-jre
 WORKDIR /app
-
 COPY --from=build /app/target/*.jar app.jar
-
 EXPOSE 8080
-
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
-
-Build:
-
-```bash
-docker build -t tickefy/<service-name>:local .
-```
-
-Service phải chạy được khi kết nối tới infrastructure nền.
+> Dùng image `-jre` (KHÔNG `-alpine` nếu cần glibc). Healthcheck KHÔNG dùng `wget`/`curl` (temurin-jre không có) — xem §13.
 
 ---
 
-## 13. Thêm service vào Docker Compose
+## 13. Thêm vào Docker Compose
 
-Cập nhật:
-
-```text
-tickefy-infrastructure/local/.env.example
-tickefy-infrastructure/local/docker-compose.dev.yml
-tickefy-infrastructure/local/docker-compose.image.yml
-```
-
-### Dev mode
+Cập nhật `.env.example` + `docker-compose.dev.yml` (+ `docker-compose.image.yml` nếu dùng image mode).
 
 ```yaml
 <service-name>:
   build:
     context: ../../tickefy-backend/services/<service-name>
     dockerfile: Dockerfile
-
   image: tickefy/<service-name>:local
-  env_file:
-    - .env
-
+  env_file: [.env]
   environment:
     SERVER_PORT: 8080
-
+    DB_SCHEMA: <service>_service
+  ports:
+    - "${<SVC>_SERVICE_HOST_PORT}:8080"
   depends_on:
-    postgres:
-      condition: service_healthy
-    rabbitmq:
-      condition: service_healthy
-
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+    # thêm redis CHỈ khi service dùng (vd inventory)
   healthcheck:
-    test:
-      - CMD-SHELL
-      - wget -qO- http://localhost:8080/actuator/health || exit 1
+    test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/localhost/8080' 2>/dev/null || exit 1"]
 ```
-
-Chỉ thêm Redis, RabbitMQ hoặc MinIO vào `depends_on` khi service thực sự sử dụng chúng.
+- `depends_on` chỉ thêm redis/rabbitmq khi service THỰC SỰ dùng (vd order KHÔNG cần redis).
+- **Healthcheck dùng `/dev/tcp`** (temurin-jre không có wget/curl — bài học thực tế).
 
 ---
 
-## 14. Thêm route API Gateway
+## 14. API Gateway route — 🔭 TARGET (gateway chưa build)
 
-Cập nhật API Gateway:
+> Gateway (Hoàng) **chưa build** — hiện comment-out trong compose. FE/admin/mobile tạm gọi **trực tiếp service** qua host port (hoặc dev proxy). Phần dưới là target khi gateway có.
 
 ```yaml
 - id: order-service
-  uri: ${ORDER_SERVICE_URL:http://localhost:8084}
-  predicates:
-    - Path=/api/orders/**
+  uri: ${ORDER_SERVICE_URL:http://order-service:8080}
+  predicates: [ Path=/api/orders/** ]
 ```
-
-Trong Docker Compose:
-
-```yaml
-ORDER_SERVICE_URL: http://order-service:8080
-```
-
-Frontend, admin và mobile chỉ gọi qua API Gateway:
-
-```text
-http://localhost:8080/api/orders/...
-```
-
-Direct service URL chỉ dùng để debug local.
+Khi gateway live: client chỉ gọi qua gateway `http://localhost:8080/api/...`; direct URL chỉ để debug.
 
 ---
 
-## 15. Chạy integration test
+## 15. Integration test (compose dev thật)
 
-Kiểm tra theo thứ tự:
+Thứ tự kiểm: Service→PostgreSQL · Service→Redis (nếu dùng) · Service→RabbitMQ · Producer→RabbitMQ→Consumer · Service→Service (HTTP).
 
+System flow (đã verified một phần — xem service-spec):
 ```text
-Service → PostgreSQL
-Service → Redis
-Service → RabbitMQ
-Service → Object Storage
-API Gateway → Service
-Service → Service
-Producer → RabbitMQ → Consumer
+Create Order → Reserve Inventory (HTTP) → [stub] Payment
+→ PaymentSucceeded (consume) → Order PAID → publish OrderPaid (outbox→drainer)
+→ Inventory commit + E-Ticket issue vé + Notification
 ```
-
-Sau đó test system flow mà service tham gia.
-
-Ví dụ:
-
-```text
-Create Order
-→ Reserve Inventory
-→ Create Payment
-→ PaymentSucceeded
-→ OrderPaid
-→ TicketsIssued
-```
-
-Kiểm tra:
-
-* API response.
-* Database state.
-* Published event.
-* Consumer result.
-* Duplicate handling.
-* Retry.
-* DLQ.
-* Logs theo `requestId`, `correlationId`, `messageId`.
+Kiểm: API response · DB state · published event (RabbitMQ UI) · consumer result · duplicate handling · DLQ · logs theo `requestId`/`correlationId`/`messageId`.
 
 ---
 
-## 16. Build và push image
+## 16. Build & push image — 🔭 TARGET (đồ án chạy local)
 
-Image tag dùng commit hash:
-
-```text
-commit-<short-sha>
-```
-
-Ví dụ:
-
-```text
-ghcr.io/<org>/tickefy/order-service:commit-a1b2c3d
-```
-
-Sau khi push:
-
-* Cập nhật image tag trong `.env`.
-* Chạy `docker-compose.image.yml`.
-* Kiểm tra health check.
-* Chạy lại integration test cơ bản.
+Đồ án hiện chạy **build local** (`docker-compose.dev.yml`). Push registry là target:
+- Tag = `commit-<short-sha>` · push ghcr · cập nhật tag trong `.env` · chạy `docker-compose.image.yml` · health check · IT lại.
 
 ---
 
 ## 17. Definition of Done
 
-Service chỉ hoàn thành khi:
+**Bắt buộc (đồ án):**
+- [ ] Migration chạy từ DB rỗng.
+- [ ] Business logic hoàn thành.
+- [ ] API đúng contract (+ Swagger).
+- [ ] Event publisher/consumer đúng contract (envelope, DLQ, idempotent).
+- [ ] Build + tests pass (unit + Testcontainers IT).
+- [ ] Docker image build được.
+- [ ] Dev mode (`docker-compose.dev.yml`) chạy được.
+- [ ] PostgreSQL schema (`<svc>_service`) cấu hình.
+- [ ] RabbitMQ topology self-declare (@Bean) + DLQ.
+- [ ] Redis cấu hình nếu service dùng.
+- [ ] Sync + async integration hoạt động.
+- [ ] End-to-end flow liên quan chạy thật (compose dev).
+- [ ] README + env vars + service-spec cập nhật.
 
-* [ ] Migration chạy được từ database rỗng.
-* [ ] Business logic hoàn thành.
-* [ ] API đúng contract.
-* [ ] Event publisher/consumer đúng contract.
-* [ ] Build và tests pass.
-* [ ] Docker image build được.
-* [ ] Dev mode chạy được.
-* [ ] Image mode chạy được.
-* [ ] API Gateway route hoạt động.
-* [ ] PostgreSQL schema được cấu hình.
-* [ ] RabbitMQ topology được cấu hình.
-* [ ] Redis/Object Storage được cấu hình nếu cần.
-* [ ] Sync integration hoạt động.
-* [ ] Async integration hoạt động.
-* [ ] End-to-end flow liên quan chạy thành công.
-* [ ] README, environment variables và docs đã cập nhật.
+**🔭 TARGET (chưa bắt buộc đồ án):**
+- [ ] Image mode (`docker-compose.image.yml`) + push ghcr.
+- [ ] API Gateway route (chờ Hoàng build gateway).
+- [ ] `processed_messages` dedup table (hiện state-guard đủ).
+- [ ] Object storage (chưa service nào dùng).

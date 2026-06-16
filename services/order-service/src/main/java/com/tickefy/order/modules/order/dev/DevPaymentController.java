@@ -68,6 +68,7 @@ public class DevPaymentController {
         OrderEvents.PaymentEnvelope envelope = new OrderEvents.PaymentEnvelope(
                 UUID.randomUUID().toString(),
                 eventType,
+                OrderEvents.EVENT_VERSION,
                 Instant.now().toString(),
                 new OrderEvents.PaymentPayload(orderId.toString(), txId, status));
         String json;

@@ -8,11 +8,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tickets")
+@Table(
+        name = "tickets",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_tickets_order_item_seq",
+                columnNames = {"order_item_id", "seat_sequence"}))
 public class Ticket {
 
     @Id
@@ -22,8 +27,11 @@ public class Ticket {
     @Column(name = "order_id", nullable = false)
     private String orderId;
 
-    @Column(name = "order_item_id", nullable = false, unique = true)
+    @Column(name = "order_item_id", nullable = false)
     private String orderItemId;
+
+    @Column(name = "seat_sequence", nullable = false)
+    private int seatSequence;
 
     @Column(name = "user_id", nullable = false)
     private String userId;
@@ -78,6 +86,9 @@ public class Ticket {
 
     public String getOrderItemId() { return orderItemId; }
     public void setOrderItemId(String orderItemId) { this.orderItemId = orderItemId; }
+
+    public int getSeatSequence() { return seatSequence; }
+    public void setSeatSequence(int seatSequence) { this.seatSequence = seatSequence; }
 
     public String getUserId() { return userId; }
     public void setUserId(String userId) { this.userId = userId; }

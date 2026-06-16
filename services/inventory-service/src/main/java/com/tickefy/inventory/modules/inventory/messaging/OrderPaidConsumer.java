@@ -24,12 +24,14 @@ public class OrderPaidConsumer {
 
     @RabbitListener(queues = RabbitMqConfig.ORDER_PAID_QUEUE)
     public void onOrderPaid(InventoryEvents.OrderPaidMessage event) {
-        if (event == null || event.orderId() == null || event.items() == null) {
-            throw new IllegalArgumentException("order.paid missing orderId/items");
+        if (event == null || event.payload() == null
+                || event.payload().orderId() == null || event.payload().items() == null) {
+            throw new IllegalArgumentException("order.paid missing payload.orderId/items");
         }
-        UUID orderId = UUID.fromString(event.orderId());
-        log.info("Received order.paid messageId={} orderId={} items={}", event.messageId(), orderId, event.items().size());
-        for (InventoryEvents.OrderPaidMessage.Item item : event.items()) {
+        InventoryEvents.OrderPaidMessage.Payload payload = event.payload();
+        UUID orderId = UUID.fromString(payload.orderId());
+        log.info("Received order.paid messageId={} orderId={} items={}", event.messageId(), orderId, payload.items().size());
+        for (InventoryEvents.OrderPaidMessage.Item item : payload.items()) {
             lifecycleService.commit(orderId, UUID.fromString(item.ticketTypeId()), item.quantity());
         }
     }

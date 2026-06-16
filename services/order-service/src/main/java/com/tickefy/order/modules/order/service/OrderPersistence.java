@@ -169,15 +169,18 @@ public class OrderPersistence {
                         null, // zoneId — nguồn Event (Dương), order chưa có
                         null)) // ticketTypeName — nguồn Event, order chưa có
                 .toList();
-        OrderEvents.OrderPaidMessage msg = new OrderEvents.OrderPaidMessage(
-                UUID.randomUUID().toString(),
-                OrderEvents.Type.ORDER_PAID,
-                now,
+        OrderEvents.OrderPaidPayload payload = new OrderEvents.OrderPaidPayload(
                 order.getId().toString(),
                 order.getUserId().toString(),
                 order.getConcertId().toString(),
                 now,
                 items);
+        OrderEvents.OrderPaidMessage msg = new OrderEvents.OrderPaidMessage(
+                UUID.randomUUID().toString(),
+                OrderEvents.Type.ORDER_PAID,
+                OrderEvents.EVENT_VERSION,
+                now,
+                payload);
         writeOutbox(orderId, OrderEvents.Type.ORDER_PAID, msg);
         log.info("Order PAID + OrderPaid outbox written orderId={}", orderId);
         return true;
@@ -218,13 +221,16 @@ public class OrderPersistence {
         List<OrderEvents.OrderReleaseItem> items = order.getItems().stream()
                 .map(i -> new OrderEvents.OrderReleaseItem(i.getTicketTypeId().toString(), i.getQuantity()))
                 .toList();
-        OrderEvents.OrderReleaseMessage msg = new OrderEvents.OrderReleaseMessage(
-                UUID.randomUUID().toString(),
-                eventType,
-                now,
+        OrderEvents.OrderReleasePayload payload = new OrderEvents.OrderReleasePayload(
                 order.getId().toString(),
                 order.getUserId().toString(),
                 items);
+        OrderEvents.OrderReleaseMessage msg = new OrderEvents.OrderReleaseMessage(
+                UUID.randomUUID().toString(),
+                eventType,
+                OrderEvents.EVENT_VERSION,
+                now,
+                payload);
         writeOutbox(orderId, eventType, msg);
         log.info("Order {} + {} outbox written orderId={}", target, eventType, orderId);
         return true;

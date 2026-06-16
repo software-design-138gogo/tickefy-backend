@@ -32,18 +32,30 @@ public class TicketService {
     }
 
     /**
-     * Idempotent ticket issuance. Re-issuing same orderItemId returns existing ticket.
+     * Idempotent ticket issuance for a single seat (seatSequence=1).
+     * Used by the internal issue path where an order item maps to exactly one ticket.
      */
     public TicketDto issueTicket(IssueRequest req) {
-        return ticketRepository.findByOrderItemId(req.orderItemId())
+        return issueTicket(req, 1);
+    }
+
+    /**
+     * Idempotent ticket issuance for one seat of an order item. With qty>1, an order item issues
+     * N tickets, one per seatSequence (1..N). Idempotency key = (orderItemId, seatSequence): re-issuing
+     * the same seat returns the existing ticket, so a redelivered OrderPaid does not create duplicates.
+     */
+    public TicketDto issueTicket(IssueRequest req, int seatSequence) {
+        return ticketRepository.findByOrderItemIdAndSeatSequence(req.orderItemId(), seatSequence)
                 .map(existing -> {
-                    log.info("Replay detected for orderItemId={} ticketId={}", req.orderItemId(), existing.getId());
+                    log.info("Replay detected for orderItemId={} seq={} ticketId={}",
+                            req.orderItemId(), seatSequence, existing.getId());
                     return toDto(existing);
                 })
                 .orElseGet(() -> {
                     Ticket ticket = new Ticket();
                     ticket.setOrderId(req.orderId());
                     ticket.setOrderItemId(req.orderItemId());
+                    ticket.setSeatSequence(seatSequence);
                     ticket.setUserId(req.userId());
                     ticket.setConcertId(req.concertId());
                     ticket.setTicketTypeId(req.ticketTypeId());
@@ -53,17 +65,18 @@ public class TicketService {
                     ticket.setQrToken(UUID.randomUUID().toString());
                     try {
                         Ticket saved = ticketRepository.saveAndFlush(ticket);
-                        log.info("Ticket issued ticketId={} orderId={} orderItemId={} concertId={}",
-                                saved.getId(), saved.getOrderId(), saved.getOrderItemId(), saved.getConcertId());
+                        log.info("Ticket issued ticketId={} orderId={} orderItemId={} seq={} concertId={}",
+                                saved.getId(), saved.getOrderId(), saved.getOrderItemId(),
+                                saved.getSeatSequence(), saved.getConcertId());
                         return toDto(saved);
                     } catch (DataIntegrityViolationException ex) {
-                        Ticket existing = ticketRepository.findByOrderItemId(req.orderItemId())
+                        Ticket existing = ticketRepository.findByOrderItemIdAndSeatSequence(req.orderItemId(), seatSequence)
                                 .orElseThrow(() -> new ApiException(
                                         ErrorCode.TICKET_ISSUE_UNAVAILABLE,
                                         "Ticket issue replay could not be resolved",
                                         HttpStatus.SERVICE_UNAVAILABLE));
-                        log.info("Concurrent replay resolved for orderItemId={} ticketId={}",
-                                req.orderItemId(), existing.getId());
+                        log.info("Concurrent replay resolved for orderItemId={} seq={} ticketId={}",
+                                req.orderItemId(), seatSequence, existing.getId());
                         return toDto(existing);
                     }
                 });

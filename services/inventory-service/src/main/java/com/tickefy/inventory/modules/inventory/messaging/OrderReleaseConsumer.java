@@ -33,12 +33,14 @@ public class OrderReleaseConsumer {
     }
 
     private void release(String source, InventoryEvents.OrderReleaseMessage event) {
-        if (event == null || event.orderId() == null || event.items() == null) {
-            throw new IllegalArgumentException(source + " missing orderId/items");
+        if (event == null || event.payload() == null
+                || event.payload().orderId() == null || event.payload().items() == null) {
+            throw new IllegalArgumentException(source + " missing payload.orderId/items");
         }
-        UUID orderId = UUID.fromString(event.orderId());
-        log.info("Received {} messageId={} orderId={} items={}", source, event.messageId(), orderId, event.items().size());
-        for (InventoryEvents.OrderReleaseMessage.Item item : event.items()) {
+        InventoryEvents.OrderReleaseMessage.Payload payload = event.payload();
+        UUID orderId = UUID.fromString(payload.orderId());
+        log.info("Received {} messageId={} orderId={} items={}", source, event.messageId(), orderId, payload.items().size());
+        for (InventoryEvents.OrderReleaseMessage.Item item : payload.items()) {
             lifecycleService.release(orderId, UUID.fromString(item.ticketTypeId()), item.quantity());
         }
     }

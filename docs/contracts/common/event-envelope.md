@@ -1342,14 +1342,14 @@ Queues:
         "ticketId": "d4c03fb6-67d8-4911-88c4-08eb3bcf99cc",
         "orderItemId": "d22c6016-740f-485c-815b-ac69cb375aae",
         "ticketTypeId": "ed979f53-b9a4-4597-a9be-29171c99c8d0",
-        "zoneName": "SVIP",
+        "ticketTypeName": "SVIP",
         "status": "ISSUED"
       },
       {
         "ticketId": "887a41c5-b5a5-40ac-afd6-21ffd24fd4d9",
         "orderItemId": "d22c6016-740f-485c-815b-ac69cb375aae",
         "ticketTypeId": "ed979f53-b9a4-4597-a9be-29171c99c8d0",
-        "zoneName": "SVIP",
+        "ticketTypeName": "SVIP",
         "status": "ISSUED"
       }
     ],
@@ -1370,7 +1370,74 @@ Queue: notification.tickets-issued
 
 ---
 
-### 14.4. `ArtistBioGenerated`
+### 14.4. `ConcertCancelled`
+
+```json
+{
+  "messageId": "8a8d6d6d-15bb-4db8-9565-a686c4f7cb95",
+  "eventType": "ConcertCancelled",
+  "eventVersion": "1.0",
+  "source": "event-service",
+  "occurredAt": "2026-06-16T13:00:00Z",
+  "correlationId": "req-8a3d3e99-455a-4920-b18f-08975f33c651",
+  "causationId": null,
+  "payload": {
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "cancelledAt": "2026-06-16T13:00:00Z",
+    "reason": "Organizer cancelled the concert."
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: concert.cancelled
+Queues:
+- ticket.concert-cancelled
+- notification.concert-cancelled
+```
+
+---
+
+### 14.5. `TicketCheckedIn` (optional)
+
+> Event này chỉ publish nếu có consumer cần realtime analytics/notification. Audit chính vẫn nằm trong `checkin-service` database.
+
+```json
+{
+  "messageId": "eced8908-3339-47dd-933c-9b1c08d138dd",
+  "eventType": "TicketCheckedIn",
+  "eventVersion": "1.0",
+  "source": "ticket-service",
+  "occurredAt": "2026-06-16T10:10:00Z",
+  "correlationId": "req-1ce71050-13ba-4405-8a5e-dbd772785d3d",
+  "causationId": null,
+  "payload": {
+    "ticketId": "d4c03fb6-67d8-4911-88c4-08eb3bcf99cc",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "userId": "508020c5-d766-4d3d-baf9-e0bb405698ad",
+    "staffId": "staff-uuid",
+    "gate": "GATE_A",
+    "checkedInAt": "2026-06-16T10:10:00Z"
+  }
+}
+```
+
+Payload không chứa raw `qrToken`.
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: ticket.checked-in
+Queue: analytics.ticket-checked-in   # optional / future
+```
+
+---
+
+### 14.6. `ArtistBioGenerated`
 
 ```json
 {
@@ -1403,7 +1470,7 @@ Queue: event.artist-bio-generated
 
 ---
 
-### 14.5. `VipGuestImportCompleted`
+### 14.7. `VipGuestImportCompleted`
 
 ```json
 {

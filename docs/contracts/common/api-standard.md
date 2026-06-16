@@ -58,8 +58,8 @@ X-Request-ID: <optional-client-request-id>
   "data": null,
   "error": {
     "httpStatus": 409,
-    "code": "DUPLICATE_REJECTED",
-    "message": "Vé đã được check-in.",
+    "code": "CONFLICT",
+    "message": "Trạng thái tài nguyên xung đột.",
     "details": {}
   },
   "requestId": "req-uuid",
@@ -79,14 +79,14 @@ Có thể giữ internal ref trong catalog (`ERR-CHK-002 → DUPLICATE_REJECTED`
 ## 7. HTTP status mapping
 | HTTP | Khi dùng | Ví dụ code |
 |---:|---|---|
-| 200 | Thành công / idempotent replay | `data.replayDetected=true` |
+| 200 | Thành công / idempotent replay / business result đã xử lý được | `data.replayDetected=true`, `data.result=\"DUPLICATE_REJECTED\"` |
 | 201 | Tạo mới | order, phát hành vé |
 | 202 | Nhận job async | CSV import accepted (🔭 chưa implement — csv-ingestion skeleton) |
-| 400 | Validation / request sai format | `VALIDATION_ERROR` |
+| 400 | Validation / request sai format | `VALIDATION_ERROR`, `INVALID_QR_TOKEN` khi QR malformed |
 | 401 | Chưa xác thực / token sai | `UNAUTHORIZED`, `INVALID_TOKEN`, `TOKEN_REVOKED`, `INVALID_CREDENTIALS` |
 | 403 | Đã xác thực, không đủ quyền | `FORBIDDEN`, `SALE_WINDOW_CLOSED` |
-| 404 | Không tìm thấy | `*_NOT_FOUND`, `INVALID_QR_TOKEN` |
-| 409 | Conflict / trùng / lệch trạng thái | `DUPLICATE_REJECTED`, `TICKET_SOLD_OUT`, `LAST_ADMIN` |
+| 404 | Không tìm thấy | `*_NOT_FOUND` |
+| 409 | Conflict hệ thống hoặc command không thể hoàn tất vì state hiện tại | `TICKET_SOLD_OUT`, `LAST_ADMIN`, `CONFLICT` |
 | 410 | Hết hạn | `RESERVATION_EXPIRED`, `SNAPSHOT_EXPIRED` |
 | 422 | Đúng format nhưng transition không hợp lệ | `INVALID_STATE_TRANSITION`, `PER_USER_LIMIT_EXCEEDED` |
 | 429 | Rate limit | `RATE_LIMIT_EXCEEDED` |
@@ -95,8 +95,47 @@ Có thể giữ internal ref trong catalog (`ERR-CHK-002 → DUPLICATE_REJECTED`
 
 > ⚠️ **KHÔNG dùng `TOKEN_EXPIRED`.** Backend auth-service trả `INVALID_TOKEN` (hoặc `TOKEN_REVOKED`) cho token hết hạn/bị thu hồi — KHÔNG có mã `TOKEN_EXPIRED`. Client refresh trên **BẤT KỲ 401** (thử 1 lần, loại trừ endpoint refresh), không key vào một mã cụ thể.
 > Không trả `200 OK` cho lỗi hệ thống/validation/auth.
+>
+> ✅ **Check-in business rejection là kết quả nghiệp vụ, không phải API error:** duplicate scan, wrong concert, cancelled/refunded ticket trả `HTTP 200` + `success=true` + `data.result` theo `./checkin-result-catalog.md`. Chỉ dùng error envelope cho auth/permission/validation/system/dependency failures.
 
-## 8. Validation error details
+## 8. Business result vs API error
+
+Một endpoint có thể xử lý request hợp lệ và trả về kết quả nghiệp vụ không thành công. Trường hợp này **không dùng** `success=false` nếu hệ thống đã xử lý request đúng cách.
+
+Áp dụng bắt buộc cho check-in online/offline:
+
+| Case | HTTP | Envelope | Client branch |
+|---|---:|---|---|
+| Vé hợp lệ | 200 | `success=true`, `data.result=\"ACCEPTED\"` | Cho khách vào |
+| Vé đã check-in | 200 | `success=true`, `data.result=\"DUPLICATE_REJECTED\"` | Từ chối, cảnh báo duplicate |
+| Vé sai concert | 200 | `success=true`, `data.result=\"WRONG_EVENT\"` | Từ chối, hiển thị sai sự kiện |
+| Vé cancelled/refunded | 200 | `success=true`, `data.result=\"CANCELLED_REJECTED\"` / `\"REFUNDED_REJECTED\"` | Từ chối |
+| QR malformed, body sai schema | 400 | `success=false`, `error.code=\"VALIDATION_ERROR\"` hoặc `\"INVALID_QR_TOKEN\"` | Báo lỗi request |
+| Staff thiếu quyền | 403 | `success=false`, `error.code=\"FORBIDDEN\"` | Forbidden/login lại |
+| Ticket Service down | 503 | `success=false`, `error.code=\"SERVICE_UNAVAILABLE\"` | Retry/backoff |
+
+Canonical check-in result response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "result": "DUPLICATE_REJECTED",
+    "ticketId": "ticket-uuid",
+    "concertId": "concert-uuid",
+    "checkedInAt": null,
+    "replayDetected": false,
+    "message": "Vé đã được check-in trước đó."
+  },
+  "error": null,
+  "requestId": "req-uuid",
+  "timestamp": "2026-06-16T10:00:00Z"
+}
+```
+
+Client/mobile phải branch bằng `data.result` cho check-in business result và bằng `error.code` cho API error.
+
+## 9. Validation error details
 ```json
 {
   "success": false, "data": null,
@@ -110,7 +149,7 @@ Có thể giữ internal ref trong catalog (`ERR-CHK-002 → DUPLICATE_REJECTED`
 - Client map `details[fieldName]` vào form field error.
 - KHÔNG parse `message` để đoán field lỗi.
 
-## 9. Pagination
+## 10. Pagination
 Request: `GET /api/events?page=0&size=20&sort=eventDate,asc`
 Response `data`:
 ```json
@@ -118,7 +157,7 @@ Response `data`:
 ```
 > ⚠️ **Code cần đồng bộ:** controller hiện trả Spring `Page<T>` trực tiếp (`UserController.listUsers`, `OrderController.getMyOrders`) → JSON serialize thành `{content, totalElements, totalPages, number, size, ...}`, KHÁC shape `{items, total, ...}` ở trên. Doc giữ shape `{items,...}` là target — backend cần wrap `Page`→`PagedResponse` (Spring `PageImpl` JSON còn unstable). (Sửa code ngoài phạm vi task doc này.)
 
-## 10. Idempotency & replay
+## 11. Idempotency & replay
 - Command nhạy (tạo order) gửi key idempotent (hiện ở body `idempotencyKey` — xem §3); backend lưu key UNIQUE. **(✅ mechanism đã code:** `OrderEntity.idempotencyKey` UNIQUE + resume theo status.)
 - 🔭 **PLANNED (response shape chưa code):** gửi lại cùng key sau khi thao tác trước đã thành công → **không phải lỗi**: trả lại kết quả cũ, **HTTP 200** + `data.replayDetected=true`. Hiện code resume trả order cũ nhưng CHƯA gắn cờ `replayDetected`/chuẩn-hoá 200. Giữ là target.
 ```json
@@ -126,17 +165,18 @@ Response `data`:
   "error": null, "requestId": "req-uuid", "timestamp": "2026-06-16T10:00:00Z" }
 ```
 
-## 11. Request tracing
+## 12. Request tracing
 - Nhận hoặc tự sinh `X-Request-ID` → echo response header + body → gắn MDC/log.
 - **Propagate** sang HTTP downstream và message broker.
 - Lưu ý: `requestId` (tracing) khác `messageId` (dedup event). Event có `messageId` riêng trong envelope — xem `./event-envelope.md`.
 
-## 12. Quy tắc client (frontend / mobile / admin)
+## 13. Quy tắc client (frontend / mobile / admin)
 1. Branch logic bằng `error.code`, KHÔNG `error.message`.
-2. Hiển thị `requestId` cho lỗi 5xx (để báo lỗi/trace).
-3. Map `VALIDATION_ERROR.details` vào form fields.
-4. `data === null` là invariant khi `success === false`.
-5. Ưu tiên UX message phía client (vd `resolveErrorMessage(code)`) thay vì raw backend message. Mã lạ ngoài catalog → message chung, KHÔNG vỡ.
+2. Branch check-in business result bằng `data.result`, KHÔNG parse `data.message`.
+3. Hiển thị `requestId` cho lỗi 5xx (để báo lỗi/trace).
+4. Map `VALIDATION_ERROR.details` vào form fields.
+5. `data === null` là invariant khi `success === false`.
+6. Ưu tiên UX message phía client (vd `resolveErrorMessage(code)` / `resolveCheckinResultMessage(result)`) thay vì raw backend message. Mã lạ ngoài catalog → message chung, KHÔNG vỡ.
 
 Canonical TypeScript (dùng ở `@tickefy/shared`):
 ```ts
@@ -155,21 +195,23 @@ export type ApiResponse<TData> = {
 };
 ```
 
-## 13. Quy tắc backend implementation
+## 14. Quy tắc backend implementation
 - Trả response qua helper `ApiResponse<T>` chung.
 - Map domain exception ở `GlobalExceptionHandler` (không try/catch rải rác).
 - Controller **mỏng**: validate input (`@Valid`), gọi service/use-case, trả DTO. Business decision ở service layer.
 - KHÔNG expose entity trực tiếp; KHÔNG trả stack trace / exception class name.
 - Error code giữ trong catalog/enum ổn định; gắn `requestId` vào log MDC.
+- Check-in expected rejection phải trả `success=true` + `data.result` nếu request hợp lệ và staff được phép scan.
 - Enum state máy đúng contract (vd Payment state = `SUCCESS`, KHÔNG `SUCCEEDED`; Order state machine theo `../services/order-service.md`).
 
-## 14. Logging safety
+## 15. Logging safety
 - **Được log:** `requestId, userId, staffId, concertId, ticketId, orderId, deviceId, gate, result code`.
-- **Phải mask:** `qrToken, JWT, password, secret, payment signature, full card/bank data`. QR token chỉ log prefix (`qrToken=abc12345...`), không full trong log thường.
+- **Phải mask:** `qrToken, JWT, password, secret, payment signature, full card/bank data`. QR token chỉ log prefix/masked value (`qrTokenMasked=abc12345...`), không full trong log thường.
 
-## 15. Tài liệu liên quan
+## 16. Tài liệu liên quan
 - `../services/` — contract endpoint từng service (SSOT per-service, đang điền).
 - `../flows/` — contract luồng cross-service (purchase, payment-ticket, check-in...).
 - `./event-envelope.md` — envelope + contract event.
 - `./error-catalog.md` — danh mục mã lỗi.
+- `./checkin-result-catalog.md` — danh mục result code cho online/offline check-in.
 - `./auth-contract.md` — auth / JWT / role.

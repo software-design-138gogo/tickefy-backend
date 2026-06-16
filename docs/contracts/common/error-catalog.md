@@ -75,16 +75,54 @@ Chủ yếu dùng **common**: `CONFLICT` (state machine guard order: CREATED→R
 ### `event-service` (Dương) — 🔭 PLANNED (CRUD ở branch `feat/event-service`, publish event TODO)
 Dùng `RESOURCE_NOT_FOUND`/`CONCERT_NOT_FOUND` cho concert sai. Bổ sung khi merge + build Phase 2.
 
-### `e-ticket-service` / `checkin-service` / snapshot / sync (Hòa) — 🔭 OPEN (chờ Hòa chốt (A)/(B))
-⚠️ **SSOT = catalog của Hòa** (`error-catalog` phạm vi Hòa) — gồm `ERR-TCK-*`, `ERR-CHK-*`, `RES-CHK-*` (result code check-in), `ERR-SNP-*`, `ERR-SYNC-*` + mobile UX mapping + logging fields + sync response shape.
-**KHÔNG nhân bản ở đây để tránh drift.** Quyết định team (Hòa chọn):
-- (A) Hòa dời các mã (ERR-TCK/CHK/SNP/SYNC + RES-CHK) **vào file này** (section Hòa) — phần UX/logging/sync-shape giữ ở doc check-in của Hòa; HOẶC
-- (B) Giữ catalog Hòa làm SSOT cho domain đó, file này trỏ sang.
-> Tham chiếu nhanh các mã quan trọng client dùng chung: `INVALID_QR_TOKEN` (404), `DUPLICATE_REJECTED` (409), `WRONG_EVENT` (409), `CANCELLED_TICKET`/`REFUNDED_TICKET` (409), `SNAPSHOT_EXPIRED` (410), `SYNC_CONFLICT_DETECTED` (409). Chi tiết: catalog Hòa.
+### `ticket-service` / `checkin-service` / snapshot / sync (Hòa)
+
+> `ticket-service` là tên canonical trong contract; implementation folder hiện tại có thể là `e-ticket-service` (xem `./naming-convention.md`).
+>
+> Bảng dưới đây chỉ chứa **API error codes** dùng khi `success=false`. Expected scan rejection như duplicate/wrong concert/cancelled/refunded trả `HTTP 200` + `success=true` + `data.result` theo `./checkin-result-catalog.md`.
+
+#### Ticket API errors
+
+| Ref | HTTP | Code | Message | Khi xảy ra | Client action |
+|---|---:|---|---|---|---|
+| ERR-TCK-001 | 404 | `TICKET_NOT_FOUND` | Không tìm thấy vé. | `ticketId` không tồn tại hoặc user không được xem vé đó | Not found / refresh |
+| ERR-TCK-002 | 400 | `INVALID_QR_TOKEN` | QR token không hợp lệ. | QR malformed, không decode/parse được hoặc thiếu required data | Báo QR không hợp lệ |
+| ERR-TCK-003 | 409 | `INVALID_TICKET_STATE` | Trạng thái vé không hợp lệ. | Transition nội bộ không hợp lệ ngoài luồng check-in business result | Refresh trạng thái |
+
+#### Snapshot API errors
+
+| Ref | HTTP | Code | Message | Khi xảy ra | Client action |
+|---|---:|---|---|---|---|
+| ERR-SNP-001 | 404 | `SNAPSHOT_NOT_FOUND` | Không tìm thấy snapshot. | `snapshotId` không tồn tại hoặc đã bị xoá | Tải snapshot mới |
+| ERR-SNP-002 | 410 | `SNAPSHOT_EXPIRED` | Snapshot đã hết hạn. | Staff dùng snapshot quá hạn | Tải snapshot mới |
+| ERR-SNP-003 | 403 | `SNAPSHOT_FORBIDDEN` | Không có quyền tải snapshot này. | Staff không thuộc concert/gate được phân quyền | Forbidden |
+
+#### Offline sync API errors
+
+| Ref | HTTP | Code | Message | Khi xảy ra | Client action |
+|---|---:|---|---|---|---|
+| ERR-SYNC-001 | 400 | `SYNC_BATCH_INVALID` | Batch đồng bộ không hợp lệ. | Thiếu `syncBatchId`, `deviceId`, `concertId` hoặc items sai schema | Sửa payload / báo lỗi app |
+| ERR-SYNC-002 | 413 | `SYNC_BATCH_TOO_LARGE` | Batch đồng bộ vượt giới hạn. | Số item vượt giới hạn mỗi request | Chia nhỏ batch |
+| ERR-SYNC-003 | 503 | `TICKET_SERVICE_UNAVAILABLE` | Ticket Service tạm thời không khả dụng. | Checkin không gọi được ticket-service | Retry/backoff |
+| ERR-SYNC-004 | 409 | `SYNC_BATCH_IN_PROGRESS` | Batch đang được xử lý. | Request replay tới khi batch cũ chưa hoàn tất | Poll/retry sau |
+
+#### Check-in result reference
+
+Business result codes không nằm trong `error.code`; xem `./checkin-result-catalog.md` cho:
+
+- `ACCEPTED`
+- `DUPLICATE_REJECTED`
+- `WRONG_EVENT`
+- `CANCELLED_REJECTED`
+- `REFUNDED_REJECTED`
+- `INVALID_QR_REJECTED`
+- `OFFLINE_ACCEPTED_PENDING_SYNC`
+- `SYNC_ACCEPTED`
+- `SYNC_CONFLICT`
 
 ## 4. Tài liệu liên quan
-- `./api-standard.md` — format envelope/error.
+- `./api-standard.md` — format envelope/error và rule business result vs API error.
+- `./checkin-result-catalog.md` — result code nghiệp vụ cho online/offline check-in.
 - `../services/` — contract endpoint từng service.
 - `./event-envelope.md` — contract event.
 - `./auth-contract.md` §6 — excerpt mã auth (full ở đây).
-- Catalog Hòa (e-ticket/checkin/snapshot/sync) — SSOT domain Hòa tới khi chốt (A)/(B).

@@ -111,7 +111,38 @@ Tên canonical được dùng trong:
 * Service discovery.
 * Tài liệu integration.
 
+Ghi chú transition cho E-Ticket:
+
+```text
+Canonical contract name: ticket-service
+Current implementation folder nếu code chưa rename: services/e-ticket-service
+```
+
+Contract mới phải dùng `ticket-service`; nếu tài liệu cần nhắc implementation drift thì ghi rõ alias, không trộn hai tên như hai service khác nhau.
+
 Không thêm số instance hoặc tên thành viên vào tên service.
+
+### 3.3. Ticket và check-in
+
+Các contract mới trong ticket/check-in domain phải dùng tên sau:
+
+| Khái niệm | Tên chuẩn | Không dùng |
+|---|---|---|
+| Concert được check-in | `concertId` | `eventId` |
+| Tên loại vé hiển thị | `ticketTypeName` | `ticketName`, `zoneCode` nếu dùng để hiển thị tên vé |
+| Role nhân viên soát vé | `CHECKIN_STAFF` | `STAFF` |
+| Service sở hữu ticket state | `ticket-service` | `e-ticket-service` trong contract canonical |
+| Service điều phối scan/sync | `checkin-service` | `check-in-service`, `checkInService` |
+| URL resource check-in | `/api/checkins` hoặc `/api/checkins/...` | `/api/check-in`, `/api/checkIn` |
+| QR token public/log-safe | `qrTokenMasked` | raw `qrToken` trong public response/log |
+| Offline sync batch | `syncBatchId` | `batchId` mơ hồ |
+| Offline scan item | `offlineScanId` | `scanId` nếu payload có nhiều loại scan |
+
+Quy tắc QR:
+
+* Raw `qrToken` chỉ được dùng nội bộ khi service cần verify.
+* Public API, snapshot, event và log ưu tiên `qrTokenMasked` hoặc hash/derived value đủ an toàn cho use case.
+* Không đưa full QR token vào event nếu consumer không bắt buộc cần.
 
 ---
 
@@ -180,6 +211,7 @@ Ví dụ:
 
 ```text
 qrToken
+qrTokenMasked
 accessToken
 refreshToken
 idempotencyKey
@@ -194,6 +226,16 @@ tokenId
 ```
 
 trừ khi đối tượng thật sự có một entity ID riêng.
+
+Phân biệt bảo mật:
+
+| Field | Phạm vi dùng |
+|---|---|
+| `qrToken` | Nội bộ ticket-service/checkin-service khi cần verify |
+| `qrTokenMasked` | Public response, snapshot, mobile display, log |
+| `qrTokenHash` | Lưu trữ/lookup nếu thiết kế dùng hash để tránh lưu raw token |
+
+Không expose raw `qrToken` trong public API, event hoặc log thường.
 
 ---
 

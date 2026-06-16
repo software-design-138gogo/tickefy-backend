@@ -22,8 +22,17 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMqConfig {
 
+    /** Dead-letter routing key — per-QUEUE (NOT order.paid.dlq). order.paid has 2 consumers
+     * (inventory + e-ticket); a shared <rk>.dlq would route e-ticket's poison into inventory's DLQ
+     * too (tickefy.dlx is topic). A queue-name-based key keeps each service's DLQ isolated. */
+    private static final String ORDER_PAID_DLQ = "ticket-service.order-paid.queue.dlq";
+    private static final String ORDER_PAID_DL_RK = "ticket-service.order-paid.dlq";
+
     @Value("${app.messaging.exchange:tickefy.exchange}")
     private String exchange;
+
+    @Value("${app.messaging.dlx:tickefy.dlx}")
+    private String dlxName;
 
     @Value("${app.messaging.queue.order-paid:ticket-service.order-paid.queue}")
     private String orderPaidQueue;
@@ -35,11 +44,24 @@ public class RabbitMqConfig {
         return new TopicExchange(exchange, true, false);
     }
 
+    @Bean
+    public TopicExchange tickefyDlx() {
+        return new TopicExchange(dlxName, true, false);
+    }
+
     // ── Queues ────────────────────────────────────────────────────────────────
 
     @Bean
     public Queue orderPaidQueue() {
-        return QueueBuilder.durable(orderPaidQueue).build();
+        return QueueBuilder.durable(orderPaidQueue)
+                .deadLetterExchange(dlxName)
+                .deadLetterRoutingKey(ORDER_PAID_DL_RK)
+                .build();
+    }
+
+    @Bean
+    public Queue orderPaidDlq() {
+        return QueueBuilder.durable(ORDER_PAID_DLQ).build();
     }
 
     // ── Bindings ──────────────────────────────────────────────────────────────
@@ -47,6 +69,11 @@ public class RabbitMqConfig {
     @Bean
     public Binding orderPaidBinding(Queue orderPaidQueue, TopicExchange tickefyExchange) {
         return BindingBuilder.bind(orderPaidQueue).to(tickefyExchange).with("order.paid");
+    }
+
+    @Bean
+    public Binding orderPaidDlqBinding(Queue orderPaidDlq, TopicExchange tickefyDlx) {
+        return BindingBuilder.bind(orderPaidDlq).to(tickefyDlx).with(ORDER_PAID_DL_RK);
     }
 
     // ── Converters ────────────────────────────────────────────────────────────

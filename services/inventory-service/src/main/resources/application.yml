@@ -28,6 +28,12 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       timeout: 2000ms
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
 
 server:
   port: ${SERVER_PORT:8083}
@@ -60,6 +66,9 @@ app:
     validate-concert: ${VALIDATE_CONCERT:false}
     lua:
       reserve-script: classpath:lua/reserve.lua
+  messaging:
+    exchange: ${MESSAGING_EXCHANGE:tickefy.exchange}
+    dlx: ${MESSAGING_DLX:tickefy.dlx}
 
 logging:
   level:

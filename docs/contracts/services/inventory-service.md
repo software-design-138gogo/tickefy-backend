@@ -10,7 +10,10 @@ lastUpdated: 2026-06-16
 # Service Specification — `inventory-service`
 
 > Nhãn: ✅ khớp implement (session) · 🔭 PLANNED/Pass 2 (chưa code, cố ý) · ⚠️ VERIFY (tái dựng — Claude Code đối chiếu repo).
-> ⚠️ Trạng thái build (báo cáo integration v2): **LIVE (P1)** = ticket-type CRUD + availability + **reserve** (Lua atomic). **CHƯA code (Pass 2, 🔭)** = consume OrderPaid/OrderPaymentFailed/OrderExpired (commit/release qua event) + TTL release worker + consume Concert*.
+> ✅ Trạng thái build (Pass 2 wired + verified compose dev, branch `feature/pass2-async`):
+> - **LIVE (P1)** = ticket-type CRUD + availability + reserve (Lua atomic).
+> - **✅ Pass 2 DONE (verified):** consume `order.paid` → **commit** (RESERVED→COMMITTED, sold+=qty); consume `order.payment.failed`/`order.expired` → **release** (RESERVED→RELEASED, trả stock+quota). DLQ + requeue=false + idempotent status-guard.
+> - **🔭 CÒN LẠI:** consume `ConcertPublished`/`ConcertCancelled` (chờ Event/Dương); reconciliation job. *(KHÔNG có TTL worker nội bộ — release do **event `order.expired` từ Order** điều phối, xem §9.)*
 
 ## 1. Identity
 | Item | Value |
@@ -68,7 +71,7 @@ lastUpdated: 2026-06-16
 |---|---|
 | PostgreSQL | **Source of truth** (ticket_types, inventory counts, reservations) |
 | Redis | Cổng atomic Lua (stock + per-user quota) + cache availability |
-| RabbitMQ | 🔭 Consume OrderPaid/OrderPaymentFailed/OrderExpired/Concert* — **Pass 2, chưa wire** |
+| RabbitMQ | ✅ Consume order.paid/order.payment.failed/order.expired (amqp wired, DLQ, verified). 🔭 Concert* chờ Event |
 | Object Storage | (none) |
 
 ## 5. Public APIs
@@ -91,34 +94,35 @@ lastUpdated: 2026-06-16
 |---|---|---|---|---|
 | (none) | — | — | — | Inventory KHÔNG publish — phản hồi HTTP đồng bộ ✅ |
 
-## 8. Events consumed — 🔭 CHƯA WIRE (Pass 2). Đây là kênh DUY NHẤT để commit/release (KHÔNG HTTP — §6)
+## 8. Events consumed — ✅ order.* WIRED (Pass 2 verified). Kênh DUY NHẤT để commit/release (KHÔNG HTTP — §6)
 | Event | Producer | Queue | Behavior | Idempotency key |
 |---|---|---|---|---|
-| `OrderPaid` | order | `inventory-service.order-paid.queue` | RESERVED→COMMITTED, sold+=qty, reserved-=qty | reservation/order_item — 🔭 Pass 2 |
-| `OrderPaymentFailed` | order | `inventory-service.order-payment-failed.queue` | Release reservation | 🔭 Pass 2 |
-| `OrderExpired` | order | `inventory-service.order-expired.queue` | Release reservation | 🔭 Pass 2 |
+| `OrderPaid` (RK `order.paid`) | order | `inventory-service.order-paid.queue` | RESERVED→COMMITTED, sold+=qty, reserved-=qty | ✅ status-guard (đã COMMITTED → skip), verified |
+| `OrderPaymentFailed` (RK `order.payment.failed`) | order | `inventory-service.order-payment-failed.queue` | Release: RESERVED→RELEASED, reserved-=qty + Redis stock+quota trả lại | ✅ status-guard, verified |
+| `OrderExpired` (RK `order.expired`) | order | `inventory-service.order-expired.queue` | Release (như trên) | ✅ status-guard, verified |
 | `ConcertPublished` | event (Dương) | `inventory-service.concert-published.queue` | Chuẩn bị counter | 🔭 chờ Event |
 | `ConcertCancelled` | event (Dương) | `inventory-service.concert-cancelled.queue` | **Ngừng bán khẩn cấp** (khóa tạo reservation mới); release đơn cũ do Order điều phối | idempotent theo concertId — 🔭 chờ Event |
-> ⚠️ Khi wire Pass 2: **thêm DLQ + `setDefaultRequeueRejected(false)`** (tránh poison message — bài học từ e-ticket Hòa). Routing key/queue theo api-contracts §5.
+> ✅ **DLQ + `setDefaultRequeueRejected(false)`** đã configure cho cả 3 order.* queue (verified: poison→DLQ, không requeue loop). Consume body **FLAT** (khớp order.paid publish — xem §17). order.* deserialize `{messageId,orderId,items[{ticketTypeId,quantity}]}` (bỏ qua field thừa zoneId/ticketTypeName).
 
 ## 9. State machines — reservation
 ```mermaid
 stateDiagram-v2
     [*] --> RESERVED: reserve (Lua atomic OK)
-    RESERVED --> COMMITTED: OrderPaid (commit)
-    RESERVED --> RELEASED: TTL hết hạn (15') / OrderPaymentFailed / OrderExpired
+    RESERVED --> COMMITTED: order.paid (commit)
+    RESERVED --> RELEASED: order.payment.failed / order.expired
     COMMITTED --> [*]
     RELEASED --> [*]
 ```
 | Current | Action/Event | Next | Side effects |
 |---|---|---|---|
-| (none) | reserve OK | RESERVED | Redis: DECRBY stock, INCRBY user quota; PG: insert reservation, reserved_count+=qty, expires_at=now+15' |
-| RESERVED | OrderPaid | COMMITTED | sold_count+=qty, reserved_count-=qty (idempotent nếu đã COMMITTED) — 🔭 Pass 2 |
-| RESERVED | TTL / payment-failed / expired | RELEASED | Redis: INCRBY stock, DECRBY quota; PG: reserved_count-=qty; invalidate availability — 🔭 (event-driven Pass 2; TTL worker 🔭) |
+| (none) | reserve OK | RESERVED | Redis: DECRBY stock, INCRBY user quota; PG: insert reservation, reserved_qty+=qty, expires_at=now+TTL |
+| RESERVED | `order.paid` (commit) | COMMITTED | ✅ sold_qty+=qty, reserved_qty-=qty (idempotent đã COMMITTED → skip) — **verified** |
+| RESERVED | `order.payment.failed` / `order.expired` (release) | RELEASED | ✅ PG reserved_qty-=qty; Redis stock+=qty, user-quota-=qty (idempotent đã RELEASED → skip) — **verified** |
+> ⚠️ **KHÔNG có TTL sweeper nội bộ inventory.** Release vé hết hạn do **Order điều phối**: Order expire worker → publish `order.expired` → inventory consume → release. (Order là chủ vòng đời order; inventory chỉ phản ứng theo event.)
 
 ## 10. Reliability
 ### Idempotency
-- Commit idempotent: reservation đã COMMITTED → bỏ qua (không trừ 2 lần). Release idempotent. (🔭 khi wire consume.)
+- ✅ Commit idempotent: reservation đã COMMITTED → bỏ qua (không trừ 2 lần). Release idempotent (đã RELEASED → skip; đã COMMITTED → KHÔNG release). Status-guard trong `ReservationLifecycleService` — **verified**. 🔭 hardening: chưa có `processed_messages(messageId)` (xem §17).
 ### Retry / Timeout / Circuit breaker
 - Reserve Lua ~microsecond. Không CB (validate Event 🔭).
 ### Transaction boundaries
@@ -149,7 +153,7 @@ stateDiagram-v2
 | `DB_SCHEMA` | ✅ | `inventory_service` | Schema |
 | `REDIS_HOST`/`REDIS_PORT` | ✅ | redis / 6379 | Lua counters + availability (`application.yml:28-29`) |
 | `VALIDATE_CONCERT` | optional | `false` (default) | Bật validate concertId qua Event (`application.yml:60`) — hiện skip |
-| `SPRING_RABBITMQ_*` | 🔭 | rabbitmq | Khi wire consume Pass 2 |
+| `RABBITMQ_HOST`/`RABBITMQ_PORT`/`RABBITMQ_USERNAME`/`RABBITMQ_PASSWORD` | ✅ | rabbitmq / 5672 | AMQP consume order.* (`application.yml` `spring.rabbitmq.*`) |
 | `APP_DEV_SEED_ENABLED` | optional | `true` (chỉ dev) | Bật DevSeedRunner (seed 1 concert + 5 ticket type) |
 | reservation TTL config | ⚠️ | `PT15M` | TTL giữ vé |
 
@@ -165,9 +169,9 @@ stateDiagram-v2
 | Hết vé khi reserve | Lua SOLD_OUT → 409 | `TICKET_SOLD_OUT` ✅ |
 | Vượt per-user limit | Lua LIMIT_EXCEEDED → 422 (kèm remaining) | `PER_USER_LIMIT_EXCEEDED` ✅ |
 | Ngoài giờ bán | 403 | `SALE_WINDOW_CLOSED` ✅ |
-| Reservation quá 15' chưa thanh toán | Worker release, trả vé + quota | 🔭 `RESERVATION_EXPIRED` (410) — **chưa throw** (TTL worker Pass 2) |
-| Payment failed / order expired | Release reservation | 🔭 Pass 2 (consume event) |
-| OrderPaid gửi trùng | Idempotent — đã COMMITTED bỏ qua | 🔭 Pass 2 |
+| Reservation quá hạn chưa thanh toán | Order publish `order.expired` → inventory release, trả vé + quota | ✅ verified (release qua event, KHÔNG TTL worker nội bộ) |
+| Payment failed / order expired | Release reservation | ✅ verified (consume order.payment.failed / order.expired) |
+| OrderPaid gửi trùng | Idempotent — đã COMMITTED bỏ qua | ✅ verified (status-guard) |
 | Concert không tồn tại khi tạo ticket type | code throw `RESOURCE_NOT_FOUND` (404) | `RESOURCE_NOT_FOUND` ✅ (đã chốt) |
 | ConcertCancelled | Ngừng bán khẩn cấp (khóa reservation mới) | 🔭 chờ Event |
 | Redis crash | AOF khôi phục; 🔭 reconcile job từ PG chưa code (chỉ M3 seed-if-missing rebuild key) | 🔭 |
@@ -178,13 +182,13 @@ stateDiagram-v2
 - [ ] Health check pass.
 - [x] Swagger available. ✅ (springdoc)
 - [ ] API contract tests pass (ticket-type + availability + reserve).
-- [ ] 🔭 Event contract tests — consume OrderPaid/etc CHƯA wire (Pass 2).
-- [ ] Idempotent commit (OrderPaid ×3 → sold +1) — 🔭 Pass 2.
+- [x] ✅ Event contract: consume order.paid (commit) / order.payment.failed + order.expired (release) — **verified compose dev**.
+- [x] ✅ Idempotent commit (order.paid ×3 → sold +1, status-guard).
 - [ ] Over-selling: 10k request / 200 vé → đúng 200, không 201 (AC1 inventory.md).
 - [ ] Per-user limit không vượt dù song song (AC2).
 - [ ] Docker image builds. · `.env.example` complete.
 - [ ] 🔭 Gateway route — gateway chưa build.
-- [ ] 🔭 Queue/binding/**DLQ** configured — Pass 2 (nhớ DLQ + requeue-false).
+- [x] ✅ Queue/binding/**DLQ** configured (3 order.* queue + DLQ, requeue=false, poison→DLQ verified).
 - [ ] Integration test Postgres + Redis pass.
 
 ## 17. Open questions
@@ -193,6 +197,10 @@ stateDiagram-v2
 - ✅ Validate concertId qua Event: **skip** mặc định (`VALIDATE_CONCERT=false`); bật khi Event build.
 - ✅ PG fallback đã code; 🔭 reconciliation job chưa code.
 - ✅ INV-005 = `RESOURCE_NOT_FOUND` (đã chốt error-catalog).
-- 🔭 Pass 2: wire consume OrderPaid/PaymentFailed/Expired + TTL worker + **DLQ + setDefaultRequeueRejected(false)**.
+- ✅ **Pass 2 consume DONE + verified** (branch `feature/pass2-async`): order.paid (commit) / order.payment.failed + order.expired (release) + DLQ + idempotent status-guard. Release qua event Order, KHÔNG TTL worker nội bộ.
+- ⚠️ **Event shape SPLIT (cần nhóm chốt):** order.* consume **FLAT** (khớp order.paid publish của Order — đồng bộ với consumer e-ticket Hòa). payment.* (phía Order) = ENVELOPE. Inconsistency toàn hệ → **flag Hòa/Dương: chốt envelope-vs-flat chung**.
+- ⚠️ **OrderPaid item shape (Hòa chốt):** hiện superset `{orderItemId,ticketTypeId,quantity,zoneId:null,ticketTypeName:null}`, test qty=1. Inventory chỉ dùng `ticketTypeId`+`quantity` (OK); e-ticket cần per-seat — chốt chung.
+- 🔭 **Hardening idempotency:** chưa có `processed_messages(messageId)`; status-guard đủ happy-path; race 2 messageId đồng thời chưa cover.
+- 🔭 Concert* consume (ConcertPublished/ConcertCancelled) + reconciliation job — chờ Event/sau.
 - Lock strategy: Redis+Lua (Hiệp) vs Pessimistic Lock (Hòa) — team chốt 1 cơ chế (không để 2 cùng chạy).
 - Path ticket-type dưới `/events/` (trùng namespace Event) — giữ hay đổi?

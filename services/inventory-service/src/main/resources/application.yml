@@ -43,6 +43,9 @@ management:
         enabled: true
 
 app:
+  dev:
+    seed:
+      enabled: ${APP_DEV_SEED_ENABLED:false}  # dev-only inventory seeder; prod image leaves unset -> off
   database:
     schema: ${DB_SCHEMA:public}
   jwt:

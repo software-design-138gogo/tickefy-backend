@@ -6,10 +6,13 @@ spring:
     password:
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: create-drop
   flyway:
     enabled: false
 
 app:
   database:
     schema: public
+  jwt:
+    public-key: classpath:keys/jwt-dev-public.pem
+    issuer: tickefy-auth

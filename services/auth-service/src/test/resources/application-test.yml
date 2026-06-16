@@ -1,15 +1,65 @@
 spring:
+  # Datasource will be overridden by @DynamicPropertySource in BaseIntegrationTest
   datasource:
-    url: jdbc:h2:mem:auth_service_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: jdbc:postgresql://localhost:5432/test
+    username: test
+    password: test
+    driver-class-name: org.postgresql.Driver
   jpa:
+    open-in-view: false
     hibernate:
-      ddl-auto: none
+      # validate: Flyway runs V1+V2 on Testcontainers Postgres; Hibernate validates schema.
+      # BUG-2 fix confirmed: token_hash is now VARCHAR(64) in V2 DDL, matching entity @Column(length=64).
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: public
+        format_sql: false
+        jdbc:
+          time_zone: UTC
   flyway:
-    enabled: false
+    enabled: true
+    schemas: public
+    default-schema: public
+    locations: classpath:db/migration
+    # Disable ${...} placeholder substitution so comment-only references to ${DB_SCHEMA}
+    # in migration SQL files do not cause "No value provided" errors.
+    placeholder-replacement: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+
+server:
+  port: 0
 
 app:
   database:
     schema: public
+  jwt:
+    issuer: tickefy-auth
+    private-key: classpath:keys/jwt-dev-private.pem
+    public-key: classpath:keys/jwt-dev-public.pem
+    access-ttl: PT15M
+    refresh-ttl: P7D
+  redis:
+    blacklist-prefix: "tickefy:auth:token:blacklist:"
+  cookie:
+    access-name: access_token
+    refresh-name: refresh_token
+    refresh-path: /auth
+    secure: false
+    same-site: Lax
+  cors:
+    allowed-origins: http://localhost:3000
+  security:
+    # Low cost for fast tests
+    bcrypt-strength: 4
+
+logging:
+  level:
+    root: WARN
+    com.tickefy.auth: DEBUG
+    org.springframework.security: WARN
+    org.flywaydb: WARN

@@ -1,8 +1,7 @@
 package com.tickefy.checkin.common.response;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Collections;
 
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ErrorResponse {
 
     private final String code;
@@ -12,18 +11,10 @@ public class ErrorResponse {
     public ErrorResponse(String code, String message, Object details) {
         this.code = code;
         this.message = message;
-        this.details = details;
+        this.details = details != null ? details : Collections.emptyMap();
     }
 
-    public String getCode() {
-        return code;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public Object getDetails() {
-        return details;
-    }
+    public String getCode() { return code; }
+    public String getMessage() { return message; }
+    public Object getDetails() { return details; }
 }

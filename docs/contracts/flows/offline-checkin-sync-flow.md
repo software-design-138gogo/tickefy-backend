@@ -121,7 +121,7 @@ sequenceDiagram
     Checkin->>Checkin: verify CHECKIN_STAFF and validate batch
     Checkin->>CheckinDB: create or load syncBatchId
     loop each offline item
-        Checkin->>Ticket: POST /internal/tickets/checkin source=OFFLINE
+        Checkin->>Ticket: POST /internal/tickets/checkin source=OFFLINE, syncBatchId, offlineScanId
         Ticket-->>Checkin: item business result
         Checkin->>CheckinDB: store item result and audit/conflict
     end

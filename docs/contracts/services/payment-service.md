@@ -16,8 +16,8 @@ lastUpdated: 2026-06-16
 | Service name | payment-service |
 | Owner | Dương |
 | Repository | tickefy-backend/services/payment-service |
-| Internal port | 8084 |
-| Public base path | `/api/v1/payments` |
+| Internal port | 8085 (host) → 8080 (container) |
+| Public base path | `/api/payments` |
 | Health check | `/actuator/health` |
 | Swagger/OpenAPI | `/swagger-ui.html` |
 | Database schema | `payment_service` |
@@ -43,7 +43,7 @@ lastUpdated: 2026-06-16
 
 | Table | Purpose |
 |---|---|
-| `payment_attempts` | Lưu trữ mọi nỗ lực thanh toán, thông tin số tiền, và trạng thái giao dịch (INITIATED, PENDING, SUCCESS, FAILED, REFUNDED). |
+| `payment_transactions` | Lưu trữ giao dịch thanh toán, thông tin số tiền, và trạng thái giao dịch (INITIATED, PENDING, SUCCESS, FAILED, REFUNDED). |
 | `outbox_events` | Phục vụ Transactional Outbox Pattern để publish sự kiện `PaymentSucceeded`/`PaymentFailed`. |
 
 ### Cross-service references
@@ -51,11 +51,11 @@ lastUpdated: 2026-06-16
 | Field | Source service | Validation strategy |
 |---|---|---|
 | `order_id` | `order-service` | Định danh Đơn hàng gốc. Được Order truyền sang. Không dùng FK. |
-| `user_id` | `auth-service` | Định danh Khách hàng. Lấy từ request / JWT. |
+| `user_id` | `auth-service` | Định danh khách hàng. Với internal payment creation, lấy từ payload tin cậy do `order-service` truyền sau khi Order đã xác thực JWT; không tin userId client tự gửi trực tiếp. |
 
 ### Invariants
 
-- Bảng `payment_attempts` bắt buộc có `UNIQUE` constraints trên `idempotency_key` (Chống tạo nhiều lần) và `gateway_txn_id` (Chống callback nhiều lần).
+- Bảng `payment_transactions` bắt buộc có `UNIQUE` constraints trên `idempotency_key` (chống tạo nhiều lần) và `gateway_transaction_id` (chống callback nhiều lần).
 
 ## 4. Dependencies
 
@@ -78,15 +78,15 @@ lastUpdated: 2026-06-16
 
 | Method | Path | Role | Description | Contract |
 |---|---|---|---|---|
-| POST | `/api/v1/payments/callback`| PUBLIC (Webhook) | Endpoint nhận webhook từ SePay. Yêu cầu verify chữ ký số (Signature). | |
+| POST | `/api/payments/callback`| PUBLIC (Webhook) | Endpoint nhận webhook từ SePay. Yêu cầu verify chữ ký số (Signature). | |
+| POST | `/api/admin/payments/{txId}/refund`| Admin | Đánh dấu thủ công giao dịch đã được Refund (Admin tự chuyển khoản trả khách). | Yêu cầu JWT role `ADMIN` |
 
 ## 6. Internal APIs
 
 | Method | Path | Caller | Description | Contract |
 |---|---|---|---|---|
-| POST | `/internal/payments` | Order | Khởi tạo giao dịch. Payload: `{orderId, userId, amount, idempotencyKey}`. Trả về mã VietQR. | |
-| POST | `/internal/payments/refund` | Order | Hệ thống yêu cầu Refund (khi Concert bị hủy). | |
-| POST | `/api/v1/admin/payments/{txId}/refund`| Admin | Đánh dấu thủ công giao dịch đã được Refund (Admin tự chuyển khoản trả khách). | Yêu cầu JWT ROLE_ADMIN |
+| POST | `/internal/payments` | `order-service` | Khởi tạo giao dịch. Payload: `{orderId, userId, amount, currency, idempotencyKey}`. Response tối thiểu `{paymentId, paymentUrl, qrCodePayload, expiresAt}` để Order trả `paymentUrl`. | |
+| POST | `/internal/payments/refund` | `order-service` | Refund khi Concert bị hủy sau PAID. Payload: `{orderId, paymentId, amount, currency, reason, idempotencyKey}`. Response tối thiểu `{refundId, paymentId, status, refundedAt}`. | |
 
 ## 7. Events published
 
@@ -94,8 +94,8 @@ lastUpdated: 2026-06-16
 
 | Event | Routing key | When | Consumers | Contract |
 |---|---|---|---|---|
-| `PaymentSucceeded`| `payment.succeeded` | Nhận Webhook báo thành công từ SePay. | Order Service | Chứa `orderId`, `status: "SUCCESS"` |
-| `PaymentFailed` | `payment.failed` | Hết hạn thanh toán hoặc Webhook báo lỗi. | Order Service | Chứa `orderId` |
+| `PaymentSucceeded`| `payment.succeeded` | Nhận Webhook báo thành công từ SePay. | `order-service` (`order.payment-succeeded`) | Chứa `paymentId`, `orderId`, `amount`, `paidAt` |
+| `PaymentFailed` | `payment.failed` | Hết hạn thanh toán hoặc Webhook báo lỗi. | `order-service` (`order.payment-failed`) | Chứa `paymentId`, `orderId`, `failedAt`, `reason` |
 
 ## 8. Events consumed
 
@@ -126,24 +126,25 @@ stateDiagram-v2
 
 ### Idempotency
 - **Tầng 1 (Tạo Transaction):** Lưu `idempotencyKey` do Order gửi vào Cột UNIQUE trong DB + Cache ở Redis (TTL 24h). Request thứ 2 gửi trùng sẽ trả ngay kết quả cũ (hoặc lỗi).
-- **Tầng 2 (Webhook):** Dùng `gateway_txn_id` từ SePay làm cột UNIQUE. SePay bắn webhook trùng 2 lần, DB bắn lỗi Conflict -> Trả 200 cho SePay và bỏ qua.
+- **Tầng 2 (Webhook):** Dùng `gateway_transaction_id` từ SePay làm cột UNIQUE. SePay bắn webhook trùng 2 lần, DB bắn lỗi Conflict -> Trả 200 cho SePay và bỏ qua.
 
 ### Circuit breaker
 - Resilience4j bọc các cuộc gọi API sang SePay. Nếu SePay chết (Fail rate > 50%), ngắt mạch (Open) để tránh nghẽn luồng tạo đơn. Trả HTTP 503 Service Unavailable ngay lập tức.
 
 ### Transaction boundaries
-- Khi nhận Webhook thành công: Cập nhật status bảng `payment_attempts` và ghi event vào `outbox_events` phải nằm trong cùng 1 Transaction DB.
+- Khi nhận Webhook thành công/thất bại: cập nhật status bảng `payment_transactions` và ghi `PaymentSucceeded`/`PaymentFailed` vào `outbox_events` trong cùng 1 transaction DB.
 
 ## 11. Cache
 
 | Key pattern | Data | TTL | Invalidation |
 |---|---|---:|---|
-| `payment:idem:{key}` | Dữ liệu chặn spam | 24h | Tự động hết hạn. |
+| `payment:idempotency:{idempotencyKey}` | Dữ liệu chặn spam | 24h | Tự động hết hạn. |
 
 ## 12. Security
 
-- Authentication: Endpoint Internal yêu cầu Bearer Token định danh Service.
-- Webhook Signature: Mọi payload gửi từ SePay vào `/callback` phải được kiểm tra bằng HMAC-SHA256 (tùy chuẩn SePay) trước khi xử lý.
+- Authentication: Endpoint protected dùng `Authorization: Bearer <access-token>` theo Auth Contract; `payment-service` verify RS256 bằng public key. Internal calls từ `order-service` forward access token của request gốc; MVP chưa định nghĩa service-token/client-credentials riêng.
+- Authorization: Admin refund yêu cầu role `ADMIN`; internal payment/refund endpoints chỉ chấp nhận caller backend được route nội bộ và bearer token hợp lệ.
+- Webhook Signature: Mọi payload gửi từ SePay vào `/api/payments/callback` phải được kiểm tra bằng HMAC-SHA256 (tùy chuẩn SePay) trước khi xử lý.
 
 ## 13. Environment variables
 

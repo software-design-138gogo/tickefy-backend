@@ -575,14 +575,14 @@ Ví dụ:
 ```text
 /api/concerts
 /api/ticket-types
-/api/reservations
+/api/inventory/concerts/{concertId}/ticket-types
 /api/orders
 /api/payments
 /api/tickets
 /api/checkins
 /api/notifications
 /api/ai-bio/jobs
-/api/vip-import/jobs
+/api/admin/csv-import
 ```
 
 ### 10.3. Resource identifier
@@ -611,8 +611,6 @@ Khi operation không phù hợp với CRUD, dùng action rõ ràng ở cuối pa
 ```http
 POST  /api/concerts/{concertId}/publish
 POST  /api/concerts/{concertId}/cancel
-POST  /api/reservations/{reservationId}/commit
-POST  /api/reservations/{reservationId}/release
 POST  /api/payments/{paymentId}/retry
 POST  /api/ai-bio/jobs/{jobId}/retry
 PATCH /api/notifications/{notificationId}/read
@@ -772,10 +770,15 @@ Event type sử dụng `PascalCase` và diễn tả sự kiện đã xảy ra.
 ```text
 ConcertPublished
 PaymentSucceeded
+PaymentFailed
 OrderPaid
+OrderPaymentFailed
+OrderExpired
+OrderCancelled
+OrderRefunded
 TicketsIssued
 TicketCheckedIn
-ArtistBioGenerated
+ConcertIntroductionGenerated
 VipGuestImportCompleted
 ```
 
@@ -817,10 +820,13 @@ concert.cancelled
 payment.succeeded
 payment.failed
 order.paid
+order.payment.failed
 order.expired
+order.cancelled
+order.refunded
 tickets.issued
 ticket.checked-in
-artist-bio.generated
+concert.introduction.generated
 vip-guest-import.completed
 ```
 
@@ -836,10 +842,21 @@ Ví dụ:
 
 ```text
 order.payment-succeeded
+order.payment-failed
 inventory.order-paid
+inventory.order-payment-failed
+inventory.concert-published
+inventory.concert-cancelled
+inventory.order-expired
+inventory.order-cancelled
+order.concert-cancelled
 ticket.order-paid
+ticket.order-refunded
+ticket.concert-cancelled
 notification.tickets-issued
-event.artist-bio-generated
+notification.order-refunded
+notification.concert-cancelled
+event.concert-introduction-generated
 checkin.vip-guest-import-completed
 ```
 

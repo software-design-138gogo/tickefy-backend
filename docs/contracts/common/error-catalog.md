@@ -51,7 +51,8 @@ lastUpdated: 2026-06-16
 | ERR-INV-002 | 422 | `PER_USER_LIMIT_EXCEEDED` | Vượt giới hạn mua. | Quá hạn mức/người (details: `perUserLimit, alreadyOwned, remaining`) | Hiện hạn mức còn lại |
 | ERR-INV-003 | 403 | `SALE_WINDOW_CLOSED` | Chưa tới hoặc hết giờ bán. | Ngoài cửa sổ `saleStart/saleEnd` | Hiện trạng thái bán |
 | ERR-INV-004 | 410 | `RESERVATION_EXPIRED` | Phiên giữ vé đã hết hạn. | 🔭 PLANNED — TTL release Pass 2 chưa code (chưa có trong inventory enum, chưa throw) | Quay lại chọn vé |
-| ERR-INV-005 | 404 | `RESOURCE_NOT_FOUND` | Không tìm thấy concert/ticket type. | concertId/ticketTypeId sai/không có | Not found |
+| ERR-INV-005 | 404 | `RESOURCE_NOT_FOUND` | Không tìm thấy ticket type. | ticketTypeId sai/không có | Not found |
+| ERR-INV-006 | 404 | `CONCERT_NOT_FOUND` | Không tìm thấy concert. | Event Service báo concertId sai/không có | Refresh/chọn concert khác |
 
 ### `order-service` (Hiệp)
 Chủ yếu dùng **common**: `CONFLICT` (state machine guard order: CREATED→RESERVED→PAYMENT_PENDING→PAID/…), `RESOURCE_NOT_FOUND` (order không tồn tại), `SERVICE_UNAVAILABLE` (Inventory down). Idempotent command (key body `idempotencyKey`) replay → **200** + `data.replayDetected=true` (🔭 response-shape chưa code — xem `./api-standard.md` §10).
@@ -70,10 +71,39 @@ Chủ yếu dùng **common**: `CONFLICT` (state machine guard order: CREATED→R
 | Ref | HTTP | Code | Message | Khi xảy ra |
 |---|---:|---|---|---|
 | ERR-PAY-001 | 503 | `PAYMENT_GATEWAY_UNAVAILABLE` | Cổng thanh toán đang bảo trì. | Circuit breaker OPEN |
+| ERR-PAY-002 | 400 | `INVALID_PAYMENT_SIGNATURE` | Chữ ký thanh toán không hợp lệ. | Webhook signature từ provider sai |
+| ERR-PAY-003 | 404 | `PAYMENT_NOT_FOUND` | Không tìm thấy giao dịch thanh toán. | `paymentId`/`txId` không tồn tại |
+| ERR-PAY-004 | 409 | `PAYMENT_ALREADY_REFUNDED` | Giao dịch đã được hoàn tiền. | Refund lặp lại không cùng idempotency key |
 > Bổ sung khi Dương dựng Payment. Payment state = `SUCCESS` (KHÔNG `SUCCEEDED`).
 
 ### `event-service` (Dương) — 🔭 PLANNED (CRUD ở branch `feat/event-service`, publish event TODO)
-Dùng `RESOURCE_NOT_FOUND`/`CONCERT_NOT_FOUND` cho concert sai. Bổ sung khi merge + build Phase 2.
+Dùng `CONCERT_NOT_FOUND` cho concert sai/không tồn tại. Bổ sung khi merge + build Phase 2.
+
+| Ref | HTTP | Code | Message | Khi xảy ra | Client action |
+|---|---:|---|---|---|---|
+| ERR-EVT-001 | 404 | `CONCERT_NOT_FOUND` | Không tìm thấy concert. | `concertId` không tồn tại ở public/internal concert APIs | Refresh/chọn concert khác |
+| ERR-EVT-002 | 403 | `CONCERT_ACCESS_DENIED` | Không có quyền thao tác với concert này. | Organizer không sở hữu concert | Forbidden |
+| ERR-EVT-003 | 503 | `OBJECT_STORAGE_UNAVAILABLE` | Kho lưu trữ tạm thời không khả dụng. | Không cấp được pre-signed URL hoặc không truy cập được media bucket | Retry/backoff |
+
+### `ai-bio-service` (Hoàng)
+| Ref | HTTP | Code | Message | Khi xảy ra | Client action |
+|---|---:|---|---|---|---|
+| ERR-AIBIO-001 | 400 | `PDF_FILE_REQUIRED` | Cần ít nhất một file PDF. | Upload không có `files[]` hợp lệ | Chọn lại file |
+| ERR-AIBIO-002 | 415 | `INVALID_PDF_TYPE` | File phải là PDF hợp lệ. | MIME hoặc magic bytes không phải PDF | Chọn file PDF đúng |
+| ERR-AIBIO-003 | 413 | `PDF_TOO_LARGE` | File PDF vượt quá giới hạn dung lượng. | Vượt per-file hoặc total upload limit | Giảm số lượng/kích thước file |
+| ERR-AIBIO-004 | 404 | `CONCERT_NOT_FOUND` | Không tìm thấy concert. | Event Service báo concert không tồn tại | Refresh/chọn concert khác |
+| ERR-AIBIO-005 | 403 | `CONCERT_ACCESS_DENIED` | Không có quyền thao tác với concert này. | Organizer không sở hữu concert | Forbidden |
+| ERR-AIBIO-006 | 503 | `EVENT_SERVICE_UNAVAILABLE` | Event Service tạm thời không khả dụng. | Không validate được concert/ownership | Retry/backoff |
+| ERR-AIBIO-007 | 409 | `AI_BIO_JOB_ALREADY_ACTIVE` | Concert đang có job AI Bio đang xử lý. | Đã có job `PENDING` hoặc `PROCESSING` | Poll job hiện tại |
+| ERR-AIBIO-008 | 409 | `AI_BIO_JOB_NOT_RETRYABLE` | Job này không thể retry. | Retry job `SUCCEEDED` hoặc không retryable | Tạo job mới nếu cần regenerate |
+| ERR-AIBIO-009 | 422 | `NO_USABLE_DOCUMENT_CONTENT` | Không tìm thấy nội dung dùng được trong PDF. | Tất cả PDF rỗng/password-protected/không extract được text | Upload tài liệu khác |
+| ERR-AIBIO-010 | 422 | `PDF_PASSWORD_PROTECTED` | PDF được bảo vệ bằng mật khẩu. | Tài liệu không đọc được do password | Upload file không khóa |
+| ERR-AIBIO-011 | 503 | `OBJECT_STORAGE_UNAVAILABLE` | Kho lưu trữ tạm thời không khả dụng. | Không upload/read được PDF object | Retry/backoff |
+| ERR-AIBIO-012 | 503 | `AI_PROVIDER_TIMEOUT` | AI Provider phản hồi quá lâu. | Provider timeout sau retry policy | Retry sau |
+| ERR-AIBIO-013 | 429 | `AI_PROVIDER_RATE_LIMITED` | AI Provider đang giới hạn tần suất. | Provider trả 429 | Retry theo backoff |
+| ERR-AIBIO-014 | 503 | `AI_PROVIDER_AUTH_FAILED` | Cấu hình AI Provider không hợp lệ. | API key/provider auth sai | Ops kiểm tra cấu hình |
+| ERR-AIBIO-015 | 422 | `AI_OUTPUT_INVALID` | Kết quả AI không hợp lệ. | Output rỗng hoặc không qua validation | Retry/regenerate |
+| ERR-AIBIO-016 | 503 | `AI_JOB_PROCESSING_TIMEOUT` | Job xử lý quá thời gian cho phép. | Worker/attempt vượt maximum duration | Retry hoặc ops kiểm tra |
 
 ### `ticket-service` / `checkin-service` / snapshot / sync (Hòa)
 
@@ -119,6 +149,20 @@ Business result codes không nằm trong `error.code`; xem `./checkin-result-cat
 - `OFFLINE_ACCEPTED_PENDING_SYNC`
 - `SYNC_ACCEPTED`
 - `SYNC_CONFLICT`
+
+### `csv-ingestion-service` (Hoàng)
+
+| Ref | HTTP | Code | Message | Khi xảy ra | Client action |
+|---|---:|---|---|---|---|
+| ERR-CSV-001 | 413 | `FILE_TOO_LARGE` | File vượt quá giới hạn dung lượng. | CSV lớn hơn `CSV_MAX_FILE_SIZE_MB` | Chọn file nhỏ hơn |
+| ERR-CSV-002 | 400 | `INVALID_FILE_FORMAT` | File CSV không đúng định dạng. | Sai extension/header/format | Sửa file CSV |
+| ERR-CSV-003 | 400 | `INVALID_ENCODING` | File phải dùng UTF-8. | CSV không decode được bằng UTF-8 | Xuất lại file UTF-8 |
+| ERR-CSV-004 | 404 | `CONCERT_NOT_FOUND` | Không tìm thấy concert. | Event Service báo concert không tồn tại | Refresh/chọn concert khác |
+| ERR-CSV-005 | 503 | `OBJECT_STORAGE_UNAVAILABLE` | Kho lưu trữ tạm thời không khả dụng. | Không upload/read được CSV hoặc error report object | Retry/backoff |
+| ERR-CSV-006 | 409 | `IMPORT_JOB_NOT_RETRYABLE` | Job import này không thể retry. | Retry job chưa `FAILED` hoặc vượt retry policy | Poll/tạo import mới |
+| ERR-CSV-007 | 404 | `IMPORT_JOB_NOT_FOUND` | Không tìm thấy job import. | `importJobId` không tồn tại hoặc user không được xem | Refresh |
+
+CSV row-level reasons như `DUPLICATE_ROW`, invalid email hoặc missing field nằm trong `import_errors.reason`, không dùng làm API `error.code` trừ khi endpoint trả lỗi request-level.
 
 ## 4. Tài liệu liên quan
 - `./api-standard.md` — format envelope/error và rule business result vs API error.

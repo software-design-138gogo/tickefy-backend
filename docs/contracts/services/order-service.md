@@ -32,10 +32,10 @@ lastUpdated: 2026-06-16
 - Quản lý **state machine** order; nhận kết quả thanh toán (async event).
 - Publish `OrderPaid`/`OrderPaymentFailed`/`OrderExpired`/`OrderCancelled`/`OrderRefunded`.
 - Timeout (expire worker), hủy, compensation (release vé khi fail trước point-of-no-return).
-- **Điều phối refund** khi `ConcertCancelled` (cách B): duyệt order của concert, release/refund/revoke theo trạng thái.
+- **Điều phối refund** khi `ConcertCancelled` (cách B): duyệt order của concert, release nếu chưa trả tiền; refund và publish `OrderRefunded` nếu đã PAID.
 
 ### KHÔNG chịu trách nhiệm
-- Trừ/giữ vé thực (Inventory). Thanh toán thực (Payment). Sinh/revoke vé (E-Ticket). Concert metadata (Event).
+- Trừ/giữ vé thực (Inventory). Thanh toán thực (Payment). Sinh/cập nhật trạng thái vé (ticket-service). Concert metadata (Event).
 - Ngừng-bán-khẩn-cấp khi ConcertCancelled (Inventory tự nghe — độc lập).
 
 ## 3. Data ownership
@@ -51,7 +51,7 @@ lastUpdated: 2026-06-16
 |---|---|---|
 | `userId` | auth | JWT claim, không FK |
 | `concertId` | Event (Dương) | UUID v4, không FK (event-contract) |
-| `ticketTypeId` | Event/Inventory | UUID v4, reserve qua Inventory |
+| `ticketTypeId` | Inventory | UUID v4, reserve qua Inventory |
 | `reservationId` | Inventory | Trả về từ reserve, lưu để commit/release |
 | `paymentTransactionId` | Payment | 🟡 hiện stub trả random |
 
@@ -62,10 +62,10 @@ lastUpdated: 2026-06-16
 ### Synchronous dependencies
 | Service | Endpoint | Purpose | Timeout | Retry |
 |---|---|---|---:|---|
-| Inventory | `POST /inventory/reservations` (+commit/release) | Reserve/commit/release vé (Bearer) | ⚠️ | ✅ **LIVE** reserve |
-| Payment | tạo transaction | Lấy payment URL | ⚠️ | 🟡 **STUB** (StubPaymentClient) |
-| Payment | refund (SYNC) | Refund khi concert hủy | ⚠️ | 🔭 Pass 2 (ConcertCancelled) |
-| E-Ticket | revoke vé | Revoke khi concert hủy | ⚠️ | 🔭 Pass 2 |
+| Inventory | `POST /inventory/reservations` | Reserve vé (Bearer). Commit/release qua Inventory consume Order events, không gọi HTTP. | ⚠️ | ✅ **LIVE** reserve |
+| Payment | `POST /internal/payments` | Lấy payment URL/QR | ⚠️ | 🟡 **STUB** (StubPaymentClient) |
+| Payment | `POST /internal/payments/refund` | Refund khi concert hủy sau PAID | ⚠️ | 🔭 Pass 2 (ConcertCancelled) |
+| Ticket | none sync | Ticket cập nhật `CANCELLED` từ `ConcertCancelled` hoặc `REFUNDED` từ `OrderRefunded`; Order không gọi Ticket sync | — | event-only |
 
 ### Infrastructure dependencies
 | Dependency | Purpose |
@@ -94,19 +94,19 @@ lastUpdated: 2026-06-16
 ## 7. Events published — 🔭 OUTBOX CHẾT, chưa publish thật
 | Event | Routing key | When | Consumers (queue) | Trạng thái |
 |---|---|---|---|---|
-| `OrderPaid` | `order.paid` | → PAID | e-ticket / notification / inventory `.order-paid.queue` | 🔭 **Pass 2** (outbox 0 writer/0 drainer; e-ticket consumer đã LIVE chờ) |
-| `OrderPaymentFailed` | `order.payment.failed` | → PAYMENT_FAILED | inventory / notification | 🔭 Pass 2 |
-| `OrderExpired` | `order.expired` | worker expire | inventory / notification | 🔭 Pass 2 |
-| `OrderCancelled` | `order.cancelled` | user/concert hủy chưa trả tiền | inventory / notification | 🔭 Pass 2 |
-| `OrderRefunded` | `order.refunded` | refund xong (concert hủy) | notification | 🔭 Pass 2 |
+| `OrderPaid` | `order.paid` | → PAID | `inventory.order-paid`, `ticket.order-paid`, `notification.order-paid` | 🔭 **Pass 2** (outbox 0 writer/0 drainer; ticket consumer đã LIVE chờ) |
+| `OrderPaymentFailed` | `order.payment.failed` | → PAYMENT_FAILED | `inventory.order-payment-failed`, `notification.order-payment-failed` | 🔭 Pass 2 |
+| `OrderExpired` | `order.expired` | worker expire | `inventory.order-expired`, `notification.order-expired` | 🔭 Pass 2 |
+| `OrderCancelled` | `order.cancelled` | user/concert hủy chưa trả tiền | `inventory.order-cancelled`, `notification.order-cancelled` | 🔭 Pass 2 |
+| `OrderRefunded` | `order.refunded` | refund xong (concert hủy) | `ticket.order-refunded`, `notification.order-refunded` | 🔭 Pass 2 |
 > Routing key/queue theo api-contracts §5 (đã verify). `OrderPaid` envelope có `messageId` (dedup) + concertId UUID v4 + items + paidAt (ISO UTC). order.md còn liệt `OrderCreated/OrderReserved/OrderPaymentRequested` — ⚠️ không có trong api-contracts §5; coi là 🔭/optional, đừng publish nếu không có consumer.
 
 ## 8. Events consumed — 🔭 CHƯA WIRE (Pass 2)
 | Event | Producer | Queue | Behavior | Idempotency key |
 |---|---|---|---|---|
-| `PaymentSucceeded` | payment | `order-service.payment-succeeded.queue` | → PAID, ghi outbox OrderPaid | orderId/paymentTx — 🔭 (Payment chưa publish; cần **stub payment.succeeded** để test) |
-| `PaymentFailed` | payment | `order-service.payment-failed.queue` | → PAYMENT_FAILED, ghi outbox | 🔭 |
-| `ConcertCancelled` | event (Dương) | `order-service.concert-cancelled.queue` | Điều phối refund (Luồng 6): chưa trả tiền→CANCELLED+release; PAID→Payment refund + E-Ticket revoke→REFUNDED. Idempotent (đã REFUNDED/CANCELLED bỏ qua) | concertId + orderId — 🔭 chờ Event/Payment |
+| `PaymentSucceeded` | `payment-service` | `order.payment-succeeded` | → PAID, ghi outbox OrderPaid | `messageId`, `paymentId`, `orderId` — 🔭 (Payment chưa publish; cần **stub payment.succeeded** để test) |
+| `PaymentFailed` | `payment-service` | `order.payment-failed` | → PAYMENT_FAILED, ghi outbox OrderPaymentFailed | `messageId`, `paymentId`, `orderId` — 🔭 |
+| `ConcertCancelled` | `event-service` | `order.concert-cancelled` | Điều phối refund (Luồng 6): chưa trả tiền→CANCELLED+release; PAID→Payment refund→REFUNDED rồi publish `OrderRefunded`. Idempotent (đã REFUNDED/CANCELLED bỏ qua) | `messageId`, `concertId` + `orderId` — 🔭 chờ Event/Payment |
 > ⚠️ Khi wire: thêm **DLQ + setDefaultRequeueRejected(false)**. Payment state khớp = `SUCCESS` (KHÔNG `SUCCEEDED`).
 
 ## 9. State machine
@@ -132,8 +132,8 @@ stateDiagram-v2
 | PAYMENT_PENDING | PaymentSucceeded | **PAID** (point-of-no-return) | ghi outbox OrderPaid → publish — 🔭 |
 | PAYMENT_PENDING | PaymentFailed | PAYMENT_FAILED | outbox OrderPaymentFailed (Inventory release) — 🔭 |
 | PAYMENT_PENDING | quá hạn | EXPIRED | worker; outbox OrderExpired — 🔭 |
-| RESERVED/PENDING | cancel/concert hủy (chưa trả) | CANCELLED | release vé |
-| PAID | ConcertCancelled | REFUNDED | Payment refund + E-Ticket revoke — 🔭 |
+| RESERVED/PAYMENT_PENDING | cancel/concert hủy (chưa trả) | CANCELLED | release vé |
+| PAID | ConcertCancelled | REFUNDED | Payment refund + outbox `OrderRefunded` để Ticket/Notification consume — 🔭 |
 > Sau **PAID = point of no return**: chỉ tiến (retry sinh vé), không release. State machine một chiều — chặn transition bất hợp lệ (vd PAID→EXPIRED) bằng `CONFLICT`.
 
 ## 10. Reliability
@@ -166,7 +166,7 @@ stateDiagram-v2
 | `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USERNAME`/`DB_PASSWORD` | ✅ | postgres / `tickefy_order` | DB order (`application.yml:7-9`) |
 | `DB_SCHEMA` | ✅ | `order_service` | Schema |
 | `INVENTORY_SERVICE_URL` | ✅ | `http://inventory:8080` | Reserve (sync HTTP) — `app.inventory.base-url` |
-| `PAYMENT_SERVICE_URL` | 🟡 | — | Khai báo nhưng **unused** (Payment đang stub) |
+| `PAYMENT_SERVICE_URL` | 🟡 | `http://payment:8080` | Khai báo nhưng **unused** khi `PAYMENT_STUB=true`; dùng làm Payment base URL khi tắt stub |
 | `PAYMENT_STUB` | 🟡 | `true` (default) | `app.payment.stub` — bật StubPaymentClient |
 | `SPRING_RABBITMQ_*` | 🔭 | rabbitmq | Khi wire publish/consume Pass 2 |
 | order expire / reservation TTL | ⚠️ | `PT15M` | Đồng bộ với reservation TTL Inventory |
@@ -187,17 +187,17 @@ stateDiagram-v2
 | Payment down (CB OPEN) | Fail-fast graceful | 🔭 `PAYMENT_GATEWAY_UNAVAILABLE` (503) — CB chưa code |
 | PaymentSucceeded trùng | Idempotent — đã PAID bỏ qua | 🔭 Pass 2 |
 | Order kẹt PAYMENT_PENDING quá hạn | Worker expire → release | 🔭 worker chưa code |
-| E-Ticket sinh vé lỗi sau PAID | Retry (point of no return, không hủy) | 🔭 |
+| Ticket sinh vé lỗi sau PAID | Retry (point of no return, không hủy) | 🔭 |
 | User hủy order đã PAID | Từ chối (cần luồng refund riêng) | `CONFLICT` |
 | Transition bất hợp lệ (PAID→EXPIRED) | Chặn | `CONFLICT` (state guard) |
-| ConcertCancelled | Điều phối: chưa trả→CANCELLED+release; PAID→refund+revoke→REFUNDED | 🔭 Pass 2 |
+| ConcertCancelled | Điều phối: chưa trả→CANCELLED+release; PAID→refund→REFUNDED + publish `OrderRefunded` | 🔭 Pass 2 |
 | Refund lỗi khi concert hủy | Retry; vẫn lỗi → đánh dấu thủ công + alert admin | 🔭 |
 
 ## 16. Integration acceptance criteria
 - [ ] Health check pass. · [x] Swagger ✅ (springdoc).
 - [ ] API contract tests (POST /orders → RESERVED → PAYMENT_PENDING). (**49 `@Test`** trong repo.)
 - [ ] Idempotency: 2 submit cùng key → 1 order (AC2). ✅
-- [ ] 🔭 Event contract: publish OrderPaid + consume Payment* — **Pass 2** (cần stub payment.succeeded để test chuỗi: PAID → outbox → publish → e-ticket+inventory consume).
+- [ ] 🔭 Event contract: publish OrderPaid + consume Payment* — **Pass 2** (cần stub payment.succeeded để test chuỗi: PAID → outbox → publish → ticket+inventory consume).
 - [ ] 🔭 Idempotent event (PaymentSucceeded ×3 → PAID 1 lần).
 - [ ] 🔭 Timeout worker → EXPIRED → release.
 - [ ] Docker builds. · `.env.example` complete.
@@ -209,8 +209,8 @@ stateDiagram-v2
 - ✅ Path = `/users/me/orders` (xác nhận); `/orders/{id}/expire` & `/cancel` chưa có endpoint (🔭).
 - ✅ Order **KHÔNG dùng Redis**.
 - ✅ Circuit breaker Payment **chưa code** (🔭; Payment stub).
-- 🔭 **Pass 2 (việc Hiệp tự chủ — làm NGAY được):** thêm amqp + consume `payment.succeeded`/`failed` + **outbox writer (PAID→write) + drainer → publish `order.paid`** + expire worker + **DLQ**. Cần **stub phát `payment.succeeded`** để test chuỗi end-to-end (e-ticket consumer đã LIVE).
-- 🔭 ConcertCancelled refund (Luồng 6): cần Payment refund API + E-Ticket revoke + Event publish — chờ Dương.
+- 🔭 **Pass 2 (việc Hiệp tự chủ — làm NGAY được):** thêm amqp + consume `payment.succeeded`/`failed` + **outbox writer (PAID→write) + drainer → publish `order.paid`** + expire worker + **DLQ**. Cần **stub phát `payment.succeeded`** để test chuỗi end-to-end (ticket consumer đã LIVE).
+- 🔭 ConcertCancelled refund (Luồng 6): cần Payment refund API + publish `OrderRefunded` cho Ticket/Notification + Event publish — chờ Dương.
 - order/ErrorCode có `CONCERT_NOT_FOUND`, `RESERVATION_EXPIRED` **defined-but-unused** (0 throw) — giữ 🔭 (Pass 2) hay bỏ?
 - `OrderCreated/OrderReserved/OrderPaymentRequested` (order.md) không có trong api-contracts §5 — publish không, hay bỏ?
 - Edge case EXPIRED-rồi-Payment-SUCCESS-muộn: chốt policy refund.

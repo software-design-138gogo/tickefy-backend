@@ -28,7 +28,7 @@ lastUpdated: 2026-06-16
 
 - Nhận file CSV từ Admin Web hoặc phát hiện file mới qua cron.
 - Kiểm tra file-level: kích thước, định dạng, header, UTF-8 và quyền sở hữu concert.
-- Tạo background job và trả `batchId` ngay, không xử lý toàn bộ file trong request thread.
+- Tạo background job và trả `importJobId` ngay, không xử lý toàn bộ file trong request thread.
 - Đọc CSV theo stream, validate theo dòng, ghi staging và xử lý theo batch khoảng 1.000 dòng.
 - Ghi nhận dòng lỗi theo cơ chế skip-and-continue; dừng job nếu tỷ lệ lỗi vượt 50%.
 - Deduplicate và import idempotent theo `concertId + email`.
@@ -49,7 +49,7 @@ lastUpdated: 2026-06-16
 
 | Table | Purpose |
 |---|---|
-| `batch_jobs` | Lưu job, nguồn kích hoạt, object key, trạng thái, counters, retry và timestamps. |
+| `import_jobs` | Lưu job, nguồn kích hoạt, object key, trạng thái, counters, retry và timestamps. |
 | `vip_guest_staging` | Lưu tạm các dòng hợp lệ trước khi kiểm tra threshold và promote. |
 | `import_errors` | Lưu `line_number`, dữ liệu gốc đã giới hạn/mask và lý do lỗi. |
 | `vip_guests` | Guest list chính thức; unique theo `(concert_id, email)`. |
@@ -59,7 +59,7 @@ lastUpdated: 2026-06-16
 | Field | Source service | Validation strategy |
 |---|---|---|
 | `concert_id` | `event-service` | Gọi API để kiểm tra concert tồn tại và organizer có quyền quản lý. |
-| `organizer_id` | `auth-service` | Lấy từ JWT/request context; đối chiếu với owner của concert. |
+| `organizer_id` | `auth-service` | Lấy từ verified JWT `sub`; đối chiếu với owner của concert. Không tin `organizerId` client tự gửi. |
 | `ticket_type_id` | `inventory-service` | Resolve `ticket_type` theo concert và kiểm tra loại vé tồn tại. |
 
 ### Invariants
@@ -93,9 +93,9 @@ lastUpdated: 2026-06-16
 
 | Method | Path | Role | Description | Contract |
 |---|---|---|---|---|
-| `POST` | `/api/admin/csv-import` | `ORGANIZER`, `ADMIN` | Upload CSV và tạo job; trả `202` với `batchId`. | `multipart/form-data`: `file`, `concertId` |
-| `GET` | `/api/admin/csv-import/{batchId}` | `ORGANIZER`, `ADMIN` | Lấy status, summary và error rows của job. | `CsvImportStatusResponse` |
-| `POST` | `/api/admin/csv-import/{batchId}/retry` | `ORGANIZER`, `ADMIN` | Retry job `FAILED`; giữ nguyên idempotency rules. | `CsvImportRetryResponse` |
+| `POST` | `/api/admin/csv-import` | `ORGANIZER`, `ADMIN` | Upload CSV và tạo job; trả `202` với `importJobId`. | `multipart/form-data`: `file`, `concertId` |
+| `GET` | `/api/admin/csv-import/{importJobId}` | `ORGANIZER`, `ADMIN` | Lấy status, summary và error rows của job. | `CsvImportStatusResponse` |
+| `POST` | `/api/admin/csv-import/{importJobId}/retry` | `ORGANIZER`, `ADMIN` | Retry job `FAILED`; giữ nguyên idempotency rules. | `CsvImportRetryResponse` |
 
 Mọi response tuân theo envelope chung: `success`, `data`, `error`, `requestId`, `timestamp`.
 
@@ -109,10 +109,10 @@ Mọi response tuân theo envelope chung: `success`, `data`, `error`, `requestId
 
 | Event | Routing key | When | Consumers | Contract |
 |---|---|---|---|---|
-| `VipGuestImportCompleted` | `vip-guest.import.completed` | Job chuyển sang `COMPLETED` hoặc `PARTIALLY_COMPLETED`. | `checkin-service` | `vip-guest-import-completed.v1` |
-| `VipGuestImportFailed` | `vip-guest.import.failed` | Job chuyển sang `FAILED`. | Monitoring/Admin integration | `vip-guest-import-failed.v1` |
+| `VipGuestImportCompleted` | `vip-guest-import.completed` | Job chuyển sang `COMPLETED` hoặc `PARTIALLY_COMPLETED`. | `checkin-service` | `../common/event-envelope.md` §14.8 |
+| `VipGuestImportFailed` | `vip-guest-import.failed` | Job chuyển sang `FAILED`. | Monitoring/Admin integration | `../common/event-envelope.md` §14.9 |
 
-Event dùng exchange `tickefy.events`, có `messageId`, `eventType`, `timestamp`, `correlationId` và `payload`. Khi publish lại cùng job, service phải dùng lại `messageId` đã lưu.
+Event dùng exchange `tickefy.events` và common envelope gồm `messageId`, `eventType`, `eventVersion`, `source`, `occurredAt`, `correlationId`, `causationId` và `payload`. Payload dùng `importJobId` làm định danh import job. Khi publish lại cùng job, service phải dùng lại `messageId` đã lưu.
 
 ## 8. Events consumed
 
@@ -138,7 +138,7 @@ stateDiagram-v2
 
 | Current | Action/Event | Next | Side effects |
 |---|---|---|---|
-| — | Upload hoặc cron phát hiện file hợp lệ | `PENDING` | Lưu file, tạo `batch_jobs`, trả `batchId`. |
+| — | Upload hoặc cron phát hiện file hợp lệ | `PENDING` | Lưu file, tạo `import_jobs`, trả `importJobId`. |
 | `PENDING` | Worker claim | `PROCESSING` | Ghi `started_at`, tăng attempt, bắt đầu streaming. |
 | `PROCESSING` | Không có dòng lỗi | `COMPLETED` | Promote dữ liệu, cập nhật counters, publish completed event. |
 | `PROCESSING` | Có lỗi nhưng tỷ lệ `<= 50%` | `PARTIALLY_COMPLETED` | Promote dòng hợp lệ, lưu error report, publish completed event. |
@@ -152,7 +152,7 @@ stateDiagram-v2
 - Unique constraint `(concert_id, email)` và `ON CONFLICT DO NOTHING` ngăn import trùng.
 - Duplicate trong cùng file chỉ giữ bản đầu; dòng sau được ghi lỗi `DUPLICATE_ROW`.
 - Retry hoặc re-upload không tạo thêm guest đã tồn tại.
-- Event publish lại phải giữ nguyên `messageId` của job.
+- Event publish lại phải giữ nguyên `messageId` của terminal import job event.
 
 ### Retry
 
@@ -169,12 +169,12 @@ stateDiagram-v2
 ### Circuit breaker
 
 - Áp dụng cho `event-service` và `inventory-service` khi dùng Resilience4j.
-- Khi circuit mở, không tạo job mới và trả `503 SERVICE_UNAVAILABLE`.
+- Khi circuit mở trước khi tạo job, không tạo job mới và trả `503 SERVICE_UNAVAILABLE` hoặc dependency-specific code nếu catalog đã định nghĩa.
 - Job đang chạy chỉ retry dependency failure theo policy, không busy-loop.
 
 ### Transaction boundaries
 
-- Tạo `batch_jobs` là một transaction sau khi file đã lưu thành công.
+- Tạo `import_jobs` là một transaction sau khi file đã lưu thành công.
 - Mỗi chunk staging/error là một transaction ngắn.
 - Promote staging sang `vip_guests` và cập nhật terminal status trong một transaction.
 - Event được publish sau commit; dùng transactional outbox để tránh mất event.
@@ -187,7 +187,7 @@ stateDiagram-v2
 
 ## 12. Security
 
-- Authentication: JWT Bearer; Gateway và service xác thực request protected.
+- Authentication: JWT access token dùng `Authorization: Bearer`; service verify RS256 bằng public key theo Auth Contract. Gateway có thể route request nhưng không phải nguồn tin cậy cho `X-User-*` trong MVP.
 - Authorization: chỉ `ORGANIZER` sở hữu concert hoặc `ADMIN` được upload, xem và retry job.
 - Sensitive data: tên, email, raw CSV và error report là dữ liệu cá nhân; object storage bucket phải private.
 - Logging mask: không log full email, raw CSV row, JWT, object storage secret hoặc signed URL.
@@ -222,7 +222,7 @@ stateDiagram-v2
 
 ## 14. Observability
 
-- Logs: structured JSON với `requestId`, `batchId`, `concertId`, `organizerId`, `status`, counters, attempt và duration; không log raw PII.
+- Logs: structured JSON với `requestId`, `importJobId`, `concertId`, `organizerId`, `status`, counters, attempt và duration; không log raw PII.
 - Metrics: jobs theo status, processing duration, rows/second, error ratio, duplicate count, retry count, event publish failures và stuck jobs.
 - Traces: trace upload, Event/Inventory calls, Object Storage, database chunks và RabbitMQ publish.
 - Alerts: job `PROCESSING` quá lease timeout, tỷ lệ `FAILED` tăng, publish event thất bại, DB pool saturation hoặc cron không chạy.
@@ -255,7 +255,7 @@ stateDiagram-v2
 - [ ] Gateway route configured.
 - [ ] Queue/binding/DLQ configured.
 - [ ] Integration test with dependencies passes.
-- [ ] Upload file hợp lệ trả `202` và `batchId` trong dưới 2 giây.
+- [ ] Upload file hợp lệ trả `202` và `importJobId` trong dưới 2 giây.
 - [ ] Streaming import không nạp toàn bộ file vào memory; batch size cấu hình được.
 - [ ] Dòng lỗi không chặn dòng hợp lệ; error report có `lineNumber`, `rawData`, `reason`.
 - [ ] Tỷ lệ lỗi lớn hơn 50% làm job `FAILED` và không promote staging.
@@ -265,8 +265,6 @@ stateDiagram-v2
 
 ## 17. Open questions
 
-- Chốt endpoint internal chính thức của Event và Inventory Service.
 - Chốt service port trong Docker Compose; spec đang dùng mặc định `8090`.
-- Chuẩn hóa toàn bộ tài liệu cũ từ `VipGuestImported` sang `VipGuestImportCompleted`.
 - Chốt retention của CSV gốc, staging rows và import error report.
-- Chốt Check-in bootstrap projection dùng event replay hay internal API phân trang.
+- Chốt policy vận hành cho cron import: naming convention object key, reprocess thủ công và retention failed attempts.

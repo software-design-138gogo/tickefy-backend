@@ -112,7 +112,7 @@ Một endpoint có thể xử lý request hợp lệ và trả về kết quả 
 | Vé cancelled/refunded | 200 | `success=true`, `data.result=\"CANCELLED_REJECTED\"` / `\"REFUNDED_REJECTED\"` | Từ chối |
 | QR malformed, body sai schema | 400 | `success=false`, `error.code=\"VALIDATION_ERROR\"` hoặc `\"INVALID_QR_TOKEN\"` | Báo lỗi request |
 | Staff thiếu quyền | 403 | `success=false`, `error.code=\"FORBIDDEN\"` | Forbidden/login lại |
-| Ticket Service down | 503 | `success=false`, `error.code=\"SERVICE_UNAVAILABLE\"` | Retry/backoff |
+| Ticket Service down | 503 | `success=false`, `error.code=\"TICKET_SERVICE_UNAVAILABLE\"` | Retry/backoff |
 
 Canonical check-in result response:
 

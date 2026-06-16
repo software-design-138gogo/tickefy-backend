@@ -15,7 +15,7 @@ Flow này mô tả cách Organizer/Admin import danh sách VIP guest cho một c
 
 Kết quả cuối cùng mong muốn:
 
-- Upload CSV trả `202 Accepted` nhanh với `batchId`, không xử lý toàn bộ file trong request thread.
+- Upload CSV trả `202 Accepted` nhanh với `importJobId`, không xử lý toàn bộ file trong request thread.
 - File-level validation chặn file sai format, quá lớn, sai encoding hoặc user không có quyền với concert.
 - Worker đọc CSV theo stream, validate từng dòng, ghi staging và error report theo batch.
 - Dòng hợp lệ được promote sang `vip_guests` idempotent theo `(concertId, email)`.
@@ -29,7 +29,7 @@ Kết quả cuối cùng mong muốn:
 | Participant | Responsibility |
 |---|---|
 | Organizer/Admin web | Upload CSV, poll status, tải/xem error report |
-| API Gateway | Verify JWT, forward identity headers, propagate `X-Request-ID` |
+| API Gateway | Route request and propagate `X-Request-ID`; `csv-ingestion-service` remains the trust boundary for JWT verification |
 | `csv-ingestion-service` | Validate file/concert, tạo job, stream process CSV, publish import result |
 | `event-service` | Kiểm tra concert tồn tại và Organizer có quyền quản lý |
 | `inventory-service` | Resolve và validate `ticket_type`/`ticketTypeId` theo concert |
@@ -91,13 +91,13 @@ sequenceDiagram
     participant Checkin as checkin-service
 
     Client->>Gateway: POST /api/admin/csv-import
-    Gateway->>Csv: Forward JWT identity and X-Request-ID
-    Csv->>Csv: Validate file size, extension/header, UTF-8
+    Gateway->>Csv: Forward Authorization bearer and X-Request-ID
+    Csv->>Csv: Verify JWT, role and file size/header/UTF-8
     Csv->>Event: GET /internal/concerts/{concertId}
     Event-->>Csv: Concert and ownership context
     Csv->>Store: Upload original CSV to private bucket
-    Csv->>DB: Create batch job PENDING
-    Csv-->>Client: 202 Accepted with batchId
+    Csv->>DB: Create import job PENDING
+    Csv-->>Client: 202 Accepted with importJobId
 
     Worker->>DB: Atomic claim PENDING job
     Worker->>DB: Set PROCESSING and attempt metadata
@@ -113,7 +113,7 @@ sequenceDiagram
     Csv->>MQ: Publish VipGuestImportCompleted from outbox
     MQ-->>Checkin: Deliver VipGuestImportCompleted
     Checkin->>Checkin: Dedup messageId and refresh VIP projection
-    Client->>Csv: GET /api/admin/csv-import/{batchId}
+    Client->>Csv: GET /api/admin/csv-import/{importJobId}
     Csv-->>Client: Status COMPLETED with counters
 ```
 
@@ -122,12 +122,12 @@ sequenceDiagram
 | Step | From | To | Sync/Async | Contract | State change |
 |---:|---|---|---|---|---|
 | 1 | Organizer/Admin web | API Gateway | Sync HTTP | `POST /api/admin/csv-import` multipart | None |
-| 2 | API Gateway | `csv-ingestion-service` | Sync HTTP | Verified JWT identity, roles, `X-Request-ID` | None |
-| 3 | `csv-ingestion-service` | `csv-ingestion-service` | Sync local | Validate file size, extension/header, UTF-8 | Reject before job if invalid |
+| 2 | API Gateway | `csv-ingestion-service` | Sync HTTP | Forward `Authorization: Bearer` and `X-Request-ID` | None |
+| 3 | `csv-ingestion-service` | `csv-ingestion-service` | Sync local | Verify JWT/role and validate file size, extension/header, UTF-8 | Reject before job if invalid |
 | 4 | `csv-ingestion-service` | `event-service` | Sync HTTP | `GET /internal/concerts/{concertId}` | None |
 | 5 | `csv-ingestion-service` | Object Storage | Sync infra | Store original CSV privately | CSV object created |
-| 6 | `csv-ingestion-service` | PostgreSQL | Sync DB transaction | Insert `batch_jobs` | Job `PENDING` |
-| 7 | `csv-ingestion-service` | Organizer/Admin web | Sync HTTP | Common API envelope, `202 Accepted` | Client receives `batchId` |
+| 6 | `csv-ingestion-service` | PostgreSQL | Sync DB transaction | Insert `import_jobs` | Job `PENDING` |
+| 7 | `csv-ingestion-service` | Organizer/Admin web | Sync HTTP | Common API envelope, `202 Accepted` | Client receives `importJobId` |
 | 8 | CSV worker | PostgreSQL | Async worker | Atomic claim `PENDING -> PROCESSING` | Job `PROCESSING`, attempt started |
 | 9 | CSV worker | Object Storage | Async infra | Stream original CSV object | None |
 | 10 | CSV worker | `inventory-service` | Sync HTTP | `GET /internal/concerts/{concertId}/ticket-types` | Ticket type map available |
@@ -137,7 +137,7 @@ sequenceDiagram
 | 14 | Outbox publisher | RabbitMQ | Async event | `VipGuestImportCompleted` or `VipGuestImportFailed` | Outbox published after broker confirm |
 | 15 | RabbitMQ | `checkin-service` | Async event | Common event envelope + VIP import payload | Check-in dedup record written |
 | 16 | `checkin-service` | Check-in DB/projection | Sync local | Refresh VIP guest projection for concert | Projection updated |
-| 17 | Organizer/Admin web | `csv-ingestion-service` | Sync HTTP | `GET /api/admin/csv-import/{batchId}` | Client sees terminal status and counters |
+| 17 | Organizer/Admin web | `csv-ingestion-service` | Sync HTTP | `GET /api/admin/csv-import/{importJobId}` | Client sees terminal status and counters |
 
 ## 7. Data ownership
 
@@ -152,7 +152,7 @@ sequenceDiagram
 | VIP projection used during check-in | `checkin-service` |
 | Import result event publish state | `csv-ingestion-service` outbox + RabbitMQ |
 | Consumed import event dedup state | `checkin-service` |
-| User identity and roles | Auth Service / JWT verified by API Gateway |
+| User identity and roles | Auth Service / JWT verified locally by `csv-ingestion-service` |
 
 ## 8. State transitions by service
 
@@ -197,12 +197,12 @@ sequenceDiagram
 |---|---|---|
 | VIP guest import row | `(concertId, email)` | Existing guest is not duplicated; duplicate/skipped counter increases |
 | Duplicate row in same file | `concertId + normalized email` within batch | First valid row wins; later rows become `DUPLICATE_ROW` errors |
-| Worker claim | Atomic DB update by `batchId` and current status `PENDING` | Only one worker processes a job |
-| Chunk insert | `batchId + attempt + lineNumber` or staging unique key | Retried chunk does not double-count/promote rows |
+| Worker claim | Atomic DB update by `importJobId` and current status `PENDING` | Only one worker processes a job |
+| Chunk insert | `importJobId + attempt + lineNumber` or staging unique key | Retried chunk does not double-count/promote rows |
 | Promote staging | `(concertId, email)` with `ON CONFLICT DO NOTHING` | Re-run/re-upload cannot duplicate VIP guests |
-| Retry failed job | `batchId` with attempt counter | Reset attempt staging safely, keep job history and retry within limit |
+| Retry failed job | `importJobId` with attempt counter | Reset attempt staging safely, keep job history and retry within limit |
 | Outbox publish | Stable event `messageId` per terminal job event | Republish same message safely until broker confirm |
-| Check-in consume | `messageId`, optionally guarded by `batchId`/`jobId` | Duplicate event is ACKed without duplicate projection update |
+| Check-in consume | `messageId`, optionally guarded by `importJobId` | Duplicate event is ACKed without duplicate projection update |
 | Cron discovery | Source object key/checksum | Same object is not imported as multiple active jobs unless explicitly reprocessed |
 
 ## 11. Timeout and retry
@@ -223,7 +223,7 @@ sequenceDiagram
 - `requestId`: lấy từ `X-Request-ID`; nếu thiếu thì service tự sinh; echo ở response header/body.
 - `correlationId`: dùng `requestId` cho upload-created jobs; cron jobs tự sinh stable job correlation ID.
 - `messageId`: UUID của `VipGuestImportCompleted` hoặc `VipGuestImportFailed`, giữ nguyên khi outbox republish.
-- Required logs: `requestId`, `correlationId`, `messageId`, `batchId`, `concertId`, `organizerId`, `source`, `status`, `attempt`, `totalRows`, `successRows`, `failedRows`, `duplicateRows`, `errorRatio`, `durationMs`, `errorCode`.
+- Required logs: `requestId`, `correlationId`, `messageId`, `importJobId`, `concertId`, `organizerId`, `source`, `status`, `attempt`, `totalRows`, `successRows`, `failedRows`, `duplicateRows`, `errorRatio`, `durationMs`, `errorCode`.
 - Required metrics:
   - `csv_import_jobs_total{status,source}`
   - `csv_import_duration_seconds`
@@ -288,7 +288,7 @@ Alert conditions:
 - [ ] Duplicate request/message is safe.
 - [ ] Logs can be traced by correlation ID.
 - [ ] All contracts are frozen.
-- [ ] `POST /api/admin/csv-import` returns `202 Accepted` with common API envelope and `batchId`.
+- [ ] `POST /api/admin/csv-import` returns `202 Accepted` with common API envelope and `importJobId`.
 - [ ] Upload validates size, header, UTF-8 and concert ownership before creating job.
 - [ ] CSV source and error report are stored in private Object Storage.
 - [ ] Worker streams CSV and does not load full file into memory.
@@ -302,4 +302,4 @@ Alert conditions:
 - [ ] Retry of failed job resets attempt staging safely and respects max retry count.
 - [ ] Cron-created jobs follow the same validation, processing, idempotency and observability rules as upload jobs.
 - [ ] No response or normal log exposes JWT, secrets, full email list, raw CSV file, full row content or signed URL.
-- [ ] Routing key naming is reconciled before freeze: `csv-ingestion-service.md` currently uses `vip-guest.import.completed`, while common event examples use `vip-guest-import.completed`.
+- [ ] Routing key naming follows common event envelope: `vip-guest-import.completed` and `vip-guest-import.failed`.

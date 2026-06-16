@@ -67,7 +67,7 @@ lastUpdated: 2026-06-16
 | `concertId` | `event-service` | Trust from `OrderPaid`; optional internal lookup for snapshot enrichment |
 | `orderId` | `order-service` | Trust from `OrderPaid`; unique issue correlation |
 | `orderItemId` | `order-service` | Unique idempotency key for ticket issue |
-| `ticketTypeId` | `inventory-service` / `event-service` | Trust from `OrderPaid`; no cross-schema FK |
+| `ticketTypeId` | `inventory-service` | Trust from `OrderPaid`; no cross-schema FK |
 
 ### Invariants
 
@@ -137,9 +137,20 @@ Request:
   "staffId": "staff-uuid",
   "gate": "GATE_A",
   "scannedAt": "2026-06-16T10:00:00Z",
+  "scanRequestId": "mobile-scan-id-or-null",
+  "syncBatchId": null,
+  "offlineScanId": null,
   "source": "ONLINE"
 }
 ```
+
+Rules:
+
+- `source` is `ONLINE` or `OFFLINE`.
+- Online requests require `scanRequestId`.
+- Offline sync requests require `syncBatchId` and `offlineScanId`.
+- `staffId` comes from the JWT verified by `checkin-service`; clients do not call this endpoint directly.
+- Idempotency metadata is used for retry safety only; the guarded ticket state transition remains the correctness source.
 
 Response uses check-in result semantics from `../common/checkin-result-catalog.md`.
 
@@ -148,7 +159,7 @@ Response uses check-in result semantics from `../common/checkin-result-catalog.m
 | Event | Routing key | When | Consumers | Contract |
 |---|---|---|---|---|
 | `TicketsIssued` | `tickets.issued` | Tickets created after `OrderPaid` | `notification-service` | `../common/event-envelope.md` §14.3 |
-| `TicketCheckedIn` | `ticket.checked-in` | Optional after successful check-in | analytics/optional | `../common/event-envelope.md` §14.5 |
+| `TicketCheckedIn` | `ticket.checked-in` | Optional after successful check-in | analytics/optional | `../common/event-envelope.md` §14.6 |
 
 ## 8. Events consumed
 
@@ -156,7 +167,7 @@ Response uses check-in result semantics from `../common/checkin-result-catalog.m
 |---|---|---|---|---|
 | `OrderPaid` | `order-service` | `ticket.order-paid` | Issue tickets for order items | `messageId`, `orderItemId` |
 | `ConcertCancelled` | `event-service` | `ticket.concert-cancelled` | Mark issued tickets for concert as `CANCELLED` | `messageId`, `concertId` |
-| Refund event TBD | `payment-service` / `order-service` | TBD | Mark tickets as `REFUNDED` | `messageId`, `ticketId`/`orderItemId` |
+| `OrderRefunded` | `order-service` | `ticket.order-refunded` | Mark tickets for refunded order as `REFUNDED` | `messageId`, `orderId`, `concertId` |
 
 ## 9. State machines
 
@@ -166,6 +177,7 @@ stateDiagram-v2
     ISSUED --> CHECKED_IN: atomic check-in accepted
     ISSUED --> CANCELLED: ConcertCancelled / order cancelled
     ISSUED --> REFUNDED: refund completed
+    CANCELLED --> REFUNDED: refund completed
     ISSUED --> REVOKED: admin revoke
     CHECKED_IN --> [*]
     CANCELLED --> [*]
@@ -181,7 +193,7 @@ stateDiagram-v2
 | `ISSUED` | Internal check-in accepted | `CHECKED_IN` | Return `ACCEPTED`, optional publish `TicketCheckedIn` |
 | `CHECKED_IN` | Check-in replay/duplicate | `CHECKED_IN` | Return `DUPLICATE_REJECTED`, no state change |
 | `ISSUED` | `ConcertCancelled` | `CANCELLED` | Ticket no longer valid |
-| `ISSUED` | Refund completed | `REFUNDED` | Ticket no longer valid |
+| `ISSUED`/`CANCELLED` | `OrderRefunded` | `REFUNDED` | Ticket no longer valid; refund state wins over prior cancellation marker |
 | `ISSUED` | Admin revoke | `REVOKED` | Ticket no longer valid |
 
 ## 10. Reliability
@@ -191,6 +203,7 @@ stateDiagram-v2
 - Consume `OrderPaid` idempotent by `messageId` and `orderItemId`.
 - Duplicate `OrderPaid` must not create duplicate tickets.
 - Internal check-in is atomic; concurrent scans of the same ticket produce exactly one `ACCEPTED`.
+- Internal check-in dedup may use `(source, scanRequestId)` for `ONLINE` requests and `(syncBatchId, offlineScanId)` for `OFFLINE` requests when provided.
 - Duplicate scan returns result code, not API error, if request is otherwise valid.
 
 ### Retry
@@ -226,7 +239,7 @@ Cache is optional; PostgreSQL remains source of truth.
 
 ## 12. Security
 
-- Authentication: public endpoints require JWT; internal endpoints require service-to-service bearer context.
+- Authentication: public/internal protected endpoints use `Authorization: Bearer <access-token>`; `ticket-service` verifies RS256 locally. `checkin-service` forwards the original access token for internal calls. MVP has no separate service token/client-credentials flow.
 - Authorization: audience can only access own tickets; `checkin-service` calls internal endpoints for staff operations.
 - Sensitive data: raw `qrToken` must not leave trusted boundary unless explicitly required by implementation.
 - Logging mask: log `qrTokenMasked`/prefix only; never log JWT, raw QR, secrets.

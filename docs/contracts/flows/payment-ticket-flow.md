@@ -54,7 +54,8 @@ sequenceDiagram
 
     Gateway->>Payment: POST payment callback
     Payment->>Payment: verify signature and idempotency
-    Payment->>Order: POST /internal/orders/{orderId}/mark-paid
+    Payment->>MQ: publish PaymentSucceeded
+    MQ-->>Order: deliver PaymentSucceeded
     Order->>Order: validate order and mark PAID
     Order->>MQ: publish OrderPaid
     MQ-->>Ticket: deliver OrderPaid
@@ -70,7 +71,7 @@ sequenceDiagram
 
 | Event | Producer | Consumer | Routing key | Contract |
 |---|---|---|---|---|
-| `PaymentSucceeded` or internal payment success command | `payment-service` | `order-service` | project-specific | `../common/event-envelope.md` §14.1 if event-based |
+| `PaymentSucceeded` | `payment-service` | `order-service` | `payment.succeeded` | `../common/event-envelope.md` §14.1 |
 | `OrderPaid` | `order-service` | `ticket-service` | `order.paid` | `../common/event-envelope.md` §14.2 |
 | `TicketsIssued` | `ticket-service` | `notification-service` | `tickets.issued` | `../common/event-envelope.md` §14.3 |
 
@@ -86,11 +87,11 @@ Contract requirement:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING_PAYMENT
-    PENDING_PAYMENT --> PAID: payment callback verified
+    [*] --> PAYMENT_PENDING
+    PAYMENT_PENDING --> PAID: PaymentSucceeded consumed
     PAID --> TICKET_ISSUING: OrderPaid published
     TICKET_ISSUING --> TICKET_ISSUED: TicketsIssued observed or ticket-service success
-    PENDING_PAYMENT --> PAYMENT_FAILED: payment failed or expired
+    PAYMENT_PENDING --> PAYMENT_FAILED: payment failed or expired
     PAYMENT_FAILED --> [*]
     TICKET_ISSUED --> [*]
 ```
@@ -114,7 +115,7 @@ stateDiagram-v2
 | Layer | Key | Required behavior |
 |---|---|---|
 | Payment callback | gateway transaction id / payment intent id | Duplicate callback does not double mark order |
-| Payment → Order | `orderId`, payment transaction id | Order transition to PAID exactly once |
+| Payment → Order | `messageId`, `paymentId`, `orderId` | Order transition to PAID exactly once |
 | RabbitMQ event | `messageId` | Consumer dedups message replay |
 | Ticket issuing | `orderItemId` or `(orderId, orderItemId, sequence)` | Duplicate `OrderPaid` does not create duplicate tickets |
 | Notification | `messageId`, `ticketId` | Duplicate notification suppressed or made harmless |
@@ -126,14 +127,14 @@ stateDiagram-v2
 | Invalid callback signature | Reject callback, no order update | Payment pending/failed depending gateway retry |
 | Duplicate payment callback | Return success after replay check | No duplicate charge/ticket |
 | Order already paid | Treat as idempotent success | Paid |
-| RabbitMQ temporarily unavailable | Retry publish or outbox if implemented | Payment accepted, ticket pending |
+| RabbitMQ temporarily unavailable | Payment transaction committed; `PaymentSucceeded` remains in payment outbox and drainer retries | Payment accepted, ticket pending |
 | `ticket-service` fails after event delivery | Retry consumer; DLQ after max retries | Paid but ticket pending, ops alert |
 | Duplicate `OrderPaid` event | ACK duplicate after dedup | No duplicate ticket |
 | `TicketsIssued` notification fails | Notification retry/DLQ | Ticket still issued |
 
 ## 9. Data consistency
 
-- Order payment is synchronous/transactional inside `order-service`.
+- Payment result is transactional inside `payment-service`; order transition is asynchronous after `PaymentSucceeded`.
 - Ticket issue is asynchronous and eventually consistent after `OrderPaid`.
 - UI should show paid/ticket pending state if tickets not issued yet.
 - Reconciliation job can compare paid order items vs issued tickets.
@@ -174,6 +175,6 @@ Metrics:
 
 ## 12. Open questions
 
-- [ ] Confirm if `payment-service` calls `order-service` synchronously or publishes `PaymentSucceeded` for order-service to consume.
+- [x] `payment-service` publishes `PaymentSucceeded`; `order-service` consumes it asynchronously via `order.payment-succeeded`.
 - [ ] Confirm outbox pattern requirement for `OrderPaid` and `TicketsIssued` in MVP.
 - [ ] Confirm whether order status includes explicit `TICKET_PENDING` / `TICKET_ISSUED`.

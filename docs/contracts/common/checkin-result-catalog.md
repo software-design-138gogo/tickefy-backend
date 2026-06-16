@@ -132,11 +132,15 @@ lastUpdated: 2026-06-16
 | QR string malformed / missing required field | No | `VALIDATION_ERROR` or `INVALID_QR_TOKEN` |
 | Staff token missing/expired | No | `UNAUTHORIZED` / `INVALID_TOKEN` |
 | Staff lacks role | No | `FORBIDDEN` |
-| Ticket Service unavailable | No | `SERVICE_UNAVAILABLE` |
+| Ticket Service unavailable | No | `TICKET_SERVICE_UNAVAILABLE` |
 | Batch payload too large | No | `SYNC_BATCH_TOO_LARGE` |
 | Snapshot expired before offline scan | Yes on mobile local; API error if requesting expired snapshot | `SNAPSHOT_EXPIRED` for API request |
 
 ## 9. Open questions
 
 - [ ] Có cần thêm result riêng cho manual override by admin/organizer không?
-- [ ] `INVALID_QR_REJECTED` có áp dụng cho QR không decode được không, hay trường hợp đó luôn là `INVALID_QR_TOKEN` API error?
+
+## 10. Settled rules
+
+- QR không decode được, malformed, hoặc thiếu field bắt buộc luôn là API error `INVALID_QR_TOKEN` hoặc `VALIDATION_ERROR`.
+- `INVALID_QR_REJECTED` chỉ dùng khi request parse được nhưng không match vé hợp lệ.

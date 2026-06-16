@@ -53,7 +53,7 @@ sequenceDiagram
     Checkin->>Checkin: verify JWT role CHECKIN_STAFF
     Checkin->>Checkin: validate concert and gate assignment
     Checkin->>CheckinDB: create or find audit by scanRequestId
-    Checkin->>Ticket: POST /internal/tickets/checkin
+    Checkin->>Ticket: POST /internal/tickets/checkin with scanRequestId
     Ticket->>TicketDB: guarded update ISSUED to CHECKED_IN
     Ticket-->>Checkin: CheckinDecision with data.result
     Checkin->>CheckinDB: persist audit result
@@ -159,7 +159,7 @@ stateDiagram-v2
 | Mobile retries same `scanRequestId` after timeout | Return stored audit/result if available |
 | Mobile sends new scan for same ticket after accepted | Return `DUPLICATE_REJECTED` |
 | `checkin-service` times out calling `ticket-service` | Return API error only if result unknown; audit as dependency failure |
-| `ticket-service` receives duplicate internal request with same key | Must be safe; no second acceptance |
+| `ticket-service` receives duplicate internal request with same `scanRequestId` | Must be safe; no second acceptance |
 
 ## 11. Audit fields
 

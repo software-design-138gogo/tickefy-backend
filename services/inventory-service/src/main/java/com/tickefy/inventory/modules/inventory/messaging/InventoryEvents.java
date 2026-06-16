@@ -4,9 +4,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /**
- * Inbound event shapes consumed by inventory-service. FLAT bodies (top-level messageId/eventType)
- * matching order-service's published order.* events. Unknown fields ignored (e.g. zoneId/ticketTypeName
- * that e-ticket needs but inventory does not).
+ * Inbound event shapes consumed by inventory-service. ENVELOPE bodies per backend-service-workflow §10:
+ * {@code {messageId, eventType, eventVersion, occurredAt, payload:{orderId, items}}}. Unknown fields
+ * ignored (e.g. userId/concertId/zoneId/ticketTypeName that e-ticket needs but inventory does not).
  */
 public final class InventoryEvents {
 
@@ -16,8 +16,12 @@ public final class InventoryEvents {
     public record OrderPaidMessage(
             String messageId,
             String eventType,
-            String orderId,
-            List<Item> items) {
+            String eventVersion,
+            String occurredAt,
+            Payload payload) {
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public record Payload(String orderId, List<Item> items) {}
 
         @JsonIgnoreProperties(ignoreUnknown = true)
         public record Item(String ticketTypeId, int quantity) {}
@@ -27,8 +31,12 @@ public final class InventoryEvents {
     public record OrderReleaseMessage(
             String messageId,
             String eventType,
-            String orderId,
-            List<Item> items) {
+            String eventVersion,
+            String occurredAt,
+            Payload payload) {
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public record Payload(String orderId, List<Item> items) {}
 
         @JsonIgnoreProperties(ignoreUnknown = true)
         public record Item(String ticketTypeId, int quantity) {}

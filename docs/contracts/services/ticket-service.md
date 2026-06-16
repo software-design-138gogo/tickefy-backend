@@ -54,7 +54,7 @@ lastUpdated: 2026-06-16
 
 | Table | Purpose |
 |---|---|
-| `tickets` | Ticket issued cho từng order item / user / concert |
+| `tickets` | Ticket issued cho từng order item / user / concert. Cột `seat_sequence` (migration V4) + composite UNIQUE `uq_tickets_order_item_seq (order_item_id, seat_sequence)` cho qty>1; entity `@Table(uniqueConstraints)` khớp constraint này |
 | `ticket_qr_tokens` hoặc fields tương đương | QR token/hash/metadata phục vụ verify |
 | `processed_messages` | Dedup RabbitMQ messages by `messageId` |
 | `ticket_status_history` | Optional audit trạng thái ticket |
@@ -66,14 +66,14 @@ lastUpdated: 2026-06-16
 | `userId` | `auth-service` | Trust from `OrderPaid` payload after producer validation |
 | `concertId` | `event-service` | Trust from `OrderPaid`; optional internal lookup for snapshot enrichment |
 | `orderId` | `order-service` | Trust from `OrderPaid`; unique issue correlation |
-| `orderItemId` | `order-service` | Unique idempotency key for ticket issue |
+| `orderItemId` | `order-service` | Part of idempotency key `(orderItemId, seat_sequence)` for ticket issue (qty>1 → N seats per item) |
 | `ticketTypeId` | `inventory-service` | Trust from `OrderPaid`; no cross-schema FK |
 
 ### Invariants
 
 - Không có cross-service foreign key.
 - Service khác không query trực tiếp schema này.
-- `orderItemId` hoặc `(orderId, orderItemId, sequence)` phải chống issue ticket duplicate.
+- ✅ Idempotency key = **`(orderItemId, seat_sequence)` UNIQUE** (đã chốt + verified): order item quantity=N → N vé seq 1..N; redeliver `OrderPaid` không tạo vé trùng.
 - Một ticket chỉ có một terminal state tại một thời điểm.
 - Public response/event không chứa raw `qrToken`.
 
@@ -171,7 +171,7 @@ Response uses check-in result semantics from `../common/checkin-result-catalog.m
 
 | Event | Producer | Queue | Behavior | Idempotency key |
 |---|---|---|---|---|
-| `OrderPaid` | `order-service` | `ticket.order-paid` | Issue tickets for order items | `messageId`, `orderItemId` |
+| `OrderPaid` | `order-service` | `ticket.order-paid` | Issue tickets for order items (loop `quantity` → N vé/item) | **envelope** → đọc `payload.{orderId,userId,concertId,paidAt,items[{orderItemId,ticketTypeId,quantity,zoneId,ticketTypeName}]}`; idempotency `(orderItemId, seat_sequence)` |
 | `ConcertCancelled` | `event-service` | `ticket.concert-cancelled` | Mark issued tickets for concert as `CANCELLED` | `messageId`, `concertId` |
 | `OrderRefunded` | `order-service` | `ticket.order-refunded` | Mark tickets for refunded order as `REFUNDED` | `messageId`, `orderId` |
 
@@ -206,7 +206,7 @@ stateDiagram-v2
 
 ### Idempotency
 
-- Consume `OrderPaid` idempotent by `messageId` and `orderItemId`.
+- Consume `OrderPaid` idempotent by `(orderItemId, seat_sequence)` (composite UNIQUE; qty>1 = one ticket per seat).
 - Duplicate `OrderPaid` must not create duplicate tickets.
 - Internal check-in is atomic; concurrent scans of the same ticket produce exactly one `ACCEPTED`.
 - Internal check-in dedup may use `(source, scanRequestId)` for `ONLINE` requests and `(syncBatchId, offlineScanId)` for `OFFLINE` requests when provided.
@@ -288,6 +288,7 @@ Cache is optional; PostgreSQL remains source of truth.
 - [ ] API contract tests pass.
 - [ ] Event contract tests pass for `OrderPaid`, `TicketsIssued`, `ConcertCancelled`.
 - [ ] Duplicate `OrderPaid` does not duplicate tickets.
+- [x] ✅ qty>1 verified (compose dev): order item quantity=3 → 3 vé `seat_sequence` 1/2/3; replay không nhân đôi.
 - [ ] Concurrent check-in accepts exactly one request.
 - [ ] Public ticket response does not expose raw `qrToken`.
 - [ ] Docker image builds.

@@ -47,34 +47,41 @@ public class OrderPaidConsumer {
      */
     @RabbitListener(queues = "${app.messaging.queue.order-paid:ticket-service.order-paid.queue}")
     public void onOrderPaid(OrderPaidEvent event) {
-        log.info("Received order.paid orderId={} concertId={} items={}",
-                event.orderId(), event.concertId(), event.items().size());
+        OrderPaidEvent.Payload payload = event.payload();
+        if (payload == null || payload.items() == null) {
+            throw new IllegalArgumentException("order.paid missing payload.items");
+        }
+        log.info("Received order.paid messageId={} orderId={} concertId={} items={}",
+                event.messageId(), payload.orderId(), payload.concertId(), payload.items().size());
 
-        for (OrderPaidEvent.OrderItem item : event.items()) {
-            try {
-                processItem(event, item);
-            } catch (Exception ex) {
-                // Log and continue — other items should still be processed.
-                // The failed item will be retried via RabbitMQ redelivery / DLQ.
-                log.error("Failed to issue ticket for orderItemId={} orderId={}: {}",
-                        item.orderItemId(), event.orderId(), ex.getMessage(), ex);
-                throw ex; // re-throw so RabbitMQ handles redelivery
+        for (OrderPaidEvent.OrderItem item : payload.items()) {
+            // qty>1: issue one ticket per seat (1..quantity). Idempotent on (orderItemId, seatSequence).
+            int quantity = Math.max(item.quantity(), 1);
+            for (int seq = 1; seq <= quantity; seq++) {
+                try {
+                    processItem(payload, item, seq);
+                } catch (Exception ex) {
+                    // The failed seat will be retried via RabbitMQ redelivery / DLQ.
+                    log.error("Failed to issue ticket for orderItemId={} seq={} orderId={}: {}",
+                            item.orderItemId(), seq, payload.orderId(), ex.getMessage(), ex);
+                    throw ex; // re-throw so RabbitMQ handles redelivery
+                }
             }
         }
     }
 
-    private void processItem(OrderPaidEvent event, OrderPaidEvent.OrderItem item) {
+    private void processItem(OrderPaidEvent.Payload payload, OrderPaidEvent.OrderItem item, int seatSequence) {
         IssueRequest req = new IssueRequest(
-                event.orderId(),
+                payload.orderId(),
                 item.orderItemId(),
-                event.userId(),
-                event.concertId(),
+                payload.userId(),
+                payload.concertId(),
                 item.ticketTypeId(),
                 item.zoneId(),
                 item.ticketTypeName()
         );
 
-        TicketDto ticket = ticketService.issueTicket(req);
+        TicketDto ticket = ticketService.issueTicket(req, seatSequence);
 
         // Publish ticket.issued for notification-service
         TicketIssuedEvent issued = new TicketIssuedEvent(
@@ -88,7 +95,7 @@ public class OrderPaidConsumer {
         );
         rabbitTemplate.convertAndSend(exchange, "ticket.issued", issued);
 
-        log.info("Ticket issued and event published ticketId={} orderItemId={}",
-                ticket.id(), item.orderItemId());
+        log.info("Ticket issued and event published ticketId={} orderItemId={} seq={}",
+                ticket.id(), item.orderItemId(), seatSequence);
     }
 }

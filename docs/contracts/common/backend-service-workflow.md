@@ -136,10 +136,14 @@ CREATE SCHEMA IF NOT EXISTS eticket_service;
 Quy ước (BẮT BUỘC khớp toàn hệ):
 - Exchange: **`tickefy.exchange`** (topic, durable).
 - Queue: **`<service>-service.<event-kebab>.queue`** (vd `inventory-service.order-paid.queue`, `ticket-service.order-paid.queue`).
-- DLQ: **`<...>.queue.dlq`**.
+- DLQ: **`<...>.queue.dlq`** · DLX riêng **`tickefy.dlx`** · dead-letter rk = **`<queue-base>.dlq`** (theo tên queue, KHÔNG theo routing key — tránh collision khi đa-consumer).
 - Routing key: **`<domain>.<event>`** (vd `order.paid`, `payment.succeeded`).
 
-**Convention DLQ:** dùng **exchange dead-letter RIÊNG `tickefy.dlx`** (KHÔNG route DLQ qua exchange chính). Dead-letter routing key = **`<routingKey>.dlq`** (vd `order.paid` → `order.paid.dlq`).
+**Convention DLQ:** dùng **exchange dead-letter RIÊNG `tickefy.dlx`** (KHÔNG route DLQ qua exchange chính). Dead-letter routing key = **`<queue-base>.dlq`** — lấy theo **TÊN QUEUE**, KHÔNG theo routing key.
+
+> ⚠️ **Vì sao theo tên queue, KHÔNG theo `<routingKey>.dlq`:** một routing key có thể có **nhiều consumer fan-out** (vd `order.paid` được inventory + e-ticket + notification cùng nghe). Nếu mỗi consumer đặt dead-letter rk = `order.paid.dlq` thì `tickefy.dlx` (topic) route message chết của **mọi** consumer vào **mọi** DLQ → **ô nhiễm chéo DLQ** (message lỗi của e-ticket chui vào DLQ inventory). Dùng dead-letter rk theo tên queue (`inventory-service.order-paid.dlq`, `ticket-service.order-paid.dlq`) → mỗi consumer có DLQ riêng biệt. (Bài học thật từ việc thêm DLQ e-ticket.)
+>
+> Ví dụ: queue `inventory-service.order-paid.queue` → dead-letter rk `inventory-service.order-paid.dlq`; queue `ticket-service.order-paid.queue` → dead-letter rk `ticket-service.order-paid.dlq`.
 
 Mẫu `@Bean` (mỗi consumer service — khớp RabbitMqConfig thật của order/inventory):
 ```java
@@ -151,16 +155,16 @@ Mẫu `@Bean` (mỗi consumer service — khớp RabbitMqConfig thật của ord
 
 @Bean Queue orderPaidQueue() {
   return QueueBuilder.durable("inventory-service.order-paid.queue")
-    .deadLetterExchange(dlx)                  // fail → DLX riêng (KHÔNG exchange chính)
-    .deadLetterRoutingKey("order.paid.dlq")   // <routingKey>.dlq
+    .deadLetterExchange(dlx)                          // fail → DLX riêng (KHÔNG exchange chính)
+    .deadLetterRoutingKey("inventory-service.order-paid.dlq")   // <queue-base>.dlq (theo TÊN QUEUE, tránh collision)
     .build();
 }
 @Bean Queue orderPaidDlq() { return QueueBuilder.durable("inventory-service.order-paid.queue.dlq").build(); }
 @Bean Binding b1()   { return BindingBuilder.bind(orderPaidQueue()).to(tickefyExchange()).with("order.paid"); }
-@Bean Binding bDlq() { return BindingBuilder.bind(orderPaidDlq()).to(tickefyDlx()).with("order.paid.dlq"); }
+@Bean Binding bDlq() { return BindingBuilder.bind(orderPaidDlq()).to(tickefyDlx()).with("inventory-service.order-paid.dlq"); }
 // listener factory: setDefaultRequeueRejected(false) — poison → DLQ, KHÔNG requeue vô hạn
 ```
-> Mẫu trên là chuẩn self-declare DLQ của service Hiệp (order/inventory). e-ticket hiện chỉ khai queue, DLQ qua broker policy — khi thêm DLQ self-declare nên theo mẫu này cho đồng nhất.
+> Mẫu trên là chuẩn self-declare DLQ (order/inventory/e-ticket đều đã áp dụng). Cả 3 service consume `order.paid` dùng dead-letter rk theo tên queue riêng → DLQ tách biệt, không ô nhiễm chéo.
 
 > ⚠️ Queue đã tồn tại trên broker đang chạy KHÔNG đổi args được (RabbitMQ `PRECONDITION_FAILED`). Muốn thêm DLQ vào queue cũ → xóa queue cũ trước rồi để service redeclare.
 
@@ -246,7 +250,7 @@ http://inventory-service:8080      ✅  (KHÔNG http://localhost:8083)
 ```
 (Thêm `source`/`correlationId`/`causationId` khi cần tracing — chưa bắt buộc cho đồ án.)
 
-> ⚠️ **Legacy cần migrate:** hiện `order.*` (order.paid/payment-failed/expired) đang publish **FLAT** (field top-level, không bọc payload) để khớp consumer e-ticket lúc đầu. `payment.*` đã gần envelope (thiếu `eventVersion`). **Hướng: migrate `order.*` sang envelope** — gộp khi làm qty>1 (e-ticket đằng nào cũng sửa consumer). Service MỚI từ giờ: dùng envelope ngay.
+> ✅ **Toàn hệ dùng ENVELOPE** (migrate xong, verified qty=1/qty=3). `order.*` (order.paid/payment.failed/expired) publish envelope `{messageId,eventType,eventVersion:"1.0",occurredAt,payload:{...}}`; consumer (inventory/e-ticket) đọc `payload.*`. `payment.*` có `eventVersion="1.0"`. **⚠️ Lệch tên có chủ đích:** `order.*` dùng `occurredAt`, `payment.*` giữ field `timestamp` (tránh breaking contract Payment/Dương) — follow-up thống nhất khi Payment thật land. `eventVersion` BẮT BUỘC, giờ mọi event đều có.
 
 ### Publisher (qua Outbox Pattern)
 - Ghi event vào bảng `outbox` **cùng transaction** với business state change.
@@ -260,6 +264,7 @@ http://inventory-service:8080      ✅  (KHÔNG http://localhost:8083)
 
 ### Idempotency (thực tế hiện tại)
 - **State-guard** là chính: order PAID→bỏ qua nếu đã terminal; reservation RESERVED→COMMITTED/RELEASED, đã chuyển thì skip. (Đã verified: gửi trùng ×3 không nhân đôi.)
+- **Natural-key UNIQUE** cho fan-out qty>1: e-ticket dùng `(orderItemId, seat_sequence)` UNIQUE — 1 order item quantity=N sinh N vé (seq 1..N), redeliver order.paid → seat đã có → skip (không nhân đôi).
 - 🔭 TARGET: bảng `processed_messages(messageId)` để dedup tầng message — chưa cần cho happy-path, state-guard đủ. Thêm khi cần chống race 2 message cùng messageId đồng thời.
 
 ### Test event local

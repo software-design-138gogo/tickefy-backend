@@ -3,6 +3,7 @@ package com.tickefy.eticket.infrastructure.messaging;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -55,19 +56,28 @@ class OrderPaidConsumerTest {
         );
     }
 
+    /** Build an ENVELOPE order.paid event with the given items. */
+    private OrderPaidEvent envelope(List<OrderPaidEvent.OrderItem> items) {
+        var payload = new OrderPaidEvent.Payload("order-1", "user-1", "concert-1", "2026-06-16T10:00:00Z", items);
+        return new OrderPaidEvent("msg-1", "OrderPaid", "1.0", "2026-06-16T10:00:00Z", payload);
+    }
+
+    private OrderPaidEvent.OrderItem item(String orderItemId, String typeId, int quantity, String zone, String name) {
+        return new OrderPaidEvent.OrderItem(orderItemId, typeId, quantity, zone, name);
+    }
+
     @Test
     void onOrderPaid_singleItem_issuesTicketAndPublishesEvent() {
         injectExchange();
-        var item = new OrderPaidEvent.OrderItem("item-1", "type-1", "GA", "General Admission");
-        var event = new OrderPaidEvent("order-1", "user-1", "concert-1", List.of(item));
+        var event = envelope(List.of(item("item-1", "type-1", 1, "GA", "General Admission")));
 
-        when(ticketService.issueTicket(any())).thenReturn(sampleTicket("item-1", "concert-1"));
+        when(ticketService.issueTicket(any(), eq(1))).thenReturn(sampleTicket("item-1", "concert-1"));
 
         consumer.onOrderPaid(event);
 
         // Verify issueTicket called with correct request
         var captor = ArgumentCaptor.forClass(IssueRequest.class);
-        verify(ticketService).issueTicket(captor.capture());
+        verify(ticketService).issueTicket(captor.capture(), eq(1));
         IssueRequest req = captor.getValue();
         assertThat(req.orderId()).isEqualTo("order-1");
         assertThat(req.orderItemId()).isEqualTo("item-1");
@@ -81,35 +91,50 @@ class OrderPaidConsumerTest {
     @Test
     void onOrderPaid_multipleItems_issuesAllTickets() {
         injectExchange();
-        var item1 = new OrderPaidEvent.OrderItem("item-1", "type-1", "GA", "General Admission");
-        var item2 = new OrderPaidEvent.OrderItem("item-2", "type-2", "VIP", "VIP Section");
-        var event = new OrderPaidEvent("order-1", "user-1", "concert-1", List.of(item1, item2));
+        var event = envelope(List.of(
+                item("item-1", "type-1", 1, "GA", "General Admission"),
+                item("item-2", "type-2", 1, "VIP", "VIP Section")));
 
-        when(ticketService.issueTicket(any()))
+        when(ticketService.issueTicket(any(), eq(1)))
                 .thenReturn(sampleTicket("item-1", "concert-1"))
                 .thenReturn(sampleTicket("item-2", "concert-1"));
 
         consumer.onOrderPaid(event);
 
-        verify(ticketService, times(2)).issueTicket(any());
+        verify(ticketService, times(2)).issueTicket(any(), eq(1));
         verify(rabbitTemplate, times(2)).convertAndSend(eq(EXCHANGE), eq("ticket.issued"), any(TicketIssuedEvent.class));
+    }
+
+    @Test
+    void onOrderPaid_qtyGreaterThanOne_issuesOneTicketPerSeat() {
+        injectExchange();
+        var event = envelope(List.of(item("item-1", "type-1", 3, "GA", "General Admission")));
+
+        when(ticketService.issueTicket(any(), anyInt())).thenReturn(sampleTicket("item-1", "concert-1"));
+
+        consumer.onOrderPaid(event);
+
+        // qty=3 → 3 tickets, seatSequence 1/2/3
+        var seqCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(ticketService, times(3)).issueTicket(any(), seqCaptor.capture());
+        assertThat(seqCaptor.getAllValues()).containsExactly(1, 2, 3);
+        verify(rabbitTemplate, times(3)).convertAndSend(eq(EXCHANGE), eq("ticket.issued"), any(TicketIssuedEvent.class));
     }
 
     @Test
     void onOrderPaid_idempotent_doesNotDuplicateOnReplay() {
         injectExchange();
-        var item = new OrderPaidEvent.OrderItem("item-1", "type-1", "GA", "General Admission");
-        var event = new OrderPaidEvent("order-1", "user-1", "concert-1", List.of(item));
+        var event = envelope(List.of(item("item-1", "type-1", 1, "GA", "General Admission")));
 
         TicketDto existing = sampleTicket("item-1", "concert-1");
-        when(ticketService.issueTicket(any())).thenReturn(existing);
+        when(ticketService.issueTicket(any(), eq(1))).thenReturn(existing);
 
         // Simulate replay (call twice)
         consumer.onOrderPaid(event);
         consumer.onOrderPaid(event);
 
         // TicketService called twice but returns same ticket (idempotent)
-        verify(ticketService, times(2)).issueTicket(any());
+        verify(ticketService, times(2)).issueTicket(any(), eq(1));
         // Two ticket.issued events (notification-service is idempotent too)
         verify(rabbitTemplate, times(2)).convertAndSend(eq(EXCHANGE), eq("ticket.issued"), any(TicketIssuedEvent.class));
     }
@@ -117,10 +142,9 @@ class OrderPaidConsumerTest {
     @Test
     void onOrderPaid_serviceThrows_rethrowsForRedelivery() {
         injectExchange();
-        var item = new OrderPaidEvent.OrderItem("item-1", "type-1", "GA", "General Admission");
-        var event = new OrderPaidEvent("order-1", "user-1", "concert-1", List.of(item));
+        var event = envelope(List.of(item("item-1", "type-1", 1, "GA", "General Admission")));
 
-        doThrow(new RuntimeException("DB error")).when(ticketService).issueTicket(any());
+        doThrow(new RuntimeException("DB error")).when(ticketService).issueTicket(any(), anyInt());
 
         assertThatThrownBy(() -> consumer.onOrderPaid(event))
                 .isInstanceOf(RuntimeException.class)
@@ -133,8 +157,7 @@ class OrderPaidConsumerTest {
     @Test
     void onOrderPaid_ticketIssuedEvent_hasCorrectFields() {
         injectExchange();
-        var item = new OrderPaidEvent.OrderItem("item-1", "type-1", "GA", "General Admission");
-        var event = new OrderPaidEvent("order-1", "user-1", "concert-1", List.of(item));
+        var event = envelope(List.of(item("item-1", "type-1", 1, "GA", "General Admission")));
 
         UUID ticketId = UUID.randomUUID();
         TicketDto ticket = new TicketDto(
@@ -142,7 +165,7 @@ class OrderPaidConsumerTest {
                 "concert-1", "type-1", "GA", "General Admission",
                 "ISSUED", "qr-abc", null, Instant.now()
         );
-        when(ticketService.issueTicket(any())).thenReturn(ticket);
+        when(ticketService.issueTicket(any(), eq(1))).thenReturn(ticket);
 
         consumer.onOrderPaid(event);
 

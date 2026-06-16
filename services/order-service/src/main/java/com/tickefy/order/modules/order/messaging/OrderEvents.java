@@ -6,21 +6,22 @@ import java.util.List;
 /**
  * Event message shapes for order-service AMQP.
  *
- * <p>Two conventions on purpose (driven by real counterparts, NOT a free choice):
+ * <p>All events use the standard ENVELOPE per backend-service-workflow §10:
+ * {@code {messageId, eventType, eventVersion, <ts>, payload:{...domain}}}.
  * <ul>
- *   <li><b>payment.*</b> (consumed by order; produced by dev stub now, by Payment/Dương later):
- *       nested ENVELOPE {@code {messageId,eventType,timestamp,payload}} per api-contracts §5 — so
- *       swapping the dev stub for Dương's real publisher needs no order change.</li>
- *   <li><b>order.paid</b> (consumed by e-ticket/Hòa LIVE + inventory): <b>FLAT</b> body — e-ticket's
- *       LIVE {@code @RabbitListener} deserializes the body directly into a flat record (no envelope).
- *       To not touch Hòa's code we publish flat, carrying {@code messageId}/{@code eventType} as
- *       top-level fields. ⚠️ Open question for team: align on the §5 envelope later.</li>
+ *   <li><b>order.*</b> (order.paid / order.payment.failed / order.expired) — consumed by inventory +
+ *       e-ticket(Hòa). Envelope with {@code occurredAt} + nested {@code payload}.</li>
+ *   <li><b>payment.*</b> (consumed by order; dev stub now, Payment/Dương later) — envelope with
+ *       {@code timestamp} (per api-contracts §5, kept for Dương compat) + {@code eventVersion}.</li>
  * </ul>
- * order.payment.failed / order.expired (inventory-only) follow the same flat order.* style.
+ * {@code eventVersion="1.0"} on every event. Outbox payload is serialized as-is; consumers read
+ * {@code payload.*}.
  */
 public final class OrderEvents {
 
     private OrderEvents() {}
+
+    public static final String EVENT_VERSION = "1.0";
 
     public static final class Type {
         public static final String ORDER_PAID = "OrderPaid";
@@ -38,18 +39,23 @@ public final class OrderEvents {
         private RoutingKey() {}
     }
 
-    // ── Inbound: payment.* (ENVELOPE) ────────────────────────────────────────
+    // ── Inbound: payment.* (ENVELOPE — timestamp kept for Dương compat) ───────
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record PaymentEnvelope(String messageId, String eventType, String timestamp, PaymentPayload payload) {}
+    public record PaymentEnvelope(
+            String messageId, String eventType, String eventVersion, String timestamp, PaymentPayload payload) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record PaymentPayload(String orderId, String paymentTransactionId, String status) {}
 
-    // ── Outbound: order.paid (FLAT — Hòa compat) ─────────────────────────────
+    // ── Outbound: order.paid (ENVELOPE) ──────────────────────────────────────
     public record OrderPaidMessage(
             String messageId,
             String eventType,
-            String timestamp,
+            String eventVersion,
+            String occurredAt,
+            OrderPaidPayload payload) {}
+
+    public record OrderPaidPayload(
             String orderId,
             String userId,
             String concertId,
@@ -63,11 +69,15 @@ public final class OrderEvents {
             String zoneId,
             String ticketTypeName) {}
 
-    // ── Outbound: order.payment.failed / order.expired (FLAT) ─────────────────
+    // ── Outbound: order.payment.failed / order.expired (ENVELOPE) ─────────────
     public record OrderReleaseMessage(
             String messageId,
             String eventType,
-            String timestamp,
+            String eventVersion,
+            String occurredAt,
+            OrderReleasePayload payload) {}
+
+    public record OrderReleasePayload(
             String orderId,
             String userId,
             List<OrderReleaseItem> items) {}

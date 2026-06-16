@@ -17,6 +17,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
     Optional<Ticket> findByOrderItemId(String orderItemId);
 
+    Optional<Ticket> findByOrderItemIdAndSeatSequence(String orderItemId, int seatSequence);
+
     Optional<Ticket> findByIdAndUserId(UUID id, String userId);
 
     List<Ticket> findByConcertIdAndStatus(String concertId, com.tickefy.eticket.modules.ticket.entity.TicketStatus status);

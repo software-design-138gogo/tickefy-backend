@@ -19,7 +19,7 @@ lastUpdated: 2026-06-16
 | Current implementation folder | `services/e-ticket-service` |
 | Owner | Hòa |
 | Repository | `tickefy-backend` |
-| Internal port | TBD from service config |
+| Internal port | 8083 (host) → 8080 (container) |
 | Public base path | `/api/tickets` |
 | Internal base path | `/internal/tickets` |
 | Health check | `/actuator/health` |
@@ -83,7 +83,7 @@ lastUpdated: 2026-06-16
 
 | Service | Endpoint | Purpose | Timeout | Retry |
 |---|---|---|---:|---|
-| `event-service` | TBD internal concert lookup | Optional enrich snapshot/concert validation | 2s | No retry in request path |
+| `event-service` | `GET /internal/concerts/{concertId}` | Optional enrich snapshot/concert validation | 2s | No retry in request path |
 | `auth-service` | none in request path | JWT verified locally via public key | N/A | N/A |
 
 ### Infrastructure dependencies
@@ -156,10 +156,16 @@ Response uses check-in result semantics from `../common/checkin-result-catalog.m
 
 ## 7. Events published
 
-| Event | Routing key | When | Consumers | Contract |
+*Lưu ý: Publish thông qua Outbox Pattern — ghi event vào bảng outbox cùng transaction với ticket state change, drainer publish sau.*
+
+| Event | Routing key | When | Consumers (queue) | Contract |
 |---|---|---|---|---|
-| `TicketsIssued` | `tickets.issued` | Tickets created after `OrderPaid` | `notification-service` | `../common/event-envelope.md` §14.3 |
-| `TicketCheckedIn` | `ticket.checked-in` | Optional after successful check-in | analytics/optional | `../common/event-envelope.md` §14.6 |
+| `TicketsIssued` | `tickets.issued` | Tickets created after `OrderPaid` | `notification-service` (`notification.tickets-issued`) | Payload: `{orderId, userId, concertId, tickets[{ticketId, orderItemId, ticketTypeId, ticketTypeName, status}], issuedAt}` — theo `../common/event-envelope.md` §14.3 |
+| `TicketCheckedIn` | `ticket.checked-in` | Optional after successful check-in | Hiện chưa có consumer khai báo (analytics/optional trong tương lai) | Payload: `{ticketId, concertId, userId, staffId, gate, checkedInAt}` — theo `../common/event-envelope.md` §14.6 |
+
+> ⚠️ **`TicketRevoked`:** State machine §9 có state `REVOKED` (admin revoke) nhưng hiện CHƯA có event `TicketRevoked` trong `event-envelope.md` và CHƯA có consumer nào khai báo. `REVOKED` hiện là state transition nội bộ. Nếu cần thông báo service khác (notification), phải bổ sung event contract vào `event-envelope.md` trước.
+>
+> ⚠️ **Notification queue naming:** `notification-service.md` §8 hiện khai báo queue name `notification-service.ticket-issued.queue` — sai convention (`event-envelope.md` §6.3 quy định `{consumer}.{event-name}` = `notification.tickets-issued`). **Cần align với nhóm notification-service (Dương).**
 
 ## 8. Events consumed
 
@@ -167,7 +173,7 @@ Response uses check-in result semantics from `../common/checkin-result-catalog.m
 |---|---|---|---|---|
 | `OrderPaid` | `order-service` | `ticket.order-paid` | Issue tickets for order items | `messageId`, `orderItemId` |
 | `ConcertCancelled` | `event-service` | `ticket.concert-cancelled` | Mark issued tickets for concert as `CANCELLED` | `messageId`, `concertId` |
-| `OrderRefunded` | `order-service` | `ticket.order-refunded` | Mark tickets for refunded order as `REFUNDED` | `messageId`, `orderId`, `concertId` |
+| `OrderRefunded` | `order-service` | `ticket.order-refunded` | Mark tickets for refunded order as `REFUNDED` | `messageId`, `orderId` |
 
 ## 9. State machines
 
@@ -194,7 +200,7 @@ stateDiagram-v2
 | `CHECKED_IN` | Check-in replay/duplicate | `CHECKED_IN` | Return `DUPLICATE_REJECTED`, no state change |
 | `ISSUED` | `ConcertCancelled` | `CANCELLED` | Ticket no longer valid |
 | `ISSUED`/`CANCELLED` | `OrderRefunded` | `REFUNDED` | Ticket no longer valid; refund state wins over prior cancellation marker |
-| `ISSUED` | Admin revoke | `REVOKED` | Ticket no longer valid |
+| `ISSUED` | Admin revoke | `REVOKED` | Ticket no longer valid. Hiện là state nội bộ; event `TicketRevoked` chưa được định nghĩa trong `event-envelope.md` |
 
 ## 10. Reliability
 
@@ -248,7 +254,7 @@ Cache is optional; PostgreSQL remains source of truth.
 
 | Variable | Required | Example | Description |
 |---|---|---|---|
-| `SERVER_PORT` | Yes | `8087` | Service port |
+| `SERVER_PORT` | Yes | `8083` | Service port |
 | `DB_URL` / `DB_HOST` | Yes | `jdbc:postgresql://localhost:5432/tickefy` | PostgreSQL connection |
 | `DB_SCHEMA` | Yes | `ticket_schema` | Owned schema |
 | `JWT_PUBLIC_KEY_PATH` | Yes in prod | `/run/secrets/jwt-public.pem` | Verify bearer token |

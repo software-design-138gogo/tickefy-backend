@@ -16,8 +16,8 @@ lastUpdated: 2026-06-16
 | Service name | notification-service |
 | Owner | Dương |
 | Repository | tickefy-backend/services/notification-service |
-| Internal port | 8085 |
-| Public base path | `/api/v1/notifications` |
+| Internal port | 8086 (host) → 8080 (container) |
+| Public base path | `/api/notifications` |
 | Health check | `/actuator/health` |
 | Swagger/OpenAPI | `/swagger-ui.html` |
 | Database schema | `notification_service` |
@@ -26,7 +26,7 @@ lastUpdated: 2026-06-16
 
 ### Service chịu trách nhiệm
 
-- Thuần tuý đóng vai trò là **Consumer**. Lắng nghe sự kiện (Events) từ các Service khác (Order, Payment, Ticket) thông qua RabbitMQ.
+- Thuần tuý đóng vai trò là **Consumer**. Lắng nghe sự kiện (Events) từ các Service khác (Order, Ticket, Event) thông qua RabbitMQ.
 - Phân phối thông báo đa kênh đến người dùng cuối, bao gồm:
   1. **Realtime In-app:** Bắn thông báo trực tiếp xuống UI qua công nghệ Server-Sent Events (SSE).
   2. **Email:** Render template và gửi Email xác nhận (Dùng Mailpit ở Dev, SMTP/SendGrid ở Prod).
@@ -80,10 +80,10 @@ lastUpdated: 2026-06-16
 
 | Method | Path | Role | Description | Contract |
 |---|---|---|---|---|
-| GET | `/api/v1/notifications/stream`| USER | Mở luồng kết nối Server-Sent Events (SSE) để nhận thông báo In-app theo thời gian thực. *Gateway sẽ forward luồng dài này.* | Payload dạng SSE text stream |
-| GET | `/api/v1/notifications` | USER | Lấy danh sách lịch sử thông báo (Có phân trang, trả về từ DB). | |
-| PATCH | `/api/v1/notifications/{id}/read`| USER | Đánh dấu một thông báo là đã đọc (`is_read` = true). | |
-| POST | `/api/v1/notifications/devices` | USER | Lưu FCM Device Token từ Mobile/Web vào hệ thống để bắt đầu nhận Push Notification. | `{ "token": "fcm_token_xyz" }` |
+| GET | `/api/notifications/stream`| USER | Mở luồng kết nối Server-Sent Events (SSE) để nhận thông báo In-app theo thời gian thực. *Gateway sẽ forward luồng dài này.* | Payload dạng SSE text stream |
+| GET | `/api/notifications` | USER | Lấy danh sách lịch sử thông báo (Có phân trang, trả về từ DB). | |
+| PATCH | `/api/notifications/{notificationId}/read`| USER | Đánh dấu một thông báo là đã đọc (`is_read` = true). | |
+| POST | `/api/notifications/devices` | USER | Lưu FCM Device Token từ Mobile/Web vào hệ thống để bắt đầu nhận Push Notification. | `{ "token": "fcm_token_xyz" }` |
 
 ## 6. Internal APIs
 
@@ -101,13 +101,18 @@ lastUpdated: 2026-06-16
 
 ## 8. Events consumed
 
-| Event | Producer | Queue (Sink) | Hành động (Behavior) | Kênh Gửi (Channel) |
+| Event | Producer | Queue | Hành động (Behavior) | Kênh Gửi (Channel) |
 |---|---|---|---|---|
-| `PaymentSucceeded`| `payment-service` | `notification-service.payment-succeeded.queue`| Gửi thư hóa đơn điện tử / Thông báo thanh toán thành công. | Email, SSE, Push |
-| `PaymentFailed` | `payment-service` | `notification-service.payment-failed.queue` | Cảnh báo thẻ bị lỗi, yêu cầu thanh toán lại trước khi hết hạn vé chờ. | Email, SSE, Push |
-| `TicketsIssued` | `ticket-service` | `notification-service.ticket-issued.queue` | Gửi thư kèm mã QR vé và thông báo trên App. | Email, SSE, Push |
-| `OrderRefunded` | `order-service` | `notification-service.order-refunded.queue` | Thông báo đơn hàng đã được trả lại tiền (Concert bị hủy). | Email, SSE, Push |
-| `TicketReminder` | `ticket-service` | `notification-service.ticket-reminder.queue` | Lời nhắc: "Còn 24h nữa là sự kiện X sẽ diễn ra, vui lòng chuẩn bị vé". | Email, Push |
+| `OrderPaid` | `order-service` | `notification.order-paid` | Gửi thư hóa đơn điện tử / Thông báo thanh toán thành công. Payload theo `event-envelope.md` §14.2. | Email, SSE, Push |
+| `OrderPaymentFailed` | `order-service` | `notification.order-payment-failed` | Cảnh báo thanh toán thất bại, yêu cầu thử lại trước khi hết hạn. Payload theo `event-envelope.md` §14.2.1. | Email, SSE, Push |
+| `OrderExpired` | `order-service` | `notification.order-expired` | Thông báo đơn hàng đã hết hạn thanh toán, vé đã được trả lại. Payload theo `event-envelope.md` §14.2.2. | SSE, Push |
+| `OrderCancelled` | `order-service` | `notification.order-cancelled` | Thông báo đơn hàng đã bị hủy. Payload theo `event-envelope.md` §14.2.3. | SSE, Push |
+| `OrderRefunded` | `order-service` | `notification.order-refunded` | Thông báo đơn hàng đã được hoàn tiền (Concert bị hủy). Payload theo `event-envelope.md` §14.2.4. | Email, SSE, Push |
+| `TicketsIssued` | `ticket-service` | `notification.tickets-issued` | Gửi thư kèm mã QR vé và thông báo trên App. Payload theo `event-envelope.md` §14.3. | Email, SSE, Push |
+| `ConcertCancelled` | `event-service` | `notification.concert-cancelled` | Thông báo sự kiện đã bị hủy cho tất cả khán giả có vé. Payload theo `event-envelope.md` §14.5. | Email, SSE, Push |
+| `TicketReminder` | `ticket-service` | `notification.ticket-reminder` | 🔭 **PLANNED** — Lời nhắc: "Còn 24h nữa là sự kiện X sẽ diễn ra". Event chưa được định nghĩa trong `event-envelope.md`, cần bổ sung khi ticket-service implement cronjob. | Email, Push |
+
+> ⚠️ **Thay đổi kiến trúc so với bản gốc:** Bản gốc consume `PaymentSucceeded`/`PaymentFailed` trực tiếp từ `payment-service`. Theo kiến trúc saga đã chốt (`order-service` là orchestrator), notification-service nên nghe **Order events** (`OrderPaid`, `OrderPaymentFailed`) thay vì Payment events — đảm bảo notification chỉ gửi SAU KHI order state đã cập nhật. Xem `payment-service.md` §7 ghi chú tương ứng.
 
 ## 9. State machines
 
@@ -165,9 +170,13 @@ stateDiagram-v2
 | Client ngắt mạng | SSE Connection Broken | Server phát hiện IOException, xóa session của User đó khỏi bộ nhớ RAM để tránh rò rỉ (Memory Leak). |
 
 ## 16. Integration acceptance criteria
-- [ ] Mở Postman, cắm vào luồng `/stream` và Publish event `PaymentSucceeded` lên RabbitMQ -> Thấy Postman in ra JSON tức thì.
+- [ ] Mở Postman, cắm vào luồng `/stream` và Publish event `OrderPaid` lên RabbitMQ → Thấy Postman in ra JSON tức thì.
 - [ ] Vào trang UI của Mailpit (`http://localhost:8025`) thấy thư gửi đến đẹp mắt, hiển thị chuẩn HTML và đổ đúng tên User, giá tiền.
-- [ ] Post một `device_token` rác lên API. Chạy thử FCM Send bị lỗi -> Có in log Error nhưng Notification Service không chết.
+- [ ] Post một `device_token` rác lên API. Chạy thử FCM Send bị lỗi → Có in log Error nhưng Notification Service không chết.
+- [ ] Publish `ConcertCancelled` → Nhận thông báo hủy sự kiện qua SSE/Email/Push.
+- [ ] Publish `TicketsIssued` → Nhận email kèm thông tin vé.
+- [ ] Queue names khớp convention `notification.{event-name}` theo `event-envelope.md` §6.3.
+- [ ] DLQ configured cho tất cả consumer queues.
 
 ## 17. Open questions
 - Frontend Web (Hiệp) đã tích hợp thư viện Firebase SDK để hứng Web Push Notification chưa?

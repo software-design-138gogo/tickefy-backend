@@ -18,7 +18,7 @@ lastUpdated: 2026-06-16
 | Service name | inventory-service |
 | Owner | Hiệp |
 | Repository | tickefy-backend → `services/inventory-service` ✅ |
-| Internal port | 8083 (host) → 8080 (container) |
+| Internal port | 8088 (host) → 8080 (container) |
 | Public base path | `/api/inventory` |
 | Health check | `/actuator/health` ✅ + `/health` |
 | Swagger/OpenAPI | springdoc `/swagger-ui.html` ✅ (dep trong pom) |
@@ -83,8 +83,8 @@ Backward compatibility note: implementation hiện có thể còn expose `/event
 ## 6. Internal APIs (gọi từ Order, service-to-service Bearer)
 | Method | Path | Caller | Description | Contract |
 |---|---|---|---|---|
-| POST | `/inventory/reservations` | Order | Reserve atomic (Lua) → reservation snapshot including `reservationId`, `expiresAt`, items with `ticketTypeId`, `ticketTypeName`, `quantity`, `unitPrice` | ✅ **LIVE** (saga reserve sync; response should be extended if implementation lacks item snapshot) |
-| GET | `/inventory/users/{userId}/purchase-limits` | Order/Admin | Quota còn lại | ✅ (`PurchaseLimitController.java:17,26`) |
+| POST | `/internal/inventory/reservations` | Order | Reserve atomic (Lua) → reservation snapshot including `reservationId`, `expiresAt`, items with `ticketTypeId`, `ticketTypeName`, `quantity`, `unitPrice` | ✅ **LIVE** (saga reserve sync; response should be extended if implementation lacks item snapshot) — ⚠️ impl hiện tại dùng `/inventory/reservations`, cần migrate sang `/internal/` |
+| GET | `/internal/inventory/users/{userId}/purchase-limits` | Order/Admin | Quota còn lại | ✅ (`PurchaseLimitController.java:17,26`) — ⚠️ impl hiện tại dùng `/inventory/users/...`, cần migrate |
 | GET | `/internal/concerts/{concertId}/ticket-types` | `csv-ingestion-service` | Resolve ticket types for CSV VIP import by concert. Returns id/name/status fields needed for row validation. | 🔭 Planned internal alias over ticket-type catalog |
 
 > **Commit / Release: KHÔNG có HTTP endpoint** (cách B — event-only). Inventory commit (RESERVED→COMMITTED) / release qua **consume event** `OrderPaid`/`OrderPaymentFailed`/`OrderExpired`/`OrderCancelled` (Pass 2, xem §8), KHÔNG expose `/commit`/`/release` HTTP.

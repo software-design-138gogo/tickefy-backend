@@ -62,7 +62,7 @@ lastUpdated: 2026-06-16
 ### Synchronous dependencies
 | Service | Endpoint | Purpose | Timeout | Retry |
 |---|---|---|---:|---|
-| Inventory | `POST /inventory/reservations` | Reserve vé (Bearer). Commit/release qua Inventory consume Order events, không gọi HTTP. | ⚠️ | ✅ **LIVE** reserve |
+| Inventory | `POST /internal/inventory/reservations` | Reserve vé (Bearer). Commit/release qua Inventory consume Order events, không gọi HTTP. | ⚠️ | ✅ **LIVE** reserve — ⚠️ impl hiện dùng `/inventory/reservations`, cần migrate sang `/internal/` |
 | Payment | `POST /internal/payments` | Lấy payment URL/QR | ⚠️ | 🟡 **STUB** (StubPaymentClient) |
 | Payment | `POST /internal/payments/refund` | Refund khi concert hủy sau PAID | ⚠️ | 🔭 Pass 2 (ConcertCancelled) |
 | Ticket | none sync | Ticket cập nhật `CANCELLED` từ `ConcertCancelled` hoặc `REFUNDED` từ `OrderRefunded`; Order không gọi Ticket sync | — | event-only |

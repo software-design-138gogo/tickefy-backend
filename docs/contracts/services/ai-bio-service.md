@@ -16,7 +16,7 @@ lastUpdated: 2026-06-16
 | Service name | `ai-bio-service` |
 | Owner | Hoàng |
 | Repository | `ai-bio-service` |
-| Internal port | `8080` |
+| Internal port | 8089 (host) → 8080 (container) |
 | Public base path | `/api/ai-bio` |
 | Health check | `/actuator/health` |
 | Swagger/OpenAPI | `/swagger-ui/index.html`, `/v3/api-docs` |
@@ -305,7 +305,7 @@ Redis có thể được dùng sau cho distributed lock hoặc dedup ngắn hạ
 | `AI_MAX_FILES_PER_JOB` | No | `5` | Maximum PDFs per job. |
 | `AI_MAX_FILE_SIZE_BYTES` | No | `10485760` | Maximum bytes per PDF. |
 | `AI_MAX_TOTAL_UPLOAD_BYTES` | No | `26214400` | Maximum total upload bytes. |
-| `EVENT_SERVICE_BASE_URL` | Yes | `http://event-service:8082` | Event Service internal URL. |
+| `EVENT_SERVICE_BASE_URL` | Yes | `http://event-service:8080` | Event Service internal URL. |
 | `AI_PROMPT_VERSION` | No | `concert-introduction-v1` | Version của prompt contract. |
 | `OUTBOX_PUBLISH_INTERVAL_MS` | No | `1000` | Outbox publisher polling interval. |
 

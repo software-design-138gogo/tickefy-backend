@@ -92,10 +92,12 @@ lastUpdated: 2026-06-16
 
 *Lưu ý: Publish thông qua Outbox Pattern.*
 
-| Event | Routing key | When | Consumers | Contract |
+| Event | Routing key | When | Consumers (queue) | Contract |
 |---|---|---|---|---|
-| `PaymentSucceeded`| `payment.succeeded` | Nhận Webhook báo thành công từ SePay. | `order-service` (`order.payment-succeeded`) | Chứa `paymentId`, `orderId`, `amount`, `paidAt` |
-| `PaymentFailed` | `payment.failed` | Hết hạn thanh toán hoặc Webhook báo lỗi. | `order-service` (`order.payment-failed`) | Chứa `paymentId`, `orderId`, `failedAt`, `reason` |
+| `PaymentSucceeded`| `payment.succeeded` | Nhận Webhook báo thành công từ SePay. | `order-service` (`order.payment-succeeded`) | Payload: `{paymentId, orderId, amount, currency, provider, providerTransactionId, paidAt}` — theo `event-envelope.md` §14.1 |
+| `PaymentFailed` | `payment.failed` | Hết hạn thanh toán hoặc Webhook báo lỗi. | `order-service` (`order.payment-failed`) | Payload: `{paymentId, orderId, amount, currency, provider, providerTransactionId, failedAt, reason}` — theo `event-envelope.md` §14.1.1 |
+
+> ⚠️ **Notification consume trực tiếp?** `notification-service.md` §8 hiện khai báo consume `PaymentSucceeded`/`PaymentFailed` trực tiếp từ payment-service. Tuy nhiên theo kiến trúc saga đã chốt (`order-service` là orchestrator), notification nên nghe `OrderPaid`/`OrderPaymentFailed` từ order-service thay vì nghe payment trực tiếp — tránh notification đến trước khi order state cập nhật. **Cần align với nhóm notification-service (Dương).**
 
 ## 8. Events consumed
 
@@ -109,6 +111,7 @@ lastUpdated: 2026-06-16
 stateDiagram-v2
     [*] --> INITIATED
     INITIATED --> PENDING : Lấy QR SePay thành công
+    INITIATED --> FAILED : Không tạo được QR SePay (lỗi mạng / CB OPEN)
     PENDING --> SUCCESS : Nhận Webhook thành công
     PENDING --> FAILED : Hết hạn thanh toán
     SUCCESS --> REFUNDED : Admin xác nhận / Order gọi Refund
@@ -118,6 +121,7 @@ stateDiagram-v2
 
 | Current | Action/Event | Next | Side effects |
 |---|---|---|---|
+| INITIATED | Lỗi tạo QR SePay | FAILED | Publish `PaymentFailed` qua Outbox (reason: `GATEWAY_ERROR`). |
 | PENDING | Webhook Success | SUCCESS | Publish `PaymentSucceeded` qua Outbox. |
 | PENDING | Hết hạn / Timeout | FAILED | Publish `PaymentFailed` qua Outbox. |
 | SUCCESS | Call API Refund | REFUNDED | Cập nhật DB. |

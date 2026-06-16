@@ -16,7 +16,7 @@ lastUpdated: 2026-06-16
 | Service name | event-service |
 | Owner | Dương |
 | Repository | tickefy-backend/services/event-service |
-| Internal port | 8082 |
+| Internal port | 8082 (host) → 8080 (container) |
 | Public base path | `/api/concerts` |
 | Health check | `/actuator/health` |
 | Swagger/OpenAPI | `/swagger-ui.html` |
@@ -138,10 +138,10 @@ lastUpdated: 2026-06-16
 
 *Lưu ý: Publish thông qua Outbox Pattern.*
 
-| Event | Routing key | When | Consumers | Contract |
+| Event | Routing key | When | Consumers (queue) | Contract |
 |---|---|---|---|---|
-| `ConcertPublished` | `concert.published` | Khi Admin gọi API publish. | `inventory-service` (`inventory.concert-published`) | `../common/event-envelope.md` §14.4 |
-| `ConcertCancelled` | `concert.cancelled` | Khi Admin gọi API cancel. | `order-service` (`order.concert-cancelled`), `inventory-service` (`inventory.concert-cancelled`), `ticket-service` (`ticket.concert-cancelled`), `notification-service` (`notification.concert-cancelled`) | `../common/event-envelope.md` §14.5 |
+| `ConcertPublished` | `concert.published` | Khi Admin gọi API publish. | `inventory-service` (`inventory.concert-published`) | Payload: `{concertId, organizerId, publishedAt, startsAt, endsAt}` — theo `../common/event-envelope.md` §14.4 |
+| `ConcertCancelled` | `concert.cancelled` | Khi Admin gọi API cancel. | `order-service` (`order.concert-cancelled`), `inventory-service` (`inventory.concert-cancelled`), `ticket-service` (`ticket.concert-cancelled`), `notification-service` (`notification.concert-cancelled`) | Payload: `{concertId, cancelledAt, reason}` — theo `../common/event-envelope.md` §14.5 |
 
 ## 8. Events consumed
 

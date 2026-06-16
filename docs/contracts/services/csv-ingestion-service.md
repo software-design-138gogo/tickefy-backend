@@ -16,7 +16,7 @@ lastUpdated: 2026-06-16
 | Service name | `csv-ingestion-service` |
 | Owner | Hoàng |
 | Repository | `tickefy-backend/services/csv-ingestion-service` |
-| Internal port | `8090` |
+| Internal port | 8091 (host) → 8080 (container) |
 | Public base path | `/api/admin/csv-import` |
 | Health check | `/actuator/health` |
 | Swagger/OpenAPI | `/swagger-ui/index.html`, `/v3/api-docs` |
@@ -197,14 +197,14 @@ stateDiagram-v2
 
 | Variable | Required | Example | Description |
 |---|---|---|---|
-| `SERVER_PORT` | Yes | `8090` | Internal service port. |
+| `SERVER_PORT` | Yes | `8091` | Internal service port. |
 | `SPRING_PROFILES_ACTIVE` | Yes | `dev` | Runtime profile. |
 | `DB_URL` | Yes | `jdbc:postgresql://postgres:5432/tickefy` | PostgreSQL connection URL. |
 | `DB_USERNAME` | Yes | `tickefy` | Database user. |
 | `DB_PASSWORD` | Yes | `***` | Database password. |
 | `DB_SCHEMA` | Yes | `csv_schema` | Owned schema. |
-| `EVENT_SERVICE_BASE_URL` | Yes | `http://event-service:8082` | Concert validation endpoint. |
-| `INVENTORY_SERVICE_BASE_URL` | Yes | `http://inventory-service:8083` | Ticket type validation endpoint. |
+| `EVENT_SERVICE_BASE_URL` | Yes | `http://event-service:8080` | Concert validation endpoint. |
+| `INVENTORY_SERVICE_BASE_URL` | Yes | `http://inventory-service:8080` | Ticket type validation endpoint. |
 | `RABBITMQ_HOST` | Yes | `rabbitmq` | Broker host. |
 | `RABBITMQ_PORT` | Yes | `5672` | Broker port. |
 | `RABBITMQ_USERNAME` | Yes | `tickefy` | Broker user. |

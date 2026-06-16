@@ -17,7 +17,7 @@ lastUpdated: 2026-06-16
 | Implementation folder | `services/checkin-service` |
 | Owner | Hòa |
 | Repository | `tickefy-backend` |
-| Internal port | TBD from service config |
+| Internal port | 8087 (host) → 8080 (container) |
 | Public base path | `/api/checkins` |
 | Internal base path | `/internal/checkins` |
 | Health check | `/actuator/health` |
@@ -309,12 +309,12 @@ Metrics:
 
 | Variable | Required | Example | Description |
 |---|---|---|---|
-| `SERVER_PORT` | Yes | `8088` | Service port |
+| `SERVER_PORT` | Yes | `8087` | Service port |
 | `DB_URL` / `DB_HOST` | Yes | `jdbc:postgresql://localhost:5432/tickefy` | PostgreSQL connection |
 | `DB_SCHEMA` | Yes | `checkin_schema` | Owned schema |
 | `JWT_PUBLIC_KEY_PATH` | Yes in prod | `/run/secrets/jwt-public.pem` | Verify bearer token |
-| `TICKET_SERVICE_BASE_URL` | Yes | `http://localhost:8087` | Internal ticket-service URL |
-| `CSV_INGESTION_SERVICE_BASE_URL` | Yes if bootstrap enabled | `http://localhost:8090` | CSV internal VIP guest projection API |
+| `TICKET_SERVICE_BASE_URL` | Yes | `http://ticket-service:8080` | Internal ticket-service URL |
+| `CSV_INGESTION_SERVICE_BASE_URL` | Yes if bootstrap enabled | `http://csv-ingestion-service:8080` | CSV internal VIP guest projection API |
 | `SNAPSHOT_TTL_MINUTES` | Yes | `240` | Offline snapshot validity |
 | `SYNC_BATCH_MAX_ITEMS` | Yes | `500` | Max items per sync request |
 

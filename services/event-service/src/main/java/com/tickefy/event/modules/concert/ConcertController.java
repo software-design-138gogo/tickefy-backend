@@ -42,44 +42,4 @@ public class ConcertController {
         return ApiResponse.success(concertService.getConcertById(id), requestId);
     }
 
-    /** POST /concerts (Admin/BTC only) */
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<ConcertResponse> createConcert(
-            @Valid @RequestBody ConcertRequest body,
-            @RequestHeader(value = "X-User-Id", required = false) UUID userId,
-            HttpServletRequest request) {
-        String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
-        ConcertResponse response = concertService.createConcert(body, userId);
-        return ApiResponse.success(response, requestId);
-    }
-
-    /** PUT /concerts/{id} (Admin/BTC only) */
-    @PutMapping("/{id}")
-    public ApiResponse<ConcertResponse> updateConcert(
-            @PathVariable UUID id,
-            @Valid @RequestBody ConcertRequest body,
-            HttpServletRequest request) {
-        String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
-        return ApiResponse.success(concertService.updateConcert(id, body), requestId);
-    }
-
-    /** POST /concerts/{id}/publish (Admin/BTC only) */
-    @PostMapping("/{id}/publish")
-    public ApiResponse<ConcertResponse> publishConcert(
-            @PathVariable UUID id,
-            HttpServletRequest request) {
-        String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
-        return ApiResponse.success(concertService.publishConcert(id), requestId);
-    }
-
-    /** POST /concerts/{id}/cancel (Admin/BTC only) */
-    @PostMapping("/{id}/cancel")
-    public ApiResponse<ConcertResponse> cancelConcert(
-            @PathVariable UUID id,
-            @RequestParam(required = false, defaultValue = "") String reason,
-            HttpServletRequest request) {
-        String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
-        return ApiResponse.success(concertService.cancelConcert(id, reason), requestId);
-    }
 }

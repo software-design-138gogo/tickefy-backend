@@ -6,10 +6,15 @@ import com.tickefy.event.modules.artist.Artist;
 import com.tickefy.event.modules.artist.ArtistRepository;
 import com.tickefy.event.modules.venue.Venue;
 import com.tickefy.event.modules.venue.VenueRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tickefy.event.modules.outbox.OutboxEvent;
+import com.tickefy.event.modules.outbox.OutboxEventRepository;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.time.Instant;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,14 +29,20 @@ public class ConcertService {
     private final ConcertRepository concertRepository;
     private final VenueRepository venueRepository;
     private final ArtistRepository artistRepository;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
     public ConcertService(
             ConcertRepository concertRepository,
             VenueRepository venueRepository,
-            ArtistRepository artistRepository) {
+            ArtistRepository artistRepository,
+            OutboxEventRepository outboxEventRepository,
+            ObjectMapper objectMapper) {
         this.concertRepository = concertRepository;
         this.venueRepository = venueRepository;
         this.artistRepository = artistRepository;
+        this.outboxEventRepository = outboxEventRepository;
+        this.objectMapper = objectMapper;
     }
 
     // --- LIST ---
@@ -143,7 +154,21 @@ public class ConcertService {
         }
         concert.setStatus(ConcertStatus.PUBLISHED);
         Concert saved = concertRepository.save(concert);
-        // TODO Phase 2: publish ConcertPublished event to RabbitMQ
+        
+        try {
+            OutboxEvent outboxEvent = OutboxEvent.builder()
+                .id(UUID.randomUUID())
+                .aggregateId(saved.getId().toString())
+                .eventType("ConcertPublished")
+                .payload(objectMapper.writeValueAsString(ConcertResponse.from(saved)))
+                .status("PENDING")
+                .createdAt(Instant.now())
+                .build();
+            outboxEventRepository.save(outboxEvent);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize outbox event", e);
+        }
+        
         return ConcertResponse.from(saved);
     }
 
@@ -159,7 +184,21 @@ public class ConcertService {
         }
         concert.setStatus(ConcertStatus.CANCELLED);
         Concert saved = concertRepository.save(concert);
-        // TODO Phase 2: publish ConcertCancelled event to RabbitMQ with reason
+        
+        try {
+            OutboxEvent outboxEvent = OutboxEvent.builder()
+                .id(UUID.randomUUID())
+                .aggregateId(saved.getId().toString())
+                .eventType("ConcertCancelled")
+                .payload(objectMapper.writeValueAsString(Map.of("reason", reason != null ? reason : "")))
+                .status("PENDING")
+                .createdAt(Instant.now())
+                .build();
+            outboxEventRepository.save(outboxEvent);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize outbox event", e);
+        }
+        
         return ConcertResponse.from(saved);
     }
 

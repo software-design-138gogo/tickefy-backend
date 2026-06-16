@@ -16,7 +16,7 @@ lastUpdated: 2026-06-16
 | Service name | `ai-bio-service` |
 | Owner | Hoàng |
 | Repository | `ai-bio-service` |
-| Internal port | `8080` |
+| Internal port | 8089 (host) → 8080 (container) |
 | Public base path | `/api/ai-bio` |
 | Health check | `/actuator/health` |
 | Swagger/OpenAPI | `/swagger-ui/index.html`, `/v3/api-docs` |
@@ -71,7 +71,7 @@ lastUpdated: 2026-06-16
 | `concert_id` | Event Service | Gọi `GET /internal/concerts/{concertId}/ai-context` trước khi tạo job. |
 | `concert_name_snapshot` | Event Service | Lấy từ AI context API và lưu snapshot tại thời điểm tạo job. |
 | `organizer_id_snapshot` | Event Service | Lấy từ AI context API để kiểm tra ownership. |
-| `created_by` | Auth Service / JWT | Lấy từ verified JWT hoặc trusted identity headers do API Gateway truyền. |
+| `created_by` | Auth Service / JWT | Lấy từ verified JWT `sub`; không tin `X-User-*` header trong MVP. |
 | `correlation_id` | API Gateway / caller | Lấy từ `X-Request-ID`; nếu thiếu thì service tự sinh. |
 
 ### Invariants
@@ -134,7 +134,7 @@ Ghi chú: Event Service nhận kết quả bằng RabbitMQ event, không gọi A
 
 | Event | Routing key | When | Consumers | Contract |
 |---|---|---|---|---|
-| `ConcertIntroductionGenerated` | `concert.introduction.generated` | Sau khi AI output hợp lệ, introduction được lưu và outbox record được tạo. | Event Service | Envelope gồm `messageId`, `eventType`, `timestamp`, `correlationId`, `source`, `schemaVersion`, `payload`. |
+| `ConcertIntroductionGenerated` | `concert.introduction.generated` | Sau khi AI output hợp lệ, introduction được lưu và outbox record được tạo. | `event-service` | Envelope chuẩn gồm `messageId`, `eventType`, `eventVersion`, `source`, `occurredAt`, `correlationId`, `causationId`, `payload`. |
 
 Payload `ConcertIntroductionGenerated`:
 
@@ -142,10 +142,11 @@ Payload `ConcertIntroductionGenerated`:
 {
   "messageId": "759986e2-27ec-4de5-8570-d69357da2ed0",
   "eventType": "ConcertIntroductionGenerated",
-  "timestamp": "2026-06-16T04:05:00Z",
-  "correlationId": "req_123",
+  "eventVersion": "1.0",
   "source": "ai-bio-service",
-  "schemaVersion": "1.0",
+  "occurredAt": "2026-06-16T04:05:00Z",
+  "correlationId": "req_123",
+  "causationId": null,
   "payload": {
     "jobId": "96126719-66fd-4c18-827b-86d6146d39a5",
     "concertId": "77a5dd8f-5352-4d8a-b82c-c597713eecdb",
@@ -206,7 +207,7 @@ PUBLISHING_RESULT
 |---|---|---|---|
 | — | Create job accepted | `PENDING` | Lưu job, document metadata và PDF object keys. |
 | `PENDING` | Worker claim thành công | `PROCESSING` | Set `startedAt`, tạo attempt, bắt đầu extract. |
-| `PROCESSING` | Extraction/cleaning/AI/output thành công | `SUCCEEDED` | Lưu introduction, `completedAt`; tạo outbox event trong cùng transaction. |
+| `PROCESSING` | Extraction/cleaning/AI/output thành công | `SUCCEEDED` | Lưu generated candidate, `completedAt`; tạo outbox event trong cùng transaction. |
 | `PROCESSING` | Lỗi không retryable hoặc automatic retries hết | `FAILED` | Lưu `errorCode`, safe `errorMessage`, stage và attempt result. |
 | `FAILED` | Organizer/Admin retry hợp lệ | `PENDING` | Tăng `retryCount`, clear lỗi hiện tại, giữ source documents. |
 | `SUCCEEDED` | Retry request | Không đổi | Trả `AI_BIO_JOB_NOT_RETRYABLE`; regenerate phải tạo job mới. |
@@ -221,7 +222,7 @@ PUBLISHING_RESULT
 - Retry endpoint cũng bắt buộc `Idempotency-Key`; replay không tăng `retryCount` lần hai.
 - Một partial unique index chặn nhiều active job trên cùng `concertId`.
 - Outbox retry giữ nguyên `messageId`.
-- Event Service phải deduplicate theo `messageId` và guard theo `jobId`.
+- Event Service phải deduplicate theo `messageId` và guard theo `jobId`/`requestedAt`.
 
 ### Retry
 
@@ -265,7 +266,7 @@ Redis có thể được dùng sau cho distributed lock hoặc dedup ngắn hạ
 
 ## 12. Security
 
-- Authentication: JWT access token đã được API Gateway verify; service đọc trusted identity/roles hoặc verify RS256 bằng public key khi gọi trực tiếp.
+- Authentication: JWT access token dùng `Authorization: Bearer`; service verify RS256 bằng public key theo Auth Contract. Gateway có thể route request nhưng không phải nguồn tin cậy cho `X-User-*` trong MVP.
 - Authorization: chỉ `ORGANIZER` sở hữu concert hoặc `ADMIN` được upload, xem và retry job.
 - Sensitive data: PDF, extracted text, cleaned text, AI prompt, provider response, JWT và AI API key là dữ liệu nhạy cảm.
 - Logging mask: không log full JWT/API key/full document text/full prompt; mask `Authorization`; chỉ log `requestId`, `jobId`, `concertId`, `documentId`, `userId`, stage, duration và error code.
@@ -392,8 +393,6 @@ Health policy:
 ## 17. Open questions
 
 - Event Service có cho phép cập nhật AI introduction khi concert ở trạng thái `PUBLISHED`, hay chỉ `DRAFT`?
-- Event Service sẽ tự động áp dụng mọi `ConcertIntroductionGenerated`, hay lưu candidate để Organizer bấm duyệt?
-- Endpoint `GET /internal/concerts/{concertId}/ai-context` và response fields đã được Dương chốt chưa?
 - Giới hạn chính thức là 5 PDF/job, 10 MB/file và 25 MB tổng hay cần điều chỉnh?
 - Có cần hỗ trợ OCR cho PDF scan trong phạm vi nộp bài không?
 - Retention policy của PDF, extracted text và cleaned text là bao lâu?

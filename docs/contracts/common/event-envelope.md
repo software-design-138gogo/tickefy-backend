@@ -64,8 +64,7 @@ OrderRefunded
 TicketsIssued
 TicketRevoked
 TicketCheckedIn
-ArtistBioGenerated
-ArtistBioGenerationFailed
+ConcertIntroductionGenerated
 VipGuestImportCompleted
 VipGuestImportFailed
 ```
@@ -209,11 +208,15 @@ ConcertCancelled
 PaymentSucceeded
 PaymentFailed
 OrderPaid
+OrderPaymentFailed
 OrderExpired
+OrderCancelled
+OrderRefunded
 TicketsIssued
 TicketCheckedIn
-ArtistBioGenerated
+ConcertIntroductionGenerated
 VipGuestImportCompleted
+VipGuestImportFailed
 ```
 
 Ví dụ không hợp lệ:
@@ -575,11 +578,15 @@ Ví dụ:
 | `PaymentSucceeded`        | `payment.succeeded`          |
 | `PaymentFailed`           | `payment.failed`             |
 | `OrderPaid`               | `order.paid`                 |
+| `OrderPaymentFailed`      | `order.payment.failed`       |
 | `OrderExpired`            | `order.expired`              |
+| `OrderCancelled`          | `order.cancelled`            |
+| `OrderRefunded`           | `order.refunded`             |
 | `TicketsIssued`           | `tickets.issued`             |
 | `TicketCheckedIn`         | `ticket.checked-in`          |
-| `ArtistBioGenerated`      | `artist-bio.generated`       |
+| `ConcertIntroductionGenerated` | `concert.introduction.generated` |
 | `VipGuestImportCompleted` | `vip-guest-import.completed` |
+| `VipGuestImportFailed`    | `vip-guest-import.failed`    |
 
 Routing key không được sử dụng làm contract thay thế cho `eventType`. Consumer phải kiểm tra cả routing key và `eventType`.
 
@@ -601,10 +608,19 @@ Ví dụ:
 order.payment-succeeded
 order.payment-failed
 inventory.order-paid
+inventory.order-payment-failed
 inventory.order-expired
+inventory.order-cancelled
+inventory.concert-published
+inventory.concert-cancelled
+order.concert-cancelled
 ticket.order-paid
+ticket.order-refunded
+ticket.concert-cancelled
 notification.tickets-issued
-event.artist-bio-generated
+notification.order-refunded
+notification.concert-cancelled
+event.concert-introduction-generated
 checkin.vip-guest-import-completed
 ```
 
@@ -655,7 +671,7 @@ Ví dụ:
 ```text
 ticket.order-paid.dlq
 notification.tickets-issued.dlq
-event.artist-bio-generated.dlq
+event.concert-introduction-generated.dlq
 ```
 
 DLQ phải giữ nguyên:
@@ -959,7 +975,7 @@ Ticket Service consume OrderPaid
 ```
 
 ```text
-Inventory Service consume OrderExpired
+Inventory Service consume OrderExpired/OrderCancelled
 → release reservation trong inventory_schema
 → không update trực tiếp order_schema
 ```
@@ -1277,6 +1293,40 @@ Queue: order.payment-succeeded
 
 ---
 
+### 14.1.1. `PaymentFailed`
+
+```json
+{
+  "messageId": "eb7c0d3f-35df-459f-8c0b-138a17f6467d",
+  "eventType": "PaymentFailed",
+  "eventVersion": "1.0",
+  "source": "payment-service",
+  "occurredAt": "2026-06-16T10:15:00Z",
+  "correlationId": "req-6f3fefcc-37b4-4419-ae0b-4bd735fd4e87",
+  "causationId": null,
+  "payload": {
+    "paymentId": "2f64ac92-dffc-463a-9868-17f8f051f687",
+    "orderId": "1359224e-6155-4f03-b424-d81ab81ead47",
+    "amount": 3000000,
+    "currency": "VND",
+    "provider": "MOCK",
+    "providerTransactionId": "MOCK-20260616-00001",
+    "failedAt": "2026-06-16T10:15:00Z",
+    "reason": "PAYMENT_TIMEOUT"
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: payment.failed
+Queue: order.payment-failed
+```
+
+---
+
 ### 14.2. `OrderPaid`
 
 ```json
@@ -1322,6 +1372,143 @@ Queues:
 
 ---
 
+### 14.2.1. `OrderPaymentFailed`
+
+```json
+{
+  "messageId": "86cb6f3f-306f-4478-9f11-c9b9c42e9721",
+  "eventType": "OrderPaymentFailed",
+  "eventVersion": "1.0",
+  "source": "order-service",
+  "occurredAt": "2026-06-16T10:15:00Z",
+  "correlationId": "req-6f3fefcc-37b4-4419-ae0b-4bd735fd4e87",
+  "causationId": null,
+  "payload": {
+    "orderId": "1359224e-6155-4f03-b424-d81ab81ead47",
+    "userId": "508020c5-d766-4d3d-baf9-e0bb405698ad",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "reservationId": "786214c3-0dc1-4e42-82f4-40dfbf7da98f",
+    "failedAt": "2026-06-16T10:15:00Z",
+    "reason": "PAYMENT_FAILED"
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: order.payment.failed
+Queues:
+- inventory.order-payment-failed
+- notification.order-payment-failed
+```
+
+---
+
+### 14.2.2. `OrderExpired`
+
+```json
+{
+  "messageId": "3d2bfa0b-8396-4964-9677-77e5a367bc26",
+  "eventType": "OrderExpired",
+  "eventVersion": "1.0",
+  "source": "order-service",
+  "occurredAt": "2026-06-16T10:15:00Z",
+  "correlationId": "req-6f3fefcc-37b4-4419-ae0b-4bd735fd4e87",
+  "causationId": null,
+  "payload": {
+    "orderId": "1359224e-6155-4f03-b424-d81ab81ead47",
+    "userId": "508020c5-d766-4d3d-baf9-e0bb405698ad",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "reservationId": "786214c3-0dc1-4e42-82f4-40dfbf7da98f",
+    "expiredAt": "2026-06-16T10:15:00Z"
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: order.expired
+Queues:
+- inventory.order-expired
+- notification.order-expired
+```
+
+---
+
+### 14.2.3. `OrderCancelled`
+
+```json
+{
+  "messageId": "8fa441c6-2917-4707-95f8-a19e352e7a5e",
+  "eventType": "OrderCancelled",
+  "eventVersion": "1.0",
+  "source": "order-service",
+  "occurredAt": "2026-06-16T10:08:00Z",
+  "correlationId": "req-6f3fefcc-37b4-4419-ae0b-4bd735fd4e87",
+  "causationId": null,
+  "payload": {
+    "orderId": "1359224e-6155-4f03-b424-d81ab81ead47",
+    "userId": "508020c5-d766-4d3d-baf9-e0bb405698ad",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "reservationId": "786214c3-0dc1-4e42-82f4-40dfbf7da98f",
+    "cancelledAt": "2026-06-16T10:08:00Z",
+    "reason": "USER_CANCELLED"
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: order.cancelled
+Queues:
+- inventory.order-cancelled
+- notification.order-cancelled
+```
+
+---
+
+### 14.2.4. `OrderRefunded`
+
+```json
+{
+  "messageId": "fb7fa2c9-c402-46bb-a15f-949bf1654d3a",
+  "eventType": "OrderRefunded",
+  "eventVersion": "1.0",
+  "source": "order-service",
+  "occurredAt": "2026-06-16T11:00:00Z",
+  "correlationId": "req-76453caa-87bb-4501-b3fd-d220dd26da6e",
+  "causationId": "concert-cancelled-message-id",
+  "payload": {
+    "orderId": "1359224e-6155-4f03-b424-d81ab81ead47",
+    "userId": "508020c5-d766-4d3d-baf9-e0bb405698ad",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "paymentId": "2f64ac92-dffc-463a-9868-17f8f051f687",
+    "refundAmount": 3000000,
+    "currency": "VND",
+    "refundedAt": "2026-06-16T11:00:00Z",
+    "reason": "CONCERT_CANCELLED"
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: order.refunded
+Queues:
+- ticket.order-refunded
+- notification.order-refunded
+```
+
+---
+
 ### 14.3. `TicketsIssued`
 
 ```json
@@ -1342,14 +1529,14 @@ Queues:
         "ticketId": "d4c03fb6-67d8-4911-88c4-08eb3bcf99cc",
         "orderItemId": "d22c6016-740f-485c-815b-ac69cb375aae",
         "ticketTypeId": "ed979f53-b9a4-4597-a9be-29171c99c8d0",
-        "zoneName": "SVIP",
+        "ticketTypeName": "SVIP",
         "status": "ISSUED"
       },
       {
         "ticketId": "887a41c5-b5a5-40ac-afd6-21ffd24fd4d9",
         "orderItemId": "d22c6016-740f-485c-815b-ac69cb375aae",
         "ticketTypeId": "ed979f53-b9a4-4597-a9be-29171c99c8d0",
-        "zoneName": "SVIP",
+        "ticketTypeName": "SVIP",
         "status": "ISSUED"
       }
     ],
@@ -1370,25 +1557,23 @@ Queue: notification.tickets-issued
 
 ---
 
-### 14.4. `ArtistBioGenerated`
+### 14.4. `ConcertPublished`
 
 ```json
 {
-  "messageId": "bc6e68bf-bbeb-41c0-a186-cbd1cfa237a1",
-  "eventType": "ArtistBioGenerated",
+  "messageId": "df210dfd-9d64-4d86-b22d-6c0b963b0d99",
+  "eventType": "ConcertPublished",
   "eventVersion": "1.0",
-  "source": "ai-bio-service",
-  "occurredAt": "2026-06-16T11:00:00Z",
-  "correlationId": "job-correlation-62d2e33a",
+  "source": "event-service",
+  "occurredAt": "2026-06-16T09:00:00Z",
+  "correlationId": "req-76453caa-87bb-4501-b3fd-d220dd26da6e",
   "causationId": null,
   "payload": {
-    "jobId": "d50a733b-e47b-499a-aee2-d30b7a34b39a",
     "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
-    "artistId": "87291040-99b7-40b8-9983-e045b57ea329",
-    "summary": "Nội dung giới thiệu nghệ sĩ đã được AI tạo.",
-    "language": "vi",
-    "model": "configured-ai-model",
-    "completedAt": "2026-06-16T11:00:00Z"
+    "organizerId": "organizer-user-uuid",
+    "publishedAt": "2026-06-16T09:00:00Z",
+    "startsAt": "2026-06-20T12:00:00Z",
+    "endsAt": "2026-06-20T15:00:00Z"
   }
 }
 ```
@@ -1397,13 +1582,118 @@ Routing:
 
 ```text
 Exchange: tickefy.events
-Routing key: artist-bio.generated
-Queue: event.artist-bio-generated
+Routing key: concert.published
+Queues:
+- inventory.concert-published
 ```
 
 ---
 
-### 14.5. `VipGuestImportCompleted`
+### 14.5. `ConcertCancelled`
+
+```json
+{
+  "messageId": "8a8d6d6d-15bb-4db8-9565-a686c4f7cb95",
+  "eventType": "ConcertCancelled",
+  "eventVersion": "1.0",
+  "source": "event-service",
+  "occurredAt": "2026-06-16T13:00:00Z",
+  "correlationId": "req-8a3d3e99-455a-4920-b18f-08975f33c651",
+  "causationId": null,
+  "payload": {
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "cancelledAt": "2026-06-16T13:00:00Z",
+    "reason": "Organizer cancelled the concert."
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: concert.cancelled
+Queues:
+- order.concert-cancelled
+- inventory.concert-cancelled
+- ticket.concert-cancelled
+- notification.concert-cancelled
+```
+
+---
+
+### 14.6. `TicketCheckedIn` (optional)
+
+> Event này chỉ publish nếu có consumer cần realtime analytics/notification. Audit chính vẫn nằm trong `checkin-service` database.
+
+```json
+{
+  "messageId": "eced8908-3339-47dd-933c-9b1c08d138dd",
+  "eventType": "TicketCheckedIn",
+  "eventVersion": "1.0",
+  "source": "ticket-service",
+  "occurredAt": "2026-06-16T10:10:00Z",
+  "correlationId": "req-1ce71050-13ba-4405-8a5e-dbd772785d3d",
+  "causationId": null,
+  "payload": {
+    "ticketId": "d4c03fb6-67d8-4911-88c4-08eb3bcf99cc",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "userId": "508020c5-d766-4d3d-baf9-e0bb405698ad",
+    "staffId": "staff-uuid",
+    "gate": "GATE_A",
+    "checkedInAt": "2026-06-16T10:10:00Z"
+  }
+}
+```
+
+Payload không chứa raw `qrToken`.
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: ticket.checked-in
+Queue: analytics.ticket-checked-in   # optional / future
+```
+
+---
+
+### 14.7. `ConcertIntroductionGenerated`
+
+```json
+{
+  "messageId": "bc6e68bf-bbeb-41c0-a186-cbd1cfa237a1",
+  "eventType": "ConcertIntroductionGenerated",
+  "eventVersion": "1.0",
+  "source": "ai-bio-service",
+  "occurredAt": "2026-06-16T11:00:00Z",
+  "correlationId": "job-correlation-62d2e33a",
+  "causationId": null,
+  "payload": {
+    "jobId": "d50a733b-e47b-499a-aee2-d30b7a34b39a",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "introduction": "Nội dung giới thiệu concert đã được AI tạo.",
+    "language": "vi",
+    "sourceDocumentIds": [
+      "source-document-uuid"
+    ],
+    "requestedAt": "2026-06-16T10:55:00Z",
+    "generatedAt": "2026-06-16T11:00:00Z"
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: concert.introduction.generated
+Queue: event.concert-introduction-generated
+```
+
+---
+
+### 14.8. `VipGuestImportCompleted`
 
 ```json
 {
@@ -1415,7 +1705,7 @@ Queue: event.artist-bio-generated
   "correlationId": "job-correlation-f6b1f799",
   "causationId": null,
   "payload": {
-    "jobId": "90ee94cf-ab2a-4c55-9618-b8c18336ac7c",
+    "importJobId": "90ee94cf-ab2a-4c55-9618-b8c18336ac7c",
     "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
     "totalRows": 100,
     "successRows": 95,
@@ -1433,6 +1723,39 @@ Routing:
 Exchange: tickefy.events
 Routing key: vip-guest-import.completed
 Queue: checkin.vip-guest-import-completed
+```
+
+### 14.9. `VipGuestImportFailed`
+
+```json
+{
+  "messageId": "0dfd9169-33e0-4c5f-9c2f-6ce6109b9cb6",
+  "eventType": "VipGuestImportFailed",
+  "eventVersion": "1.0",
+  "source": "csv-ingestion-service",
+  "occurredAt": "2026-06-16T12:05:00Z",
+  "correlationId": "job-correlation-f6b1f799",
+  "causationId": null,
+  "payload": {
+    "importJobId": "90ee94cf-ab2a-4c55-9618-b8c18336ac7c",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "totalRows": 100,
+    "successRows": 0,
+    "failedRows": 60,
+    "duplicateRows": 0,
+    "failureReason": "ERROR_THRESHOLD_EXCEEDED",
+    "errorReportObjectKey": "vip-import/jobs/90ee94cf/errors.csv",
+    "failedAt": "2026-06-16T12:05:00Z"
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.events
+Routing key: vip-guest-import.failed
+Queue: monitoring.vip-guest-import-failed
 ```
 
 ---

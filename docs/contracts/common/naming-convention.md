@@ -111,7 +111,38 @@ Tên canonical được dùng trong:
 * Service discovery.
 * Tài liệu integration.
 
+Ghi chú transition cho E-Ticket:
+
+```text
+Canonical contract name: ticket-service
+Current implementation folder nếu code chưa rename: services/e-ticket-service
+```
+
+Contract mới phải dùng `ticket-service`; nếu tài liệu cần nhắc implementation drift thì ghi rõ alias, không trộn hai tên như hai service khác nhau.
+
 Không thêm số instance hoặc tên thành viên vào tên service.
+
+### 3.3. Ticket và check-in
+
+Các contract mới trong ticket/check-in domain phải dùng tên sau:
+
+| Khái niệm | Tên chuẩn | Không dùng |
+|---|---|---|
+| Concert được check-in | `concertId` | `eventId` |
+| Tên loại vé hiển thị | `ticketTypeName` | `ticketName`, `zoneCode` nếu dùng để hiển thị tên vé |
+| Role nhân viên soát vé | `CHECKIN_STAFF` | `STAFF` |
+| Service sở hữu ticket state | `ticket-service` | `e-ticket-service` trong contract canonical |
+| Service điều phối scan/sync | `checkin-service` | `check-in-service`, `checkInService` |
+| URL resource check-in | `/api/checkins` hoặc `/api/checkins/...` | `/api/check-in`, `/api/checkIn` |
+| QR token public/log-safe | `qrTokenMasked` | raw `qrToken` trong public response/log |
+| Offline sync batch | `syncBatchId` | `batchId` mơ hồ |
+| Offline scan item | `offlineScanId` | `scanId` nếu payload có nhiều loại scan |
+
+Quy tắc QR:
+
+* Raw `qrToken` chỉ được dùng nội bộ khi service cần verify.
+* Public API, snapshot, event và log ưu tiên `qrTokenMasked` hoặc hash/derived value đủ an toàn cho use case.
+* Không đưa full QR token vào event nếu consumer không bắt buộc cần.
 
 ---
 
@@ -180,6 +211,7 @@ Ví dụ:
 
 ```text
 qrToken
+qrTokenMasked
 accessToken
 refreshToken
 idempotencyKey
@@ -194,6 +226,16 @@ tokenId
 ```
 
 trừ khi đối tượng thật sự có một entity ID riêng.
+
+Phân biệt bảo mật:
+
+| Field | Phạm vi dùng |
+|---|---|
+| `qrToken` | Nội bộ ticket-service/checkin-service khi cần verify |
+| `qrTokenMasked` | Public response, snapshot, mobile display, log |
+| `qrTokenHash` | Lưu trữ/lookup nếu thiết kế dùng hash để tránh lưu raw token |
+
+Không expose raw `qrToken` trong public API, event hoặc log thường.
 
 ---
 
@@ -533,14 +575,14 @@ Ví dụ:
 ```text
 /api/concerts
 /api/ticket-types
-/api/reservations
+/api/inventory/concerts/{concertId}/ticket-types
 /api/orders
 /api/payments
 /api/tickets
 /api/checkins
 /api/notifications
 /api/ai-bio/jobs
-/api/vip-import/jobs
+/api/admin/csv-import
 ```
 
 ### 10.3. Resource identifier
@@ -569,8 +611,6 @@ Khi operation không phù hợp với CRUD, dùng action rõ ràng ở cuối pa
 ```http
 POST  /api/concerts/{concertId}/publish
 POST  /api/concerts/{concertId}/cancel
-POST  /api/reservations/{reservationId}/commit
-POST  /api/reservations/{reservationId}/release
 POST  /api/payments/{paymentId}/retry
 POST  /api/ai-bio/jobs/{jobId}/retry
 PATCH /api/notifications/{notificationId}/read
@@ -730,10 +770,15 @@ Event type sử dụng `PascalCase` và diễn tả sự kiện đã xảy ra.
 ```text
 ConcertPublished
 PaymentSucceeded
+PaymentFailed
 OrderPaid
+OrderPaymentFailed
+OrderExpired
+OrderCancelled
+OrderRefunded
 TicketsIssued
 TicketCheckedIn
-ArtistBioGenerated
+ConcertIntroductionGenerated
 VipGuestImportCompleted
 ```
 
@@ -775,10 +820,13 @@ concert.cancelled
 payment.succeeded
 payment.failed
 order.paid
+order.payment.failed
 order.expired
+order.cancelled
+order.refunded
 tickets.issued
 ticket.checked-in
-artist-bio.generated
+concert.introduction.generated
 vip-guest-import.completed
 ```
 
@@ -794,10 +842,21 @@ Ví dụ:
 
 ```text
 order.payment-succeeded
+order.payment-failed
 inventory.order-paid
+inventory.order-payment-failed
+inventory.concert-published
+inventory.concert-cancelled
+inventory.order-expired
+inventory.order-cancelled
+order.concert-cancelled
 ticket.order-paid
+ticket.order-refunded
+ticket.concert-cancelled
 notification.tickets-issued
-event.artist-bio-generated
+notification.order-refunded
+notification.concert-cancelled
+event.concert-introduction-generated
 checkin.vip-guest-import-completed
 ```
 

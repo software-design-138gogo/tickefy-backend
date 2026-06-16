@@ -47,6 +47,24 @@ Verify chữ ký + `exp` TRƯỚC khi tin claims; sai → 401 `INVALID_TOKEN`.
 - Authority Spring = `ROLE_{code}`.
 - ⚠️ **Role thay đổi chỉ hiệu lực AUTHORITY ở token LẦN SAU** (roles nhúng vào access token lúc login). `GET /auth/me` đọc role từ **DB tươi** (hiện role mới ngay), nhưng `@PreAuthorize`/authority các endpoint khác vẫn theo token hiện tại. Không revoke refresh khi đổi role (🔭 PLANNED — parked).
 
+### 3.1. Ticket / check-in role mapping
+
+| Operation | Required role | Identity source |
+|---|---|---|
+| User xem vé của mình | `AUDIENCE` | `userId` từ JWT `sub` |
+| Staff scan online | `CHECKIN_STAFF` | `staffId` từ JWT `sub` |
+| Staff tải offline snapshot | `CHECKIN_STAFF` | `staffId` từ JWT `sub` |
+| Staff sync offline scans | `CHECKIN_STAFF` | `staffId` từ JWT `sub` |
+| Organizer xem thống kê check-in concert của mình | `ORGANIZER` | `organizerId` từ JWT `sub`, ownership validate qua event-service/checkin-service contract |
+| Admin quản trị ticket/check-in nếu có | `ADMIN` | `userId` từ JWT `sub` |
+
+Quy tắc bắt buộc:
+
+* Không nhận `userId`, `staffId`, `organizerId` từ request body/query để quyết định quyền.
+* `checkin-service` phải lấy `staffId` từ SecurityContext/JWT và ghi audit log.
+* Service-to-service call vẫn forward `Authorization: Bearer`; downstream tự verify token theo RS256.
+* Nếu cần permission chi tiết theo concert/gate, checkin-service validate bằng assignment/permission data của nó hoặc gọi service sở hữu dữ liệu — không tin client tự khai.
+
 ## 4. Gateway propagation (🔭 PLANNED)
 ⚠️ **Hiện tại KHÔNG dùng pattern này.** Mỗi service **verify JWT trực tiếp** (verify-only public key) từ `Authorization: Bearer` — KHÔNG dựa header `X-User-*` do gateway inject (gateway chưa build).
 

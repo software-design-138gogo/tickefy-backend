@@ -18,7 +18,7 @@ lastUpdated: 2026-06-16
 | Owner | Hiệp |
 | Repository | tickefy-backend (monorepo) → `services/auth-service` ✅ |
 | Internal port | 8081 (host) → 8080 (container) |
-| Public base path | `/api/auth/**` (qua gateway) · `/auth/**` (gọi thẳng dev) |
+| Public base path | External gateway: `/api/auth/**`; direct-dev service path: `/auth/**` |
 | Health check | `/actuator/health` ✅ + `/health` (`HealthController.java:17`) |
 | Swagger/OpenAPI | springdoc `/swagger-ui.html` ✅ (dep trong pom) |
 | Database name / schema | DB `tickefy_auth` · schema `auth_service` (`${DB_SCHEMA}`; `V2__auth_schema.sql:1`) ✅ |
@@ -65,10 +65,13 @@ lastUpdated: 2026-06-16
 |---|---|
 | PostgreSQL | users / roles / user_roles / refresh_tokens |
 | Redis | Token blacklist (`tickefy:auth:token:blacklist:{jti}`) |
-| RabbitMQ | ✅ auth KHÔNG publish/consume event (no amqp dep — xem §7/§8). 🔭 `UserRegistered` nếu sau cần notification |
+| RabbitMQ | ✅ auth KHÔNG publish/consume event (no amqp dep — xem §7/§8). 🔭 `UserRegistered` chỉ là ý tưởng chưa freeze nếu sau cần notification. |
 | Object Storage | (none) |
 
-## 5. Public APIs ✅ (path `/auth/users` xác nhận — `UserController` `@RequestMapping("/auth")`)
+## 5. Public APIs ✅
+
+Canonical external path qua Gateway là `/api/auth/**`. Bảng dưới đây ghi direct-dev service path theo controller hiện tại (`UserController` `@RequestMapping("/auth")`); Gateway map `/api/auth/**` sang các path này.
+
 | Method | Path | Role | Description | Contract |
 |---|---|---|---|---|
 | POST | `/auth/register` | public | Đăng ký → role mặc định AUDIENCE, 201 | api-contracts §2 |
@@ -92,7 +95,7 @@ lastUpdated: 2026-06-16
 | Event | Routing key | When | Consumers | Contract |
 |---|---|---|---|---|
 | (none hiện tại) | — | — | — | ✅ auth KHÔNG publish (no amqp dep) |
-| 🔭 `UserRegistered` | `user.registered` | sau register | notification | PLANNED nếu cần email chào mừng — chưa code |
+| 🔭 `UserRegistered` | `user.registered` | sau register | notification | PLANNED, chưa code, chưa freeze trong common event contract |
 
 ## 8. Events consumed
 | Event | Producer | Queue | Behavior | Idempotency key |
@@ -186,6 +189,6 @@ stateDiagram-v2
 - ✅ Path role mgmt = `/auth/users/{userId}/roles` (xác nhận repo).
 - ✅ `change-password` **chưa code** → 🔭 (cần làm nếu spec yêu cầu).
 - ✅ Refresh **không rotate** (chỉ cấp access mới) → 🔭 rotation nếu muốn tăng bảo mật.
-- 🔭 auth publish `UserRegistered` cho notification — chưa, cân nhắc khi Notification build.
+- 🔭 auth publish `UserRegistered` cho notification — chưa code/chưa freeze; chỉ thêm common event contract khi Notification build cần consume.
 - 🔭 Gateway-side blacklist check (ADR-AUTH-003) — parked; hiện chỉ auth-service check.
 - ✅ DB `tickefy_auth` / schema `auth_service` / Swagger `/swagger-ui.html` (xác nhận).

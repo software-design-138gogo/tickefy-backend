@@ -136,10 +136,14 @@ CREATE SCHEMA IF NOT EXISTS eticket_service;
 Quy ước (BẮT BUỘC khớp toàn hệ):
 - Exchange: **`tickefy.exchange`** (topic, durable).
 - Queue: **`<service>-service.<event-kebab>.queue`** (vd `inventory-service.order-paid.queue`, `ticket-service.order-paid.queue`).
-- DLQ: **`<...>.queue.dlq`**.
+- DLQ: **`<...>.queue.dlq`** · DLX riêng **`tickefy.dlx`** · dead-letter rk = **`<queue-base>.dlq`** (theo tên queue, KHÔNG theo routing key — tránh collision khi đa-consumer).
 - Routing key: **`<domain>.<event>`** (vd `order.paid`, `payment.succeeded`).
 
-**Convention DLQ:** dùng **exchange dead-letter RIÊNG `tickefy.dlx`** (KHÔNG route DLQ qua exchange chính). Dead-letter routing key = **`<routingKey>.dlq`** (vd `order.paid` → `order.paid.dlq`).
+**Convention DLQ:** dùng **exchange dead-letter RIÊNG `tickefy.dlx`** (KHÔNG route DLQ qua exchange chính). Dead-letter routing key = **`<queue-base>.dlq`** — lấy theo **TÊN QUEUE**, KHÔNG theo routing key.
+
+> ⚠️ **Vì sao theo tên queue, KHÔNG theo `<routingKey>.dlq`:** một routing key có thể có **nhiều consumer fan-out** (vd `order.paid` được inventory + e-ticket + notification cùng nghe). Nếu mỗi consumer đặt dead-letter rk = `order.paid.dlq` thì `tickefy.dlx` (topic) route message chết của **mọi** consumer vào **mọi** DLQ → **ô nhiễm chéo DLQ** (message lỗi của e-ticket chui vào DLQ inventory). Dùng dead-letter rk theo tên queue (`inventory-service.order-paid.dlq`, `ticket-service.order-paid.dlq`) → mỗi consumer có DLQ riêng biệt. (Bài học thật từ việc thêm DLQ e-ticket.)
+>
+> Ví dụ: queue `inventory-service.order-paid.queue` → dead-letter rk `inventory-service.order-paid.dlq`; queue `ticket-service.order-paid.queue` → dead-letter rk `ticket-service.order-paid.dlq`.
 
 Mẫu `@Bean` (mỗi consumer service — khớp RabbitMqConfig thật của order/inventory):
 ```java
@@ -151,16 +155,16 @@ Mẫu `@Bean` (mỗi consumer service — khớp RabbitMqConfig thật của ord
 
 @Bean Queue orderPaidQueue() {
   return QueueBuilder.durable("inventory-service.order-paid.queue")
-    .deadLetterExchange(dlx)                  // fail → DLX riêng (KHÔNG exchange chính)
-    .deadLetterRoutingKey("order.paid.dlq")   // <routingKey>.dlq
+    .deadLetterExchange(dlx)                          // fail → DLX riêng (KHÔNG exchange chính)
+    .deadLetterRoutingKey("inventory-service.order-paid.dlq")   // <queue-base>.dlq (theo TÊN QUEUE, tránh collision)
     .build();
 }
 @Bean Queue orderPaidDlq() { return QueueBuilder.durable("inventory-service.order-paid.queue.dlq").build(); }
 @Bean Binding b1()   { return BindingBuilder.bind(orderPaidQueue()).to(tickefyExchange()).with("order.paid"); }
-@Bean Binding bDlq() { return BindingBuilder.bind(orderPaidDlq()).to(tickefyDlx()).with("order.paid.dlq"); }
+@Bean Binding bDlq() { return BindingBuilder.bind(orderPaidDlq()).to(tickefyDlx()).with("inventory-service.order-paid.dlq"); }
 // listener factory: setDefaultRequeueRejected(false) — poison → DLQ, KHÔNG requeue vô hạn
 ```
-> Mẫu trên là chuẩn self-declare DLQ của service Hiệp (order/inventory). e-ticket hiện chỉ khai queue, DLQ qua broker policy — khi thêm DLQ self-declare nên theo mẫu này cho đồng nhất.
+> Mẫu trên là chuẩn self-declare DLQ (order/inventory/e-ticket đều đã áp dụng). Cả 3 service consume `order.paid` dùng dead-letter rk theo tên queue riêng → DLQ tách biệt, không ô nhiễm chéo.
 
 > ⚠️ Queue đã tồn tại trên broker đang chạy KHÔNG đổi args được (RabbitMQ `PRECONDITION_FAILED`). Muốn thêm DLQ vào queue cũ → xóa queue cũ trước rồi để service redeclare.
 

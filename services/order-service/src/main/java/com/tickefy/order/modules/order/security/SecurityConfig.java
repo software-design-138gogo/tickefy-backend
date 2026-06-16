@@ -45,7 +45,8 @@ public class SecurityConfig {
                                 "/health",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
-                                "/swagger-ui.html")
+                                "/swagger-ui.html",
+                                "/dev/**") // dev-only sim endpoints (gated by @ConditionalOnProperty)
                         .permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

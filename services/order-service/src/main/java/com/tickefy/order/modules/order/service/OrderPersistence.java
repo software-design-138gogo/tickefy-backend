@@ -1,16 +1,24 @@
 package com.tickefy.order.modules.order.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickefy.order.common.exception.ApiException;
 import com.tickefy.order.common.exception.ErrorCode;
 import com.tickefy.order.modules.order.dto.OrderResponse;
 import com.tickefy.order.modules.order.entity.OrderEntity;
 import com.tickefy.order.modules.order.entity.OrderItemEntity;
+import com.tickefy.order.modules.order.entity.OutboxEntity;
 import com.tickefy.order.modules.order.mapper.OrderMapper;
+import com.tickefy.order.modules.order.messaging.OrderEvents;
 import com.tickefy.order.modules.order.repository.OrderRepository;
+import com.tickefy.order.modules.order.repository.OutboxRepository;
 import com.tickefy.order.modules.order.statemachine.OrderStateMachine;
 import com.tickefy.order.modules.order.statemachine.OrderStatus;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -25,14 +33,25 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderPersistence {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderPersistence.class);
+
     private final OrderRepository orderRepository;
     private final OrderStateMachine stateMachine;
     private final OrderMapper orderMapper;
+    private final OutboxRepository outboxRepository;
+    private final ObjectMapper objectMapper;
 
-    public OrderPersistence(OrderRepository orderRepository, OrderStateMachine stateMachine, OrderMapper orderMapper) {
+    public OrderPersistence(
+            OrderRepository orderRepository,
+            OrderStateMachine stateMachine,
+            OrderMapper orderMapper,
+            OutboxRepository outboxRepository,
+            ObjectMapper objectMapper) {
         this.orderRepository = orderRepository;
         this.stateMachine = stateMachine;
         this.orderMapper = orderMapper;
+        this.outboxRepository = outboxRepository;
+        this.objectMapper = objectMapper;
     }
 
     /** TX1: insert order in CREATED state. */
@@ -116,6 +135,120 @@ public class OrderPersistence {
         order.setStatus(OrderStatus.CANCELLED.name());
 
         return orderRepository.save(order);
+    }
+
+    /**
+     * TX (Pass 2): PAYMENT_PENDING → PAID + write OrderPaid to outbox (same TX).
+     * Idempotent: already PAID (or terminal) → no-op, no duplicate outbox row.
+     *
+     * @return true if transitioned (outbox written), false if skipped (idempotent replay)
+     */
+    @Transactional
+    public boolean markPaid(UUID orderId, String paymentTransactionId) {
+        OrderEntity order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalStateException("Order not found: " + orderId));
+
+        OrderStatus current = OrderStatus.valueOf(order.getStatus());
+        if (current == OrderStatus.PAID) {
+            log.info("markPaid skipped (idempotent) — orderId={} already PAID", orderId);
+            return false;
+        }
+        stateMachine.assertTransition(current, OrderStatus.PAID);
+        order.setStatus(OrderStatus.PAID.name());
+        if (paymentTransactionId != null) {
+            order.setPaymentTransactionId(paymentTransactionId);
+        }
+        orderRepository.save(order);
+
+        String now = Instant.now().toString();
+        List<OrderEvents.OrderPaidItem> items = order.getItems().stream()
+                .map(i -> new OrderEvents.OrderPaidItem(
+                        i.getId().toString(),
+                        i.getTicketTypeId().toString(),
+                        i.getQuantity(),
+                        null, // zoneId — nguồn Event (Dương), order chưa có
+                        null)) // ticketTypeName — nguồn Event, order chưa có
+                .toList();
+        OrderEvents.OrderPaidMessage msg = new OrderEvents.OrderPaidMessage(
+                UUID.randomUUID().toString(),
+                OrderEvents.Type.ORDER_PAID,
+                now,
+                order.getId().toString(),
+                order.getUserId().toString(),
+                order.getConcertId().toString(),
+                now,
+                items);
+        writeOutbox(orderId, OrderEvents.Type.ORDER_PAID, msg);
+        log.info("Order PAID + OrderPaid outbox written orderId={}", orderId);
+        return true;
+    }
+
+    /**
+     * TX (Pass 2): PAYMENT_PENDING → PAYMENT_FAILED + write OrderPaymentFailed to outbox.
+     * Idempotent: already PAYMENT_FAILED/terminal → no-op.
+     */
+    @Transactional
+    public boolean markPaymentFailed(UUID orderId) {
+        return markReleaseTerminal(orderId, OrderStatus.PAYMENT_FAILED, OrderEvents.Type.ORDER_PAYMENT_FAILED);
+    }
+
+    /**
+     * TX (Pass 2): PAYMENT_PENDING/RESERVED → EXPIRED + write OrderExpired to outbox.
+     * Idempotent: already EXPIRED/terminal → no-op. Used by the expire worker.
+     */
+    @Transactional
+    public boolean markExpired(UUID orderId) {
+        return markReleaseTerminal(orderId, OrderStatus.EXPIRED, OrderEvents.Type.ORDER_EXPIRED);
+    }
+
+    private boolean markReleaseTerminal(UUID orderId, OrderStatus target, String eventType) {
+        OrderEntity order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalStateException("Order not found: " + orderId));
+
+        OrderStatus current = OrderStatus.valueOf(order.getStatus());
+        if (current == target) {
+            log.info("mark{} skipped (idempotent) — orderId={} already {}", target, orderId, target);
+            return false;
+        }
+        stateMachine.assertTransition(current, target);
+        order.setStatus(target.name());
+        orderRepository.save(order);
+
+        String now = Instant.now().toString();
+        List<OrderEvents.OrderReleaseItem> items = order.getItems().stream()
+                .map(i -> new OrderEvents.OrderReleaseItem(i.getTicketTypeId().toString(), i.getQuantity()))
+                .toList();
+        OrderEvents.OrderReleaseMessage msg = new OrderEvents.OrderReleaseMessage(
+                UUID.randomUUID().toString(),
+                eventType,
+                now,
+                order.getId().toString(),
+                order.getUserId().toString(),
+                items);
+        writeOutbox(orderId, eventType, msg);
+        log.info("Order {} + {} outbox written orderId={}", target, eventType, orderId);
+        return true;
+    }
+
+    private void writeOutbox(UUID aggregateId, String eventType, Object payload) {
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new ApiException(
+                    ErrorCode.INTERNAL_SERVER_ERROR,
+                    "Failed to serialize outbox payload for " + eventType,
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+        OutboxEntity row = OutboxEntity.builder()
+                .id(UUID.randomUUID())
+                .aggregateId(aggregateId)
+                .eventType(eventType)
+                .payload(json)
+                .status("PENDING")
+                .createdAt(Instant.now())
+                .build();
+        outboxRepository.save(row);
     }
 
     /**

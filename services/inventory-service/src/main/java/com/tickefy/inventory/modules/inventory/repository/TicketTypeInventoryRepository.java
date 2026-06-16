@@ -25,4 +25,24 @@ public interface TicketTypeInventoryRepository extends JpaRepository<TicketTypeI
                     + "WHERE i.ticketTypeId = :id "
                     + "AND (i.totalQty - i.soldQty - i.reservedQty) >= :qty")
     int incrementReservedConditional(@Param("id") UUID id, @Param("qty") int qty);
+
+    /**
+     * Commit: reserved -> sold. Returns 1 if applied, 0 if guard fails (reserved &lt; qty).
+     */
+    @Modifying
+    @Query(
+            "UPDATE TicketTypeInventoryEntity i "
+                    + "SET i.reservedQty = i.reservedQty - :qty, i.soldQty = i.soldQty + :qty "
+                    + "WHERE i.ticketTypeId = :id AND i.reservedQty >= :qty")
+    int commitReserved(@Param("id") UUID id, @Param("qty") int qty);
+
+    /**
+     * Release: reserved -> back to available pool (DB). Returns 1 if applied, 0 if guard fails.
+     */
+    @Modifying
+    @Query(
+            "UPDATE TicketTypeInventoryEntity i "
+                    + "SET i.reservedQty = i.reservedQty - :qty "
+                    + "WHERE i.ticketTypeId = :id AND i.reservedQty >= :qty")
+    int releaseReserved(@Param("id") UUID id, @Param("qty") int qty);
 }

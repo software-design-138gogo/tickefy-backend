@@ -246,7 +246,7 @@ http://inventory-service:8080      ✅  (KHÔNG http://localhost:8083)
 ```
 (Thêm `source`/`correlationId`/`causationId` khi cần tracing — chưa bắt buộc cho đồ án.)
 
-> ⚠️ **Legacy cần migrate:** hiện `order.*` (order.paid/payment-failed/expired) đang publish **FLAT** (field top-level, không bọc payload) để khớp consumer e-ticket lúc đầu. `payment.*` đã gần envelope (thiếu `eventVersion`). **Hướng: migrate `order.*` sang envelope** — gộp khi làm qty>1 (e-ticket đằng nào cũng sửa consumer). Service MỚI từ giờ: dùng envelope ngay.
+> ✅ **Toàn hệ dùng ENVELOPE** (migrate xong, verified qty=1/qty=3). `order.*` (order.paid/payment.failed/expired) publish envelope `{messageId,eventType,eventVersion:"1.0",occurredAt,payload:{...}}`; consumer (inventory/e-ticket) đọc `payload.*`. `payment.*` có `eventVersion="1.0"`. **⚠️ Lệch tên có chủ đích:** `order.*` dùng `occurredAt`, `payment.*` giữ field `timestamp` (tránh breaking contract Payment/Dương) — follow-up thống nhất khi Payment thật land. `eventVersion` BẮT BUỘC, giờ mọi event đều có.
 
 ### Publisher (qua Outbox Pattern)
 - Ghi event vào bảng `outbox` **cùng transaction** với business state change.
@@ -260,6 +260,7 @@ http://inventory-service:8080      ✅  (KHÔNG http://localhost:8083)
 
 ### Idempotency (thực tế hiện tại)
 - **State-guard** là chính: order PAID→bỏ qua nếu đã terminal; reservation RESERVED→COMMITTED/RELEASED, đã chuyển thì skip. (Đã verified: gửi trùng ×3 không nhân đôi.)
+- **Natural-key UNIQUE** cho fan-out qty>1: e-ticket dùng `(orderItemId, seat_sequence)` UNIQUE — 1 order item quantity=N sinh N vé (seq 1..N), redeliver order.paid → seat đã có → skip (không nhân đôi).
 - 🔭 TARGET: bảng `processed_messages(messageId)` để dedup tầng message — chưa cần cho happy-path, state-guard đủ. Thêm khi cần chống race 2 message cùng messageId đồng thời.
 
 ### Test event local

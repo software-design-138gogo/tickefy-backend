@@ -10,7 +10,7 @@ lastUpdated: 2026-06-16
 # Service Specification — `inventory-service`
 
 > Nhãn: ✅ khớp implement (session) · 🔭 PLANNED/Pass 2 (chưa code, cố ý) · ⚠️ VERIFY (tái dựng — Claude Code đối chiếu repo).
-> ⚠️ Trạng thái build (báo cáo integration v2): **LIVE (P1)** = ticket-type CRUD + availability + **reserve** (Lua atomic). **CHƯA code (Pass 2, 🔭)** = consume OrderPaid/OrderPaymentFailed/OrderExpired/OrderCancelled (commit/release qua event) + TTL release worker + consume Concert*.
+> ✅ Trạng thái build (Pass 2 wired + verified compose dev, branch `feature/pass2-async`): **LIVE (P1)** = ticket-type CRUD + availability + **reserve** (Lua atomic). **✅ Pass 2 wired+verified** = consume `order.paid` (commit) / `order.payment.failed` + `order.expired` (release) + DLQ + idempotent status-guard. **🔭 còn:** `order.cancelled` (cancel endpoint chưa có) + consume Concert* (chờ Event) + TTL release worker nội bộ (release hiện qua event order.*, KHÔNG sweeper).
 
 ## 1. Identity
 | Item | Value |
@@ -68,7 +68,7 @@ lastUpdated: 2026-06-16
 |---|---|
 | PostgreSQL | **Source of truth** (ticket_types, inventory counts, reservations) |
 | Redis | Cổng atomic Lua (stock + per-user quota) + cache availability |
-| RabbitMQ | 🔭 Consume OrderPaid/OrderPaymentFailed/OrderExpired/OrderCancelled/Concert* — **Pass 2, chưa wire** |
+| RabbitMQ | ✅ Consume order.paid/order.payment.failed/order.expired (wired + DLQ, verified). 🔭 order.cancelled + Concert* chờ wire |
 | Object Storage | (none) |
 
 ## 5. Public APIs
@@ -97,13 +97,13 @@ Backward compatibility note: implementation hiện có thể còn expose `/event
 ## 8. Events consumed — ✅ order.* WIRED (Pass 2 verified). Kênh DUY NHẤT để commit/release (KHÔNG HTTP — §6)
 | Event | Producer | Queue | Behavior | Idempotency key |
 |---|---|---|---|---|
-| `OrderPaid` | `order-service` | `inventory.order-paid` | RESERVED→COMMITTED, sold+=qty, reserved-=qty | `messageId`, `reservationId` — 🔭 Pass 2 |
-| `OrderPaymentFailed` | `order-service` | `inventory.order-payment-failed` | Release reservation | `messageId`, `reservationId` — 🔭 Pass 2 |
-| `OrderExpired` | `order-service` | `inventory.order-expired` | Release reservation | `messageId`, `reservationId` — 🔭 Pass 2 |
-| `OrderCancelled` | `order-service` | `inventory.order-cancelled` | Release reservation when order is cancelled before payment point-of-no-return | `messageId`, `reservationId` — 🔭 Pass 2 |
+| `OrderPaid` | `order-service` | `inventory.order-paid` | RESERVED→COMMITTED, sold+=qty, reserved-=qty | `messageId`, `reservationId` — ✅ verified (status-guard ×3) |
+| `OrderPaymentFailed` | `order-service` | `inventory.order-payment-failed` | Release reservation | `messageId`, `reservationId` — ✅ verified |
+| `OrderExpired` | `order-service` | `inventory.order-expired` | Release reservation | `messageId`, `reservationId` — ✅ verified |
+| `OrderCancelled` | `order-service` | `inventory.order-cancelled` | Release reservation when order is cancelled before payment point-of-no-return | `messageId`, `reservationId` — 🔭 Pass 2 (cancel endpoint chưa có) |
 | `ConcertPublished` | `event-service` | `inventory.concert-published` | Chuẩn bị counter/cache cho concert đã publish; payload chỉ cần `concertId` + timestamps, ticket types vẫn thuộc Inventory | `messageId`, `concertId` — 🔭 chờ Event |
 | `ConcertCancelled` | `event-service` | `inventory.concert-cancelled` | **Ngừng bán khẩn cấp** (khóa tạo reservation mới); release đơn cũ do Order điều phối | `messageId`, `concertId` — 🔭 chờ Event |
-> ⚠️ Khi wire Pass 2: **thêm DLQ + `setDefaultRequeueRejected(false)`** (tránh poison message — bài học từ e-ticket Hòa). Routing key/queue theo api-contracts §5.
+> ✅ **DLQ + `setDefaultRequeueRejected(false)`** đã thêm cho 3 queue order.* (poison→DLQ verified). order.cancelled/Concert* khi wire nhớ DLQ. Routing key/queue theo api-contracts §5.
 
 ## 9. State machines — reservation
 ```mermaid
@@ -117,8 +117,8 @@ stateDiagram-v2
 | Current | Action/Event | Next | Side effects |
 |---|---|---|---|
 | (none) | reserve OK | RESERVED | Redis: DECRBY stock, INCRBY user quota; PG: insert reservation, reserved_count+=qty, expires_at=now+15' |
-| RESERVED | OrderPaid | COMMITTED | sold_count+=qty, reserved_count-=qty (idempotent nếu đã COMMITTED) — 🔭 Pass 2 |
-| RESERVED | TTL / payment-failed / expired / cancelled | RELEASED | Redis: INCRBY stock, DECRBY quota; PG: reserved_count-=qty; invalidate availability — 🔭 (event-driven Pass 2; TTL worker 🔭) |
+| RESERVED | OrderPaid | COMMITTED | sold_count+=qty, reserved_count-=qty (idempotent nếu đã COMMITTED) — ✅ verified |
+| RESERVED | payment-failed / expired (event order.*) | RELEASED | Redis: INCRBY stock, DECRBY quota; PG: reserved_count-=qty — ✅ verified (release qua **event order.***; cancelled 🔭). **TTL worker nội bộ vẫn 🔭** (KHÔNG sweeper) |
 
 ## 10. Reliability
 ### Idempotency
@@ -172,8 +172,9 @@ stateDiagram-v2
 | Reserve cho concert chưa PUBLISHED hoặc đã CANCELLED | 403 | `SALE_WINDOW_CLOSED` hoặc `CONCERT_NOT_AVAILABLE` nếu catalog bổ sung sau |
 | Ngoài giờ bán | 403 | `SALE_WINDOW_CLOSED` ✅ |
 | Reservation quá 15' chưa thanh toán | Worker release, trả vé + quota | 🔭 `RESERVATION_EXPIRED` (410) — **chưa throw** (TTL worker Pass 2) |
-| Payment failed / order expired / order cancelled before paid | Release reservation | 🔭 Pass 2 (consume event) |
-| OrderPaid gửi trùng | Idempotent — đã COMMITTED bỏ qua | 🔭 Pass 2 |
+| Payment failed / order expired | Release reservation (consume order.payment.failed / order.expired) | ✅ verified |
+| Order cancelled before paid | Release reservation | 🔭 (cancel endpoint chưa có) |
+| OrderPaid gửi trùng | Idempotent — đã COMMITTED bỏ qua | ✅ verified (status-guard) |
 | Concert không tồn tại khi tạo/sửa ticket type | API error | `CONCERT_NOT_FOUND` |
 | Ticket type không tồn tại | API error | `RESOURCE_NOT_FOUND` |
 | ConcertCancelled | Ngừng bán khẩn cấp (khóa reservation mới) | 🔭 chờ Event |
@@ -200,6 +201,7 @@ stateDiagram-v2
 - ✅ Validate concertId qua Event: **skip** mặc định (`VALIDATE_CONCERT=false`); bật khi Event build.
 - ✅ PG fallback đã code; 🔭 reconciliation job chưa code.
 - ✅ INV-005 = `RESOURCE_NOT_FOUND` cho ticket type; INV-006 = `CONCERT_NOT_FOUND` cho concert.
-- 🔭 Pass 2: wire consume OrderPaid/PaymentFailed/Expired/Cancelled + TTL worker + **DLQ + setDefaultRequeueRejected(false)**.
+- ✅ Pass 2 consume DONE + verified (order.paid commit / order.payment.failed + order.expired release + DLQ + idempotent). 🔭 còn: order.cancelled + Concert* + TTL worker nội bộ.
+- ⚠️ **qty>1 undercount (chờ chốt Hòa + Dương):** e-ticket issue **1 vé/item, KHÔNG đọc `quantity`** → order item qty>1 chỉ sinh 1 vé. Hướng (a) **per-seat** (Order publish N item, mỗi vé 1 orderItemId) vs (b) **quantity** (e-ticket loop theo quantity). `zoneId`/`ticketTypeName` nguồn Event (Dương). Hiện verified ở **qty=1**.
 - Lock strategy: Redis+Lua (Hiệp) vs Pessimistic Lock (Hòa) — team chốt 1 cơ chế (không để 2 cùng chạy).
 - Legacy path `/events/{concertId}/ticket-types/**` cần migrate client sang `/api/inventory/concerts/{concertId}/ticket-types/**`; contract mới không coi endpoint cũ là Event-owned.

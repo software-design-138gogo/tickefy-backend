@@ -6,7 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.jwt")
 public class JwtProperties {
 
-    private String issuer = "tickefy-auth";
+    private String issuer = "tickefy-auth-service";
+    private String audience = "tickefy-api";
     private String privateKey = "classpath:keys/jwt-dev-private.pem";
     private String publicKey = "classpath:keys/jwt-dev-public.pem";
     private Duration accessTtl = Duration.ofMinutes(15);
@@ -18,6 +19,14 @@ public class JwtProperties {
 
     public void setIssuer(String issuer) {
         this.issuer = issuer;
+    }
+
+    public String getAudience() {
+        return audience;
+    }
+
+    public void setAudience(String audience) {
+        this.audience = audience;
     }
 
     public String getPrivateKey() {

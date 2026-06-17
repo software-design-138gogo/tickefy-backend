@@ -46,7 +46,8 @@ app:
   database:
     schema: ${DB_SCHEMA:public}
   jwt:
-    issuer: tickefy-auth
+    issuer: ${JWT_ISSUER:tickefy-auth-service}
+    audience: ${JWT_AUDIENCE:tickefy-api}
     private-key: ${JWT_PRIVATE_KEY_PATH:classpath:keys/jwt-dev-private.pem}
     public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
     access-ttl: ${JWT_ACCESS_TTL:PT15M}

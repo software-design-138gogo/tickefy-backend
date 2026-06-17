@@ -42,6 +42,7 @@ public class JwtTokenProvider {
                 .claim("roles", roles)
                 .id(jti)
                 .issuer(jwtProperties.getIssuer())
+                .audience().add(jwtProperties.getAudience()).and()
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
                 .signWith(jwtKeyProvider.getPrivateKey(), Jwts.SIG.RS256)
@@ -54,6 +55,8 @@ public class JwtTokenProvider {
         try {
             return Jwts.parser()
                     .verifyWith(jwtKeyProvider.getPublicKey())
+                    .requireIssuer(jwtProperties.getIssuer())
+                    .requireAudience(jwtProperties.getAudience())
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();

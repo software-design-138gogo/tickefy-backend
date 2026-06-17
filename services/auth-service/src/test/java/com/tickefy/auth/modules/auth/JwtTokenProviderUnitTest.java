@@ -36,7 +36,7 @@ import org.mockito.quality.Strictness;
  * JwtKeyProvider and JwtProperties are mocked via Mockito.
  *
  * AC coverage:
- *   AC#12 — issue access token with correct claims (sub/email/roles/jti/issuer/exp)
+ *   AC#12 — issue access token with correct claims (sub/email/roles/jti/issuer/audience/exp)
  *   AC#12 — parse rejects tokens signed by a different key
  *   AC#12 — parse rejects tokens with tampered signature
  *   AC#12 — parse rejects expired tokens
@@ -63,17 +63,18 @@ class JwtTokenProviderUnitTest {
         otherKeyPair = gen.generateKeyPair();
     }
 
-    private JwtTokenProvider buildProvider(PrivateKey priv, PublicKey pub, String issuer, Duration ttl) {
+    private JwtTokenProvider buildProvider(PrivateKey priv, PublicKey pub, String issuer, String audience, Duration ttl) {
         when(mockKeyProvider.getPrivateKey()).thenReturn(priv);
         when(mockKeyProvider.getPublicKey()).thenReturn(pub);
         when(mockJwtProperties.getIssuer()).thenReturn(issuer);
+        when(mockJwtProperties.getAudience()).thenReturn(audience);
         when(mockJwtProperties.getAccessTtl()).thenReturn(ttl);
         return new JwtTokenProvider(mockJwtProperties, mockKeyProvider);
     }
 
     // -----------------------------------------------------------------------
     // AC#12 — issueAccessToken produces token with correct claims
-    // sub=userId, email claim, roles list, jti UUID, issuer, exp ~now+15min
+    // sub=userId, email claim, roles list, jti UUID, issuer, audience, exp ~now+15min
     // -----------------------------------------------------------------------
     @Test
     @DisplayName("AC#12 issueAccessToken: claims sub/email/roles/jti/issuer/exp all correct")
@@ -81,11 +82,12 @@ class JwtTokenProviderUnitTest {
         String userId = UUID.randomUUID().toString();
         String email = "qa@tickefy.com";
         List<String> roles = List.of("AUDIENCE");
-        String issuer = "tickefy-auth";
+        String issuer = "tickefy-auth-service";
+        String audience = "tickefy-api";
         Duration ttl = Duration.ofMinutes(15);
 
         JwtTokenProvider provider = buildProvider(
-                keyPair.getPrivate(), keyPair.getPublic(), issuer, ttl);
+                keyPair.getPrivate(), keyPair.getPublic(), issuer, audience, ttl);
 
         Instant beforeIssue = Instant.now();
         JwtTokenProvider.AccessTokenResult result =
@@ -112,6 +114,7 @@ class JwtTokenProviderUnitTest {
 
         assertThat(claims.getId()).isEqualTo(result.jti());
         assertThat(claims.getIssuer()).isEqualTo(issuer);
+        assertThat(claims.getAudience()).contains(audience);
 
         // JWT Date has second-precision (truncated). Compare at second granularity.
         // exp must fall in [beforeIssue+ttl, afterIssue+ttl+2s] (2s slack for slow CI)
@@ -129,7 +132,7 @@ class JwtTokenProviderUnitTest {
     @DisplayName("AC#12 issueAccessToken: successive tokens have distinct jti values")
     void issueAccessToken_uniqueJti() {
         JwtTokenProvider provider = buildProvider(
-                keyPair.getPrivate(), keyPair.getPublic(), "tickefy-auth", Duration.ofMinutes(15));
+                keyPair.getPrivate(), keyPair.getPublic(), "tickefy-auth-service", "tickefy-api", Duration.ofMinutes(15));
 
         JwtTokenProvider.AccessTokenResult r1 =
                 provider.issueAccessToken(UUID.randomUUID().toString(), "a@b.com", List.of("AUDIENCE"));
@@ -147,7 +150,8 @@ class JwtTokenProviderUnitTest {
     void parseAccessToken_wrongSigningKey_throwsInvalidToken() {
         // Issue with the REAL private key
         when(mockKeyProvider.getPrivateKey()).thenReturn(keyPair.getPrivate());
-        when(mockJwtProperties.getIssuer()).thenReturn("tickefy-auth");
+        when(mockJwtProperties.getIssuer()).thenReturn("tickefy-auth-service");
+        when(mockJwtProperties.getAudience()).thenReturn("tickefy-api");
         when(mockJwtProperties.getAccessTtl()).thenReturn(Duration.ofMinutes(15));
 
         JwtTokenProvider issuerProvider = new JwtTokenProvider(mockJwtProperties, mockKeyProvider);
@@ -174,7 +178,7 @@ class JwtTokenProviderUnitTest {
     @DisplayName("AC#12 parseAccessToken: tampered signature → ApiException INVALID_TOKEN")
     void parseAccessToken_tamperedSignature_throwsInvalidToken() {
         JwtTokenProvider provider = buildProvider(
-                keyPair.getPrivate(), keyPair.getPublic(), "tickefy-auth", Duration.ofMinutes(15));
+                keyPair.getPrivate(), keyPair.getPublic(), "tickefy-auth-service", "tickefy-api", Duration.ofMinutes(15));
 
         JwtTokenProvider.AccessTokenResult result =
                 provider.issueAccessToken("user-2", "v@t.com", List.of("ORGANIZER"));
@@ -192,6 +196,52 @@ class JwtTokenProviderUnitTest {
                 });
     }
 
+    @Test
+    @DisplayName("AC#12 parseAccessToken: wrong issuer → ApiException INVALID_TOKEN")
+    void parseAccessToken_wrongIssuer_throwsInvalidToken() {
+        JwtTokenProvider provider = buildProvider(
+                keyPair.getPrivate(), keyPair.getPublic(), "tickefy-auth-service", "tickefy-api", Duration.ofMinutes(15));
+
+        String token = Jwts.builder()
+                .subject("user-wrong-issuer")
+                .claim("email", "issuer@t.com")
+                .claim("roles", List.of("AUDIENCE"))
+                .id(UUID.randomUUID().toString())
+                .issuer("wrong-issuer")
+                .audience().add("tickefy-api").and()
+                .issuedAt(Date.from(Instant.now()))
+                .expiration(Date.from(Instant.now().plus(Duration.ofMinutes(15))))
+                .signWith(keyPair.getPrivate(), Jwts.SIG.RS256)
+                .compact();
+
+        assertThatThrownBy(() -> provider.parseAccessToken(token))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode()).isEqualTo(ErrorCode.INVALID_TOKEN));
+    }
+
+    @Test
+    @DisplayName("AC#12 parseAccessToken: wrong audience → ApiException INVALID_TOKEN")
+    void parseAccessToken_wrongAudience_throwsInvalidToken() {
+        JwtTokenProvider provider = buildProvider(
+                keyPair.getPrivate(), keyPair.getPublic(), "tickefy-auth-service", "tickefy-api", Duration.ofMinutes(15));
+
+        String token = Jwts.builder()
+                .subject("user-wrong-audience")
+                .claim("email", "aud@t.com")
+                .claim("roles", List.of("AUDIENCE"))
+                .id(UUID.randomUUID().toString())
+                .issuer("tickefy-auth-service")
+                .audience().add("wrong-audience").and()
+                .issuedAt(Date.from(Instant.now()))
+                .expiration(Date.from(Instant.now().plus(Duration.ofMinutes(15))))
+                .signWith(keyPair.getPrivate(), Jwts.SIG.RS256)
+                .compact();
+
+        assertThatThrownBy(() -> provider.parseAccessToken(token))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getErrorCode()).isEqualTo(ErrorCode.INVALID_TOKEN));
+    }
+
     // -----------------------------------------------------------------------
     // AC#12 — expired token (exp in the past) → INVALID_TOKEN
     // Craft an expired token manually using jjwt directly with the same key pair.
@@ -200,6 +250,8 @@ class JwtTokenProviderUnitTest {
     @DisplayName("AC#12 parseAccessToken: expired token (exp past) → ApiException INVALID_TOKEN")
     void parseAccessToken_expiredToken_throwsInvalidToken() {
         when(mockKeyProvider.getPublicKey()).thenReturn(keyPair.getPublic());
+        when(mockJwtProperties.getIssuer()).thenReturn("tickefy-auth-service");
+        when(mockJwtProperties.getAudience()).thenReturn("tickefy-api");
         JwtTokenProvider verifier = new JwtTokenProvider(mockJwtProperties, mockKeyProvider);
 
         // Craft a token with exp = 2 seconds ago using jjwt directly (no provider needed)
@@ -208,7 +260,8 @@ class JwtTokenProviderUnitTest {
                 .claim("email", "exp@t.com")
                 .claim("roles", List.of("AUDIENCE"))
                 .id(UUID.randomUUID().toString())
-                .issuer("tickefy-auth")
+                .issuer("tickefy-auth-service")
+                .audience().add("tickefy-api").and()
                 .issuedAt(Date.from(Instant.now().minus(Duration.ofMinutes(16))))
                 .expiration(Date.from(Instant.now().minus(Duration.ofMinutes(1))))
                 .signWith(keyPair.getPrivate(), Jwts.SIG.RS256)

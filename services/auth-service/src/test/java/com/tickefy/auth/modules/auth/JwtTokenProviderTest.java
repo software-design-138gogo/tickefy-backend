@@ -71,6 +71,7 @@ class JwtTokenProviderTest extends com.tickefy.auth.BaseIntegrationTest {
         assertThat(claims.getId()).isEqualTo(result.jti());
         assertThat(claims.getExpiration().toInstant()).isAfter(Instant.now());
         assertThat(claims.getIssuer()).isEqualTo(jwtProperties.getIssuer());
+        assertThat(claims.getAudience()).contains(jwtProperties.getAudience());
 
         // exp should be approximately now + 15min
         long ttlSeconds = Duration.between(Instant.now(), claims.getExpiration().toInstant()).getSeconds();

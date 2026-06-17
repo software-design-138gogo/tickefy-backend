@@ -16,6 +16,9 @@ spring:
     gateway:
       server:
         webflux:
+          httpclient:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+            response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:15s}
           default-filters:
             - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin Access-Control-Expose-Headers, RETAIN_FIRST
             - DedupeResponseHeader=Vary, RETAIN_UNIQUE
@@ -102,32 +105,75 @@ spring:
               uri: ${app.services.checkin-url}
               predicates:
                 - Path=/api/checkins/**
+              metadata:
+                connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+                response-timeout: ${GATEWAY_CHECKIN_RESPONSE_TIMEOUT_MS:5000}
 
             # =========================================================
             # Notification Service
             # =========================================================
+            - id: notification-service-sse-route
+              uri: ${app.services.notification-url}
+              predicates:
+                - Path=/api/notifications/stream
+                - Method=GET
+              metadata:
+                connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+                response-timeout: -1
+
             - id: notification-service-route
               uri: ${app.services.notification-url}
               predicates:
                 - Path=/api/notifications/**
+              metadata:
+                connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+                response-timeout: ${GATEWAY_RESPONSE_TIMEOUT_MS:15000}
 
             # =========================================================
             # AI Bio Service
             # =========================================================
+            - id: ai-bio-upload-route
+              uri: ${app.services.ai-bio-url}
+              predicates:
+                - Path=/api/ai-bio/concerts/*/jobs
+                - Method=POST
+              metadata:
+                connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+                response-timeout: ${GATEWAY_UPLOAD_RESPONSE_TIMEOUT_MS:60000}
+
             - id: ai-bio-service-route
               uri: ${app.services.ai-bio-url}
               predicates:
                 - Path=/api/ai-bio/**
+              metadata:
+                connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+                response-timeout: ${GATEWAY_RESPONSE_TIMEOUT_MS:15000}
 
             # =========================================================
             # CSV Ingestion Service
             # =========================================================
+            - id: csv-ingestion-upload-route
+              uri: ${app.services.csv-ingestion-url}
+              predicates:
+                - Path=/api/admin/csv-import
+                - Method=POST
+              metadata:
+                connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+                response-timeout: ${GATEWAY_UPLOAD_RESPONSE_TIMEOUT_MS:60000}
+
             - id: csv-ingestion-service-route
               uri: ${app.services.csv-ingestion-url}
               predicates:
-                - Path=/api/admin/csv-import,/api/admin/csv-import/**
+                - Path=/api/admin/csv-import/**
+              metadata:
+                connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+                response-timeout: ${GATEWAY_RESPONSE_TIMEOUT_MS:15000}
 
 app:
+  gateway:
+    upload:
+      ai-bio-max-request-size: ${AI_BIO_GATEWAY_MAX_REQUEST_SIZE:30MB}
+      csv-max-request-size: ${CSV_GATEWAY_MAX_REQUEST_SIZE:12MB}
   security:
     jwt:
       public-key-path: ${JWT_PUBLIC_KEY_PATH:classpath:keys/public.pem}

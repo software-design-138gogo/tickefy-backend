@@ -52,14 +52,15 @@ class OrderPaidConsumerTest {
         return new TicketDto(
                 UUID.randomUUID(), "order-1", orderItemId, "user-1",
                 concertId, "type-1", "GA", "General Admission",
-                "ISSUED", "qr-" + orderItemId, null, Instant.now()
+                "ISSUED", "qr-****" + orderItemId, null, Instant.now()
         );
     }
 
     /** Build an ENVELOPE order.paid event with the given items. */
     private OrderPaidEvent envelope(List<OrderPaidEvent.OrderItem> items) {
         var payload = new OrderPaidEvent.Payload("order-1", "user-1", "concert-1", "2026-06-16T10:00:00Z", items);
-        return new OrderPaidEvent("msg-1", "OrderPaid", "1.0", "2026-06-16T10:00:00Z", payload);
+        return new OrderPaidEvent("msg-1", "OrderPaid", "1.0", "order-service",
+                "2026-06-16T10:00:00Z", "corr-1", null, payload);
     }
 
     private OrderPaidEvent.OrderItem item(String orderItemId, String typeId, int quantity, String zone, String name) {
@@ -84,8 +85,8 @@ class OrderPaidConsumerTest {
         assertThat(req.userId()).isEqualTo("user-1");
         assertThat(req.concertId()).isEqualTo("concert-1");
 
-        // Verify ticket.issued event published
-        verify(rabbitTemplate).convertAndSend(eq(EXCHANGE), eq("ticket.issued"), any(TicketIssuedEvent.class));
+        // Verify tickets.issued batch event published
+        verify(rabbitTemplate).convertAndSend(eq(EXCHANGE), eq("tickets.issued"), any(TicketsIssuedEvent.class));
     }
 
     @Test
@@ -102,7 +103,7 @@ class OrderPaidConsumerTest {
         consumer.onOrderPaid(event);
 
         verify(ticketService, times(2)).issueTicket(any(), eq(1));
-        verify(rabbitTemplate, times(2)).convertAndSend(eq(EXCHANGE), eq("ticket.issued"), any(TicketIssuedEvent.class));
+        verify(rabbitTemplate).convertAndSend(eq(EXCHANGE), eq("tickets.issued"), any(TicketsIssuedEvent.class));
     }
 
     @Test
@@ -118,7 +119,7 @@ class OrderPaidConsumerTest {
         var seqCaptor = ArgumentCaptor.forClass(Integer.class);
         verify(ticketService, times(3)).issueTicket(any(), seqCaptor.capture());
         assertThat(seqCaptor.getAllValues()).containsExactly(1, 2, 3);
-        verify(rabbitTemplate, times(3)).convertAndSend(eq(EXCHANGE), eq("ticket.issued"), any(TicketIssuedEvent.class));
+        verify(rabbitTemplate).convertAndSend(eq(EXCHANGE), eq("tickets.issued"), any(TicketsIssuedEvent.class));
     }
 
     @Test
@@ -135,8 +136,10 @@ class OrderPaidConsumerTest {
 
         // TicketService called twice but returns same ticket (idempotent)
         verify(ticketService, times(2)).issueTicket(any(), eq(1));
-        // Two ticket.issued events (notification-service is idempotent too)
-        verify(rabbitTemplate, times(2)).convertAndSend(eq(EXCHANGE), eq("ticket.issued"), any(TicketIssuedEvent.class));
+        // Two tickets.issued attempts, both with the same stable child messageId.
+        var captor = ArgumentCaptor.forClass(TicketsIssuedEvent.class);
+        verify(rabbitTemplate, times(2)).convertAndSend(eq(EXCHANGE), eq("tickets.issued"), captor.capture());
+        assertThat(captor.getAllValues()).extracting(TicketsIssuedEvent::messageId).containsOnly(captor.getValue().messageId());
     }
 
     @Test
@@ -150,7 +153,7 @@ class OrderPaidConsumerTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("DB error");
 
-        // No ticket.issued event published on failure
+        // No tickets.issued event published on failure
         verify(rabbitTemplate, never()).convertAndSend(any(String.class), any(String.class), any(Object.class));
     }
 
@@ -163,22 +166,31 @@ class OrderPaidConsumerTest {
         TicketDto ticket = new TicketDto(
                 ticketId, "order-1", "item-1", "user-1",
                 "concert-1", "type-1", "GA", "General Admission",
-                "ISSUED", "qr-abc", null, Instant.now()
+                "ISSUED", "qr-****-abc", null, Instant.now()
         );
         when(ticketService.issueTicket(any(), eq(1))).thenReturn(ticket);
 
         consumer.onOrderPaid(event);
 
-        var captor = ArgumentCaptor.forClass(TicketIssuedEvent.class);
-        verify(rabbitTemplate).convertAndSend(eq(EXCHANGE), eq("ticket.issued"), captor.capture());
+        var captor = ArgumentCaptor.forClass(TicketsIssuedEvent.class);
+        verify(rabbitTemplate).convertAndSend(eq(EXCHANGE), eq("tickets.issued"), captor.capture());
 
-        TicketIssuedEvent issued = captor.getValue();
-        assertThat(issued.ticketId()).isEqualTo(ticketId.toString());
-        assertThat(issued.orderId()).isEqualTo("order-1");
-        assertThat(issued.orderItemId()).isEqualTo("item-1");
-        assertThat(issued.userId()).isEqualTo("user-1");
-        assertThat(issued.concertId()).isEqualTo("concert-1");
-        assertThat(issued.qrToken()).isEqualTo("qr-abc");
-        assertThat(issued.issuedAt()).isNotNull();
+        TicketsIssuedEvent issued = captor.getValue();
+        assertThat(issued.eventType()).isEqualTo("TicketsIssued");
+        assertThat(issued.eventVersion()).isEqualTo("1.0");
+        assertThat(issued.source()).isEqualTo("ticket-service");
+        assertThat(issued.correlationId()).isEqualTo("corr-1");
+        assertThat(issued.causationId()).isEqualTo("msg-1");
+        assertThat(issued.payload().orderId()).isEqualTo("order-1");
+        assertThat(issued.payload().userId()).isEqualTo("user-1");
+        assertThat(issued.payload().concertId()).isEqualTo("concert-1");
+        assertThat(issued.payload().issuedAt()).isNotNull();
+        assertThat(issued.payload().tickets()).hasSize(1);
+        TicketsIssuedEvent.TicketItem item = issued.payload().tickets().get(0);
+        assertThat(item.ticketId()).isEqualTo(ticketId.toString());
+        assertThat(item.orderItemId()).isEqualTo("item-1");
+        assertThat(item.ticketTypeId()).isEqualTo("type-1");
+        assertThat(item.ticketTypeName()).isEqualTo("General Admission");
+        assertThat(item.status()).isEqualTo("ISSUED");
     }
 }

@@ -5,6 +5,7 @@ import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 
 import com.rabbitmq.client.ConnectionFactory;
 import com.tickefy.eticket.modules.ticket.repository.TicketRepository;
@@ -50,12 +51,17 @@ class TicketApiIT extends PostgresContainerITBase {
                 .body("success", equalTo(true))
                 .body("data.id", notNullValue())
                 .body("data.concertId", equalTo("concert-1"))
-                .body("data.qrToken", notNullValue())
+                .body("data.ticketTypeName", equalTo("General Admission"))
+                .body("data.qrTokenMasked", notNullValue())
+                .body("data.qrToken", nullValue())
                 .extract()
                 .path("data.id");
         assertThat(UUID.fromString(ticketId).version()).isEqualTo(4);
 
-        String qrToken = given()
+        String qrToken = rawQrFor(ticketId);
+        assertThat(UUID.fromString(qrToken).version()).isEqualTo(4);
+
+        given()
                 .header("Authorization", bearer("staff-1", "CHECKIN_STAFF"))
                 .when()
                 .get("/internal/tickets/snapshot?concertId=concert-1")
@@ -63,9 +69,9 @@ class TicketApiIT extends PostgresContainerITBase {
                 .statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.concertId", equalTo("concert-1"))
-                .extract()
-                .path("data.tickets[0].qrToken");
-        assertThat(UUID.fromString(qrToken).version()).isEqualTo(4);
+                .body("data.tickets[0].qrTokenMasked", notNullValue())
+                .body("data.tickets[0].qrTokenHash", notNullValue())
+                .body("data.tickets[0].qrToken", nullValue());
 
         given()
                 .header("Authorization", bearer("staff-1", "CHECKIN_STAFF"))
@@ -104,29 +110,31 @@ class TicketApiIT extends PostgresContainerITBase {
                 .extract()
                 .response();
         String firstId = first.path("data.id");
-        String firstQrToken = first.path("data.qrToken");
+        String firstQrTokenMasked = first.path("data.qrTokenMasked");
 
         Response second = issueTicket("order-1", "item-1")
                 .then()
                 .statusCode(201)
                 .body("data.id", equalTo(firstId))
-                .body("data.qrToken", equalTo(firstQrToken))
+                .body("data.qrTokenMasked", equalTo(firstQrTokenMasked))
+                .body("data.qrToken", nullValue())
                 .extract()
                 .response();
 
         assertThat(UUID.fromString(firstId).version()).isEqualTo(4);
-        assertThat(UUID.fromString(firstQrToken).version()).isEqualTo(4);
         assertThat(second.<String>path("data.id")).isEqualTo(firstId);
-        assertThat(second.<String>path("data.qrToken")).isEqualTo(firstQrToken);
+        assertThat(second.<String>path("data.qrTokenMasked")).isEqualTo(firstQrTokenMasked);
+        assertThat(UUID.fromString(rawQrFor(firstId)).version()).isEqualTo(4);
     }
 
     @Test
     void internalCheckInByToken_shouldValidateConcertBeforeMutatingTicket() {
-        String qrToken = issueTicket("order-token", "item-token")
+        String ticketId = issueTicket("order-token", "item-token")
                 .then()
                 .statusCode(201)
                 .extract()
-                .path("data.qrToken");
+                .path("data.id");
+        String qrToken = rawQrFor(ticketId);
 
         given()
                 .header("Authorization", bearer("staff-1", "CHECKIN_STAFF"))
@@ -223,10 +231,25 @@ class TicketApiIT extends PostgresContainerITBase {
                           "concertId": "concert-1",
                           "ticketTypeId": "type-1",
                           "zoneId": "GA",
-                          "ticketName": "General Admission"
+                          "ticketTypeName": "General Admission"
                         }
                         """.formatted(orderId, orderItemId))
                 .when()
                 .post("/internal/tickets/issue");
+    }
+
+    private String rawQrFor(String ticketId) {
+        return given()
+                .header("Authorization", bearer("user-1", "AUDIENCE"))
+                .when()
+                .get("/api/tickets/{id}/qr", ticketId)
+                .then()
+                .statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.ticketId", equalTo(ticketId))
+                .body("data.qrToken", notNullValue())
+                .body("data.qrTokenMasked", notNullValue())
+                .extract()
+                .path("data.qrToken");
     }
 }

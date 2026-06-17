@@ -62,11 +62,13 @@ public class TicketServiceTest {
         assertThat(ticketDto).isNotNull();
         assertThat(ticketDto.orderItemId()).isEqualTo("item-1");
         assertThat(ticketDto.status()).isEqualTo("ISSUED");
-        assertThat(ticketDto.qrToken()).isNotBlank();
+        assertThat(ticketDto.qrTokenMasked()).isNotBlank();
+        assertThat(ticketDto.ticketTypeName()).isEqualTo("General Admission");
 
         List<Ticket> tickets = ticketRepository.findAll();
         assertThat(tickets).hasSize(1);
         assertThat(tickets.get(0).getOrderItemId()).isEqualTo("item-1");
+        assertThat(UUID.fromString(tickets.get(0).getQrToken()).version()).isEqualTo(4);
     }
 
     @Test
@@ -77,7 +79,7 @@ public class TicketServiceTest {
         TicketDto ticket2 = ticketService.issueTicket(req);
 
         assertThat(ticket1.id()).isEqualTo(ticket2.id());
-        assertThat(ticket1.qrToken()).isEqualTo(ticket2.qrToken());
+        assertThat(ticket1.qrTokenMasked()).isEqualTo(ticket2.qrTokenMasked());
 
         List<Ticket> tickets = ticketRepository.findAll();
         assertThat(tickets).hasSize(1);
@@ -112,7 +114,7 @@ public class TicketServiceTest {
 
         assertThat(results).hasSize(numberOfThreads);
         assertThat(results.stream().map(TicketDto::id).distinct()).hasSize(1);
-        assertThat(results.stream().map(TicketDto::qrToken).distinct()).hasSize(1);
+        assertThat(results.stream().map(TicketDto::qrTokenMasked).distinct()).hasSize(1);
         assertThat(ticketRepository.findAll()).hasSize(1);
     }
 
@@ -120,9 +122,11 @@ public class TicketServiceTest {
     void getByToken_shouldReturnTicket() {
         IssueRequest req = new IssueRequest("order-1", "item-1", "user-1", "event-1", "type-1", "GA", "General Admission");
         TicketDto ticketDto = ticketService.issueTicket(req);
+        String rawToken = ticketRepository.findById(ticketDto.id()).orElseThrow().getQrToken();
 
-        TicketDto found = ticketService.getByToken(ticketDto.qrToken());
+        TicketDto found = ticketService.getByToken(rawToken);
         assertThat(found.id()).isEqualTo(ticketDto.id());
+        assertThat(found.qrTokenMasked()).isEqualTo(ticketDto.qrTokenMasked());
     }
 
     @Test
@@ -220,7 +224,7 @@ public class TicketServiceTest {
 
         CheckInResult result = ticketService.checkIn(ticketDto.id());
 
-        assertThat(result.result()).isEqualTo("TICKET_CANCELLED");
+        assertThat(result.result()).isEqualTo("CANCELLED_REJECTED");
     }
 
     @Test
@@ -233,7 +237,7 @@ public class TicketServiceTest {
 
         CheckInResult result = ticketService.checkIn(ticketDto.id());
 
-        assertThat(result.result()).isEqualTo("TICKET_REFUNDED");
+        assertThat(result.result()).isEqualTo("REFUNDED_REJECTED");
     }
 
     @Test

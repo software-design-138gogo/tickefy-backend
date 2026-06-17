@@ -12,7 +12,6 @@ public enum ErrorCode {
 
     // Auth
     INVALID_TOKEN,
-    TOKEN_EXPIRED,
 
     // Ticket domain — e-ticket-service
     TICKET_NOT_FOUND,

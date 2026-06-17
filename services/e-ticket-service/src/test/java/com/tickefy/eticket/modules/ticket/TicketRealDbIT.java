@@ -75,19 +75,21 @@ class TicketRealDbIT extends PostgresContainerITBase {
     @Test
     void databaseConstraints_shouldRejectDuplicateOrderItemIdAndQrToken() {
         TicketDto issued = ticketService.issueTicket(issueRequest("order-1", "item-1"));
+        String rawToken = ticketRepository.findById(issued.id()).orElseThrow().getQrToken();
 
         assertThatThrownBy(() -> insertTicket("order-2", "item-1", "qr-token-2"))
                 .isInstanceOf(DuplicateKeyException.class);
-        assertThatThrownBy(() -> insertTicket("order-3", "item-3", issued.qrToken()))
+        assertThatThrownBy(() -> insertTicket("order-3", "item-3", rawToken))
                 .isInstanceOf(DuplicateKeyException.class);
     }
 
     @Test
     void issueTicket_shouldGenerateUuidV4TicketIdAndQrToken() {
         TicketDto issued = ticketService.issueTicket(issueRequest("order-uuid", "item-uuid"));
+        String rawToken = ticketRepository.findById(issued.id()).orElseThrow().getQrToken();
 
         assertThat(issued.id().version()).isEqualTo(4);
-        assertThat(UUID.fromString(issued.qrToken()).version()).isEqualTo(4);
+        assertThat(UUID.fromString(rawToken).version()).isEqualTo(4);
     }
 
     @Test
@@ -153,6 +155,7 @@ class TicketRealDbIT extends PostgresContainerITBase {
     @Test
     void checkInByToken_whenTenConcurrentRequestsForSameTicket_acceptsExactlyOne() throws Exception {
         TicketDto issued = ticketService.issueTicket(issueRequest("order-token-scan", "item-token-scan"));
+        String rawToken = ticketRepository.findById(issued.id()).orElseThrow().getQrToken();
         var executor = Executors.newFixedThreadPool(10);
         var ready = new CountDownLatch(10);
         var start = new CountDownLatch(1);
@@ -163,7 +166,7 @@ class TicketRealDbIT extends PostgresContainerITBase {
                 try {
                     ready.countDown();
                     start.await();
-                    results.add(ticketService.checkInByToken(issued.qrToken(), issued.concertId()));
+                    results.add(ticketService.checkInByToken(rawToken, issued.concertId()));
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 }

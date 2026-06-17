@@ -11,7 +11,8 @@ public record TicketSnapshotResponse(
 ) {
     public record TicketSnapshotItem(
             String ticketId,
-            String qrToken,
+            String qrTokenMasked,
+            String qrTokenHash,
             String concertId,
             String zoneId,
             String zoneName,

@@ -51,7 +51,8 @@ app:
     schema: ${DB_SCHEMA:public}
   jwt:
     public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
-    issuer: ${JWT_ISSUER:tickefy-auth}
+    issuer: ${JWT_ISSUER:tickefy-auth-service}
+    audience: ${JWT_AUDIENCE:tickefy-api}
     cache-max-size: ${JWT_CACHE_MAX_SIZE:2048}
 
 eticket:

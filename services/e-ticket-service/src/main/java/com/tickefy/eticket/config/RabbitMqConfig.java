@@ -17,7 +17,7 @@ import org.springframework.context.annotation.Configuration;
  * RabbitMQ topology for e-ticket-service.
  *
  * Consumes: order.paid (when order-service confirms payment)
- * Publishes: ticket.issued (consumed by notification-service)
+ * Publishes: tickets.issued (consumed by notification-service)
  */
 @Configuration
 public class RabbitMqConfig {

@@ -38,7 +38,8 @@ app:
   database:
     schema: public
   jwt:
-    issuer: tickefy-auth
+    issuer: tickefy-auth-service
+    audience: tickefy-api
     private-key: classpath:keys/jwt-dev-private.pem
     public-key: classpath:keys/jwt-dev-public.pem
     access-ttl: PT15M

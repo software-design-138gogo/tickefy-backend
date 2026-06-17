@@ -21,15 +21,18 @@ public class JwtVerifier {
 
     private final JwtPublicKeyProvider keyProvider;
     private final String issuer;
+    private final String audience;
     private final int cacheMaxSize;
     private final ConcurrentMap<String, CachedClaims> verifiedTokenCache = new ConcurrentHashMap<>();
 
     public JwtVerifier(
             JwtPublicKeyProvider keyProvider,
-            @Value("${app.jwt.issuer:tickefy-auth}") String issuer,
+            @Value("${app.jwt.issuer:tickefy-auth-service}") String issuer,
+            @Value("${app.jwt.audience:tickefy-api}") String audience,
             @Value("${app.jwt.cache-max-size:2048}") int cacheMaxSize) {
         this.keyProvider = keyProvider;
         this.issuer = issuer;
+        this.audience = audience;
         this.cacheMaxSize = cacheMaxSize;
     }
 
@@ -39,7 +42,7 @@ public class JwtVerifier {
      * @param token Bearer token string (without "Bearer " prefix)
      * @return parsed Claims
      * @throws ExpiredJwtException  if token is expired
-     * @throws JwtException         if token is invalid (wrong alg, bad sig, wrong issuer)
+     * @throws JwtException         if token is invalid (wrong alg, bad sig, wrong issuer/audience)
      */
     public Claims parseAndValidate(String token) {
         Instant now = Instant.now();
@@ -54,6 +57,7 @@ public class JwtVerifier {
         Claims claims = Jwts.parser()
                 .verifyWith(keyProvider.getPublicKey())
                 .requireIssuer(issuer)
+                .requireAudience(audience)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();

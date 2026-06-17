@@ -78,6 +78,23 @@ class TicketControllerSecurityTest {
     }
 
     @Test
+    void internalSnapshot_withWrongIssuerOrAudience_returnsInvalidToken() throws Exception {
+        mockMvc.perform(get("/internal/tickets/snapshot")
+                        .queryParam("concertId", "concert-1")
+                        .header("Authorization", bearerWith("staff-1", "CHECKIN_STAFF", "wrong-issuer", "tickefy-api")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+
+        mockMvc.perform(get("/internal/tickets/snapshot")
+                        .queryParam("concertId", "concert-1")
+                        .header("Authorization", bearerWith("staff-1", "CHECKIN_STAFF", "tickefy-auth-service", "wrong-audience")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+    }
+
+    @Test
     void internalSnapshot_withCheckinStaffRole_returnsSuccess() throws Exception {
         when(ticketService.getSnapshot("concert-1"))
                 .thenReturn(new TicketSnapshotResponse("concert-1", Instant.now(), 0, List.of()));
@@ -104,12 +121,17 @@ class TicketControllerSecurityTest {
     }
 
     private static String bearer(String subject, String role) {
+        return bearerWith(subject, role, "tickefy-auth-service", "tickefy-api");
+    }
+
+    private static String bearerWith(String subject, String role, String issuer, String audience) {
         try {
             PrivateKey privateKey = loadPrivateKey();
             Instant now = Instant.now();
             String token = Jwts.builder()
                     .subject(subject)
-                    .issuer("tickefy-auth")
+                    .issuer(issuer)
+                    .audience().add(audience).and()
                     .claim("roles", List.of(role))
                     .issuedAt(Date.from(now))
                     .expiration(Date.from(now.plusSeconds(3600)))

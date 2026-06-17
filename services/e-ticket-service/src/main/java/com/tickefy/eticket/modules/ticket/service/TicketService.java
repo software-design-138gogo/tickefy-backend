@@ -6,11 +6,16 @@ import com.tickefy.eticket.modules.ticket.dto.CheckInByTokenResult;
 import com.tickefy.eticket.modules.ticket.dto.CheckInResult;
 import com.tickefy.eticket.modules.ticket.dto.IssueRequest;
 import com.tickefy.eticket.modules.ticket.dto.TicketDto;
+import com.tickefy.eticket.modules.ticket.dto.TicketQrResponse;
 import com.tickefy.eticket.modules.ticket.dto.TicketSnapshotResponse;
 import com.tickefy.eticket.modules.ticket.entity.Ticket;
 import com.tickefy.eticket.modules.ticket.entity.TicketStatus;
 import com.tickefy.eticket.modules.ticket.repository.TicketRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -60,7 +65,7 @@ public class TicketService {
                     ticket.setConcertId(req.concertId());
                     ticket.setTicketTypeId(req.ticketTypeId());
                     ticket.setZoneId(req.zoneId());
-                    ticket.setTicketName(req.ticketName());
+                    ticket.setTicketName(req.ticketTypeName());
                     ticket.setStatus(TicketStatus.ISSUED);
                     ticket.setQrToken(UUID.randomUUID().toString());
                     try {
@@ -95,6 +100,16 @@ public class TicketService {
             throw new ApiException(ErrorCode.TICKET_ACCESS_DENIED, "Access denied to ticket: " + id, HttpStatus.FORBIDDEN);
         }
         return toDto(ticket);
+    }
+
+    @Transactional(readOnly = true)
+    public TicketQrResponse getQrToken(UUID id, String userId, boolean admin) {
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new ApiException(ErrorCode.TICKET_NOT_FOUND, "Ticket not found: " + id, HttpStatus.NOT_FOUND));
+        if (!admin && !ticket.getUserId().equals(userId)) {
+            throw new ApiException(ErrorCode.TICKET_ACCESS_DENIED, "Access denied to ticket: " + id, HttpStatus.FORBIDDEN);
+        }
+        return new TicketQrResponse(ticket.getId(), ticket.getQrToken(), maskQrToken(ticket.getQrToken()));
     }
 
     /**
@@ -165,7 +180,8 @@ public class TicketService {
                 ticketRepository.findByConcertIdAndStatus(concertId, TicketStatus.ISSUED).stream()
                         .map(ticket -> new TicketSnapshotResponse.TicketSnapshotItem(
                                 ticket.getId().toString(),
-                                ticket.getQrToken(),
+                                maskQrToken(ticket.getQrToken()),
+                                sha256Hex(ticket.getQrToken()),
                                 ticket.getConcertId(),
                                 ticket.getZoneId(),
                                 zoneName(ticket),
@@ -195,7 +211,7 @@ public class TicketService {
         return new TicketDto(
                 t.getId(), t.getOrderId(), t.getOrderItemId(), t.getUserId(),
                 t.getConcertId(), t.getTicketTypeId(), t.getZoneId(), t.getTicketName(),
-                t.getStatus().name(), t.getQrToken(), t.getCheckedInAt(), t.getCreatedAt()
+                t.getStatus().name(), maskQrToken(t.getQrToken()), t.getCheckedInAt(), t.getCreatedAt()
         );
     }
 
@@ -216,8 +232,8 @@ public class TicketService {
                         ErrorCode.TICKET_NOT_FOUND, "Ticket not found: " + id, HttpStatus.NOT_FOUND));
         return switch (ticket.getStatus()) {
             case CHECKED_IN -> "DUPLICATE_REJECTED";
-            case CANCELLED -> "TICKET_CANCELLED";
-            case REFUNDED -> "TICKET_REFUNDED";
+            case CANCELLED -> "CANCELLED_REJECTED";
+            case REFUNDED -> "REFUNDED_REJECTED";
             case ISSUED -> "DUPLICATE_REJECTED";
         };
     }
@@ -226,8 +242,8 @@ public class TicketService {
         return switch (status) {
             case ISSUED -> "DUPLICATE_REJECTED";
             case CHECKED_IN -> "DUPLICATE_REJECTED";
-            case CANCELLED -> "TICKET_CANCELLED";
-            case REFUNDED -> "TICKET_REFUNDED";
+            case CANCELLED -> "CANCELLED_REJECTED";
+            case REFUNDED -> "REFUNDED_REJECTED";
         };
     }
 
@@ -236,5 +252,24 @@ public class TicketService {
             return ticket.getTicketName();
         }
         return ticket.getZoneId();
+    }
+
+    private static String maskQrToken(String token) {
+        if (token == null || token.length() <= 8) {
+            return "****";
+        }
+        return token.substring(0, 4) + "****" + token.substring(token.length() - 4);
+    }
+
+    private static String sha256Hex(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(raw.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 }

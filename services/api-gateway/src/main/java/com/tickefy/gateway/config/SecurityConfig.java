@@ -2,6 +2,9 @@ package com.tickefy.gateway.config;
 
 import static org.springframework.security.config.Customizer.withDefaults;
 
+import com.tickefy.gateway.error.GatewayAccessDeniedHandler;
+import com.tickefy.gateway.error.GatewayAuthenticationEntryPoint;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -13,10 +16,13 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 @Configuration
 @EnableWebFluxSecurity
 public class SecurityConfig {
+
   @Bean
   SecurityWebFilterChain securityWebFilterChain(
       ServerHttpSecurity http,
-      UrlBasedCorsConfigurationSource corsConfigurationSource) {
+      UrlBasedCorsConfigurationSource corsConfigurationSource,
+      GatewayAuthenticationEntryPoint authenticationEntryPoint,
+      GatewayAccessDeniedHandler accessDeniedHandler) {
     return http
         .cors(cors -> cors.configurationSource(
             corsConfigurationSource))
@@ -26,9 +32,16 @@ public class SecurityConfig {
         .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
         .logout(ServerHttpSecurity.LogoutSpec::disable)
 
+        .exceptionHandling(exceptionHandling -> exceptionHandling
+            .authenticationEntryPoint(
+                authenticationEntryPoint)
+            .accessDeniedHandler(
+                accessDeniedHandler))
+
         .authorizeExchange(exchange -> exchange
-            // CORS preflight. Specific CORS policy to be done later.
-            .pathMatchers(HttpMethod.OPTIONS, "/**")
+            .pathMatchers(
+                HttpMethod.OPTIONS,
+                "/**")
             .permitAll()
 
             // Gateway health endpoint.
@@ -68,7 +81,12 @@ public class SecurityConfig {
             .anyExchange()
             .authenticated())
 
-        .oauth2ResourceServer(oauth2 -> oauth2.jwt(withDefaults()))
+        .oauth2ResourceServer(oauth2 -> oauth2
+            .jwt(withDefaults())
+            .authenticationEntryPoint(
+                authenticationEntryPoint)
+            .accessDeniedHandler(
+                accessDeniedHandler))
 
         .build();
   }

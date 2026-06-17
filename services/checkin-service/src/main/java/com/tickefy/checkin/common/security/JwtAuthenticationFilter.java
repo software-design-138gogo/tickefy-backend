@@ -59,7 +59,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
             filterChain.doFilter(request, response);
         } catch (ExpiredJwtException ex) {
-            writeAuthError(response, HttpStatus.UNAUTHORIZED, ErrorCode.TOKEN_EXPIRED, "Token has expired");
+            writeAuthError(response, HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_TOKEN, "Token is invalid or expired");
         } catch (JwtException | IllegalArgumentException ex) {
             writeAuthError(response, HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_TOKEN, "Token is invalid");
         }

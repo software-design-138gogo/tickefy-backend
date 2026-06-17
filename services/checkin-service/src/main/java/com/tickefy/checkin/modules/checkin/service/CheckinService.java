@@ -90,7 +90,8 @@ public class CheckinService {
         List<SnapshotResponse.SnapshotTicket> tickets = eTicketClient.getSnapshot(concertId).stream()
                 .map(ticket -> new SnapshotResponse.SnapshotTicket(
                         ticket.ticketId(),
-                        ticket.qrToken(),
+                        ticket.qrTokenMasked(),
+                        ticket.qrTokenHash(),
                         ticket.concertId(),  // B-EVENTID fix
                         ticket.zoneId(),
                         ticket.zoneName(),
@@ -148,45 +149,45 @@ public class CheckinService {
             String status = ticket.status();
 
             if (!req.concertId().equals(concertId)) {
-                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "WRONG_EVENT", ticketId));
+                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "SYNC_WRONG_EVENT", ticketId));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
-                        "WRONG_EVENT", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        "SYNC_WRONG_EVENT", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
                 continue;
             }
 
             if ("CANCELLED".equals(status)) {
-                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "CANCELLED_TICKET", ticketId));
+                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "SYNC_CANCELLED_REJECTED", ticketId));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
-                        "CANCELLED_TICKET", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        "SYNC_CANCELLED_REJECTED", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
                 continue;
             }
             if ("REFUNDED".equals(status)) {
-                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "REFUNDED_TICKET", ticketId));
+                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "SYNC_REFUNDED_REJECTED", ticketId));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
-                        "REFUNDED_TICKET", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        "SYNC_REFUNDED_REJECTED", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
                 continue;
             }
             if ("CHECKED_IN".equals(status)) {
-                conflicts.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "DUPLICATE_REJECTED", ticketId));
+                conflicts.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "SYNC_DUPLICATE_REJECTED", ticketId));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
-                        "DUPLICATE_REJECTED", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        "SYNC_DUPLICATE_REJECTED", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
                 continue;
             }
 
             String checkInResult = eTicketClient.checkIn(ticketId);
-            String result = mapCheckInResult(checkInResult);
+            String result = mapSyncResult(checkInResult);
 
             logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
                     result, true, item.scannedAt() != null ? item.scannedAt() : now, now,
                     req.syncBatchId());
 
-            if ("ACCEPTED".equals(result)) {
+            if ("SYNC_ACCEPTED".equals(result)) {
                 accepted.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, result, ticketId));
-            } else if ("DUPLICATE_REJECTED".equals(result)) {
+            } else if ("SYNC_DUPLICATE_REJECTED".equals(result)) {
                 conflicts.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, result, ticketId));
             } else {
                 rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, result, ticketId));
@@ -299,12 +300,22 @@ public class CheckinService {
             case "ACCEPTED" -> "ACCEPTED";
             case "DUPLICATE_REJECTED" -> "DUPLICATE_REJECTED";
             case "WRONG_EVENT" -> "WRONG_EVENT";
-            case "CANCELLED_TICKET" -> "CANCELLED_TICKET";
-            case "REFUNDED_TICKET" -> "REFUNDED_TICKET";
-            case "TICKET_CANCELLED" -> "CANCELLED_TICKET";
-            case "TICKET_REFUNDED" -> "REFUNDED_TICKET";
+            case "CANCELLED_REJECTED", "CANCELLED_TICKET", "TICKET_CANCELLED" -> "CANCELLED_REJECTED";
+            case "REFUNDED_REJECTED", "REFUNDED_TICKET", "TICKET_REFUNDED" -> "REFUNDED_REJECTED";
             case "INVALID_QR_TOKEN", "TICKET_NOT_FOUND" -> "INVALID_QR_TOKEN";
             default -> "DUPLICATE_REJECTED";
+        };
+    }
+
+    private String mapSyncResult(String checkInResult) {
+        return switch (checkInResult) {
+            case "ACCEPTED" -> "SYNC_ACCEPTED";
+            case "DUPLICATE_REJECTED" -> "SYNC_DUPLICATE_REJECTED";
+            case "WRONG_EVENT" -> "SYNC_WRONG_EVENT";
+            case "CANCELLED_REJECTED", "CANCELLED_TICKET", "TICKET_CANCELLED" -> "SYNC_CANCELLED_REJECTED";
+            case "REFUNDED_REJECTED", "REFUNDED_TICKET", "TICKET_REFUNDED" -> "SYNC_REFUNDED_REJECTED";
+            case "INVALID_QR_TOKEN", "TICKET_NOT_FOUND" -> "INVALID_QR_TOKEN";
+            default -> "SYNC_DUPLICATE_REJECTED";
         };
     }
 

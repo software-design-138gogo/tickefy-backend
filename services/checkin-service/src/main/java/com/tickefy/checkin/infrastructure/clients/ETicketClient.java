@@ -136,7 +136,8 @@ public class ETicketClient {
             for (JsonNode ticket : data.path("tickets")) {
                 tickets.add(new SnapshotTicket(
                         text(ticket, "ticketId"),
-                        text(ticket, "qrToken"),
+                        text(ticket, "qrTokenMasked"),
+                        text(ticket, "qrTokenHash"),
                         text(ticket, "concertId"),
                         text(ticket, "zoneId"),
                         text(ticket, "zoneName"),
@@ -236,7 +237,8 @@ public class ETicketClient {
 
     public record SnapshotTicket(
             String ticketId,
-            String qrToken,
+            String qrTokenMasked,
+            String qrTokenHash,
             String concertId,
             String zoneId,
             String zoneName,

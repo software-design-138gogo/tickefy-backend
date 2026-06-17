@@ -124,6 +124,13 @@ spring:
               predicates:
                 - Path=/api/admin/csv-import,/api/admin/csv-import/**
 
+app:
+  security:
+    jwt:
+      public-key-path: ${JWT_PUBLIC_KEY_PATH:classpath:keys/public.pem}
+      issuer: ${JWT_ISSUER:tickefy-auth-service}
+      audience: ${JWT_AUDIENCE:tickefy-api}
+
 management:
   endpoints:
     web:

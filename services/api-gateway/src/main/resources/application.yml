@@ -16,6 +16,9 @@ spring:
     gateway:
       server:
         webflux:
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin Access-Control-Expose-Headers, RETAIN_FIRST
+            - DedupeResponseHeader=Vary, RETAIN_UNIQUE
           routes:
             # =========================================================
             # Auth Service
@@ -130,6 +133,9 @@ app:
       public-key-path: ${JWT_PUBLIC_KEY_PATH:classpath:keys/public.pem}
       issuer: ${JWT_ISSUER:tickefy-auth-service}
       audience: ${JWT_AUDIENCE:tickefy-api}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    max-age-seconds: ${CORS_MAX_AGE_SECONDS:3600}
 
 management:
   endpoints:

@@ -15,18 +15,16 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 /**
- * Integration tests for the HttpOnly cookie auth strategy + CORS (PLAN-auth-cookie §6).
+ * Integration tests for the HttpOnly cookie auth strategy (PLAN-auth-cookie §6).
  * Reuses singleton Testcontainers Postgres + Redis. Backward compatibility: body tokens are
  * still asserted present alongside the new Set-Cookie headers.
  *
- * <p>Test profile sets {@code app.cors.allowed-origins=http://localhost:3000},
- * {@code app.cookie.secure=false}, {@code app.cookie.same-site=Lax}.
+ * <p>Test profile sets {@code app.cookie.secure=false}, {@code app.cookie.same-site=Lax}.
  */
 class AuthCookieIntegrationTest extends BaseIntegrationTest {
 
@@ -209,30 +207,4 @@ class AuthCookieIntegrationTest extends BaseIntegrationTest {
         assertThat(errorCode(reuse)).isEqualTo("TOKEN_REVOKED");
     }
 
-    @Test
-    @DisplayName("CORS preflight: allowed origin echoed + Allow-Credentials true (never *)")
-    void cors_preflight_allowedOrigin() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.add(HttpHeaders.ORIGIN, "http://localhost:3000");
-        headers.add(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST");
-
-        ResponseEntity<String> resp = restTemplate.exchange(
-                "/auth/login", HttpMethod.OPTIONS, new HttpEntity<>(headers), String.class);
-
-        assertThat(resp.getHeaders().getAccessControlAllowOrigin()).isEqualTo("http://localhost:3000");
-        assertThat(resp.getHeaders().getAccessControlAllowCredentials()).isTrue();
-    }
-
-    @Test
-    @DisplayName("CORS preflight: disallowed origin → no Allow-Origin header")
-    void cors_preflight_disallowedOrigin() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.add(HttpHeaders.ORIGIN, "http://evil.example.com");
-        headers.add(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST");
-
-        ResponseEntity<String> resp = restTemplate.exchange(
-                "/auth/login", HttpMethod.OPTIONS, new HttpEntity<>(headers), String.class);
-
-        assertThat(resp.getHeaders().getAccessControlAllowOrigin()).isNull();
-    }
 }

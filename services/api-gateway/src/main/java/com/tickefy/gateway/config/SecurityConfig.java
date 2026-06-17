@@ -8,16 +8,19 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebFluxSecurity
 public class SecurityConfig {
-
   @Bean
   SecurityWebFilterChain securityWebFilterChain(
-      ServerHttpSecurity http) {
+      ServerHttpSecurity http,
+      UrlBasedCorsConfigurationSource corsConfigurationSource) {
     return http
-        // Gateway using Bearer JWT, not using browser form session.
+        .cors(cors -> cors.configurationSource(
+            corsConfigurationSource))
+
         .csrf(ServerHttpSecurity.CsrfSpec::disable)
         .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
         .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
@@ -65,8 +68,7 @@ public class SecurityConfig {
             .anyExchange()
             .authenticated())
 
-        .oauth2ResourceServer(oauth2 -> oauth2
-            .jwt(withDefaults()))
+        .oauth2ResourceServer(oauth2 -> oauth2.jwt(withDefaults()))
 
         .build();
   }

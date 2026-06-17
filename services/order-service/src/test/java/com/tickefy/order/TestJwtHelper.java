@@ -62,7 +62,7 @@ public class TestJwtHelper {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(userId)
-                .issuer("tickefy-auth")
+                .issuer("tickefy-auth-service")
                 .id(UUID.randomUUID().toString())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(ttlMs)))

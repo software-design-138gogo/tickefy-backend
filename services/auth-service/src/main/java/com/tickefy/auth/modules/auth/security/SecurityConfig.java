@@ -8,8 +8,6 @@ import com.tickefy.auth.common.response.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -17,7 +15,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -26,9 +23,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -48,7 +42,6 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(csrf -> csrf.disable())
-                .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
@@ -74,40 +67,6 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder(@Value("${app.security.bcrypt-strength:10}") int strength) {
         return new BCryptPasswordEncoder(strength);
-    }
-
-    /**
-     * CORS for credentialed (cookie) requests from the FE.
-     *
-     * <p>Allowed origins come from {@code app.cors.allowed-origins} (CSV). When the property is
-     * blank — the prod default, since per api-contracts §1 the gateway owns CORS — no mapping is
-     * registered and CORS stays off. {@code allowCredentials(true)} is mandatory for cookies and
-     * is incompatible with a wildcard origin, so origins are always listed explicitly.
-     *
-     * <p>TODO: once api-gateway exists, the gateway must own CORS + credentialed-cookie passthrough.
-     */
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource(
-            @Value("${app.cors.allowed-origins:}") String allowedOrigins) {
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        if (allowedOrigins == null || allowedOrigins.isBlank()) {
-            return source; // no registered config → CORS effectively off (gateway owns it in prod)
-        }
-        List<String> origins = Arrays.stream(allowedOrigins.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
-
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(origins); // explicit list — never "*" (incompatible with credentials)
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id"));
-        config.setExposedHeaders(List.of("X-Request-Id"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
-
-        source.registerCorsConfiguration("/**", config);
-        return source;
     }
 
     private void handleUnauthorized(

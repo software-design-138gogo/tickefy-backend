@@ -12,6 +12,118 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 10s
 
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            # =========================================================
+            # Auth Service
+            # External: /api/auth/**
+            # Downstream: /auth/**
+            # =========================================================
+            - id: auth-service-route
+              uri: ${app.services.auth-url}
+              predicates:
+                - Path=/api/auth/**
+              filters:
+                - StripPrefix=1
+
+            # =========================================================
+            # Event Service
+            # =========================================================
+            - id: event-service-public-route
+              uri: ${app.services.event-url}
+              predicates:
+                - Path=/api/concerts/**
+
+            - id: event-service-admin-route
+              uri: ${app.services.event-url}
+              predicates:
+                - Path=/api/admin/concerts/**
+
+            # =========================================================
+            # Inventory Service
+            # =========================================================
+            - id: inventory-service-route
+              uri: ${app.services.inventory-url}
+              predicates:
+                - Path=/api/inventory/**
+
+            # =========================================================
+            # Order Service
+            # External: /api/orders/**
+            # Downstream: /orders/**
+            # =========================================================
+            - id: order-service-route
+              uri: ${app.services.order-url}
+              predicates:
+                - Path=/api/orders/**
+              filters:
+                - StripPrefix=1
+
+            # External: /api/users/me/orders
+            # Downstream: /users/me/orders
+            - id: order-service-my-orders-route
+              uri: ${app.services.order-url}
+              predicates:
+                - Path=/api/users/me/orders
+              filters:
+                - StripPrefix=1
+
+            # =========================================================
+            # Payment Service
+            # =========================================================
+            - id: payment-service-route
+              uri: ${app.services.payment-url}
+              predicates:
+                - Path=/api/payments/**
+
+            - id: payment-service-admin-route
+              uri: ${app.services.payment-url}
+              predicates:
+                - Path=/api/admin/payments/**
+
+            # =========================================================
+            # Ticket Service
+            # =========================================================
+            - id: ticket-service-route
+              uri: ${app.services.ticket-url}
+              predicates:
+                - Path=/api/tickets/**
+
+            # =========================================================
+            # Check-in Service
+            # =========================================================
+            - id: checkin-service-route
+              uri: ${app.services.checkin-url}
+              predicates:
+                - Path=/api/checkins/**
+
+            # =========================================================
+            # Notification Service
+            # =========================================================
+            - id: notification-service-route
+              uri: ${app.services.notification-url}
+              predicates:
+                - Path=/api/notifications/**
+
+            # =========================================================
+            # AI Bio Service
+            # =========================================================
+            - id: ai-bio-service-route
+              uri: ${app.services.ai-bio-url}
+              predicates:
+                - Path=/api/ai-bio/**
+
+            # =========================================================
+            # CSV Ingestion Service
+            # =========================================================
+            - id: csv-ingestion-service-route
+              uri: ${app.services.csv-ingestion-url}
+              predicates:
+                - Path=/api/admin/csv-import,/api/admin/csv-import/**
+
 management:
   endpoints:
     web:

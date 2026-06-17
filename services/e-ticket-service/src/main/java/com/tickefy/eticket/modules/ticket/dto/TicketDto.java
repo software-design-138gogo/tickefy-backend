@@ -11,9 +11,9 @@ public record TicketDto(
         String concertId,
         String ticketTypeId,
         String zoneId,
-        String ticketName,
+        String ticketTypeName,
         String status,
-        String qrToken,
+        String qrTokenMasked,
         Instant checkedInAt,
         Instant createdAt
 ) {}

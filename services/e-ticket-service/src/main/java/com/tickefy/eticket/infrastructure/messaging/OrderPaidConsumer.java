@@ -4,6 +4,8 @@ import com.tickefy.eticket.modules.ticket.dto.IssueRequest;
 import com.tickefy.eticket.modules.ticket.dto.TicketDto;
 import com.tickefy.eticket.modules.ticket.service.TicketService;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -18,7 +20,7 @@ import org.springframework.stereotype.Component;
  * Duplicate messages (redelivery) will return the existing ticket without
  * creating duplicates.
  *
- * <p>After issuing each ticket, publishes a ticket.issued event so
+ * <p>After issuing tickets, publishes one tickets.issued batch event so
  * notification-service can send the ticket to the customer.
  */
 @Component
@@ -54,12 +56,13 @@ public class OrderPaidConsumer {
         log.info("Received order.paid messageId={} orderId={} concertId={} items={}",
                 event.messageId(), payload.orderId(), payload.concertId(), payload.items().size());
 
+        List<TicketsIssuedEvent.TicketItem> issuedTickets = new ArrayList<>();
         for (OrderPaidEvent.OrderItem item : payload.items()) {
             // qty>1: issue one ticket per seat (1..quantity). Idempotent on (orderItemId, seatSequence).
             int quantity = Math.max(item.quantity(), 1);
             for (int seq = 1; seq <= quantity; seq++) {
                 try {
-                    processItem(payload, item, seq);
+                    issuedTickets.add(issueSeat(payload, item, seq));
                 } catch (Exception ex) {
                     // The failed seat will be retried via RabbitMQ redelivery / DLQ.
                     log.error("Failed to issue ticket for orderItemId={} seq={} orderId={}: {}",
@@ -68,9 +71,16 @@ public class OrderPaidConsumer {
                 }
             }
         }
+
+        Instant issuedAt = Instant.now();
+        TicketsIssuedEvent issued = TicketsIssuedEvent.from(event, payload, issuedAt, issuedTickets);
+        rabbitTemplate.convertAndSend(exchange, "tickets.issued", issued);
+        log.info("TicketsIssued event published messageId={} orderId={} ticketCount={}",
+                issued.messageId(), payload.orderId(), issuedTickets.size());
     }
 
-    private void processItem(OrderPaidEvent.Payload payload, OrderPaidEvent.OrderItem item, int seatSequence) {
+    private TicketsIssuedEvent.TicketItem issueSeat(
+            OrderPaidEvent.Payload payload, OrderPaidEvent.OrderItem item, int seatSequence) {
         IssueRequest req = new IssueRequest(
                 payload.orderId(),
                 item.orderItemId(),
@@ -83,19 +93,13 @@ public class OrderPaidConsumer {
 
         TicketDto ticket = ticketService.issueTicket(req, seatSequence);
 
-        // Publish ticket.issued for notification-service
-        TicketIssuedEvent issued = new TicketIssuedEvent(
-                ticket.id().toString(),
-                ticket.orderId(),
-                ticket.orderItemId(),
-                ticket.userId(),
-                ticket.concertId(),
-                ticket.qrToken(),
-                Instant.now()
-        );
-        rabbitTemplate.convertAndSend(exchange, "ticket.issued", issued);
-
-        log.info("Ticket issued and event published ticketId={} orderItemId={} seq={}",
+        log.info("Ticket issued ticketId={} orderItemId={} seq={}",
                 ticket.id(), item.orderItemId(), seatSequence);
+        return new TicketsIssuedEvent.TicketItem(
+                ticket.id().toString(),
+                ticket.orderItemId(),
+                ticket.ticketTypeId(),
+                ticket.ticketTypeName(),
+                ticket.status());
     }
 }

@@ -1,5 +1,6 @@
 package com.tickefy.eticket.modules.ticket.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 
 public record IssueRequest(
@@ -9,5 +10,5 @@ public record IssueRequest(
         @NotBlank String concertId,
         String ticketTypeId,
         String zoneId,
-        String ticketName
+        @JsonAlias("ticketName") String ticketTypeName
 ) {}

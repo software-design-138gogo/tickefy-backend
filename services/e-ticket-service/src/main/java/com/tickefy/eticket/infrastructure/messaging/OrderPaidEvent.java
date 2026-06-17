@@ -18,7 +18,10 @@ public record OrderPaidEvent(
         String messageId,
         String eventType,
         String eventVersion,
+        String source,
         String occurredAt,
+        String correlationId,
+        String causationId,
         Payload payload
 ) {
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -28,10 +28,16 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             log.info(
                     "method={} path={} status={} durationMs={} requestId={}",
                     request.getMethod(),
-                    request.getRequestURI(),
+                    maskSensitivePath(request.getRequestURI()),
                     response.getStatus(),
                     durationMs,
                     requestId);
         }
+    }
+
+    private static String maskSensitivePath(String path) {
+        return path == null
+                ? null
+                : path.replaceAll("(/internal/tickets/by-token/)[^/]+", "$1{qrTokenMasked}");
     }
 }

@@ -1,0 +1,17 @@
+spring:
+  config:
+    activate:
+      on-profile: docker
+
+app:
+  services:
+    auth-url: ${AUTH_SERVICE_URL:http://auth-service:8080}
+    event-url: ${EVENT_SERVICE_URL:http://event-service:8080}
+    ticket-url: ${TICKET_SERVICE_URL:http://ticket-service:8080}
+    order-url: ${ORDER_SERVICE_URL:http://order-service:8080}
+    payment-url: ${PAYMENT_SERVICE_URL:http://payment-service:8080}
+    notification-url: ${NOTIFICATION_SERVICE_URL:http://notification-service:8080}
+    checkin-url: ${CHECKIN_SERVICE_URL:http://checkin-service:8080}
+    inventory-url: ${INVENTORY_SERVICE_URL:http://inventory-service:8080}
+    ai-bio-url: ${AI_BIO_SERVICE_URL:http://ai-bio-service:8080}
+    csv-ingestion-url: ${CSV_INGESTION_SERVICE_URL:http://csv-ingestion-service:8080}

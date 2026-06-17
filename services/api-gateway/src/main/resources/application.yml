@@ -1,9 +1,16 @@
 server:
   port: ${SERVER_PORT:8080}
+  shutdown: graceful
 
 spring:
   application:
     name: api-gateway
+
+  profiles:
+    default: local
+
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
 
 management:
   endpoints:

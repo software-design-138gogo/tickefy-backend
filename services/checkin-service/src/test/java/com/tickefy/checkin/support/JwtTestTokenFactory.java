@@ -20,7 +20,8 @@ public final class JwtTestTokenFactory {
         Instant now = Instant.now();
         String token = Jwts.builder()
                 .subject(subject)
-                .issuer("tickefy-auth")
+                .issuer("tickefy-auth-service")
+                .audience().add("tickefy-api").and()
                 .claim("roles", List.of(roles))
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(3600)))

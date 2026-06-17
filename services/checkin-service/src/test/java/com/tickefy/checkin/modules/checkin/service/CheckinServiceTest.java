@@ -138,8 +138,8 @@ public class CheckinServiceTest {
         ScanRequest req = new ScanRequest("race-cancel-token", "concert-1", "device-1", "gate-A");
         ScanResponse response = checkinService.scan(req, "staff-1");
 
-        assertThat(response.result()).isEqualTo("CANCELLED_TICKET");
-        assertThat(checkinEventRepository.findAll().get(0).getResult()).isEqualTo("CANCELLED_TICKET");
+        assertThat(response.result()).isEqualTo("CANCELLED_REJECTED");
+        assertThat(checkinEventRepository.findAll().get(0).getResult()).isEqualTo("CANCELLED_REJECTED");
     }
 
     @Test
@@ -151,8 +151,8 @@ public class CheckinServiceTest {
         ScanRequest req = new ScanRequest("race-refund-token", "concert-1", "device-1", "gate-A");
         ScanResponse response = checkinService.scan(req, "staff-1");
 
-        assertThat(response.result()).isEqualTo("REFUNDED_TICKET");
-        assertThat(checkinEventRepository.findAll().get(0).getResult()).isEqualTo("REFUNDED_TICKET");
+        assertThat(response.result()).isEqualTo("REFUNDED_REJECTED");
+        assertThat(checkinEventRepository.findAll().get(0).getResult()).isEqualTo("REFUNDED_REJECTED");
     }
 
     @Test
@@ -175,7 +175,8 @@ public class CheckinServiceTest {
         when(eTicketClient.getSnapshot("concert-1")).thenReturn(List.of(
                 new ETicketClient.SnapshotTicket(
                         "ticket-1",
-                        "qr-token-1",
+                        "qr-t****en-1",
+                        "hash-token-1",
                         "concert-1",
                         "GA",
                         "General Admission",
@@ -187,7 +188,8 @@ public class CheckinServiceTest {
 
         assertThat(response.tickets()).hasSize(1);
         assertThat(response.tickets().get(0).ticketId()).isEqualTo("ticket-1");
-        assertThat(response.tickets().get(0).qrToken()).isEqualTo("qr-token-1");
+        assertThat(response.tickets().get(0).qrTokenMasked()).isEqualTo("qr-t****en-1");
+        assertThat(response.tickets().get(0).qrTokenHash()).isEqualTo("hash-token-1");
         assertThat(response.totalCount()).isEqualTo(1);
     }
 
@@ -251,7 +253,7 @@ public class CheckinServiceTest {
         SyncResponse response2 = checkinService.sync(req2, "staff-2");
         assertThat(response2.accepted()).hasSize(0);
         assertThat(response2.conflicts()).hasSize(1);
-        assertThat(response2.conflicts().get(0).serverResult()).isEqualTo("DUPLICATE_REJECTED");
+        assertThat(response2.conflicts().get(0).serverResult()).isEqualTo("SYNC_DUPLICATE_REJECTED");
     }
 
     @Test
@@ -269,7 +271,7 @@ public class CheckinServiceTest {
         assertThat(response.accepted()).isEmpty();
         assertThat(response.conflicts()).isEmpty();
         assertThat(response.rejected()).hasSize(1);
-        assertThat(response.rejected().get(0).serverResult()).isEqualTo("CANCELLED_TICKET");
+        assertThat(response.rejected().get(0).serverResult()).isEqualTo("SYNC_CANCELLED_REJECTED");
     }
 
     @Test
@@ -286,8 +288,8 @@ public class CheckinServiceTest {
         assertThat(response.accepted()).isEmpty();
         assertThat(response.conflicts()).isEmpty();
         assertThat(response.rejected()).hasSize(1);
-        assertThat(response.rejected().get(0).serverResult()).isEqualTo("WRONG_EVENT");
-        assertThat(checkinEventRepository.findAll().get(0).getResult()).isEqualTo("WRONG_EVENT");
+        assertThat(response.rejected().get(0).serverResult()).isEqualTo("SYNC_WRONG_EVENT");
+        assertThat(checkinEventRepository.findAll().get(0).getResult()).isEqualTo("SYNC_WRONG_EVENT");
         verify(eTicketClient, never()).checkIn(anyString());
     }
 

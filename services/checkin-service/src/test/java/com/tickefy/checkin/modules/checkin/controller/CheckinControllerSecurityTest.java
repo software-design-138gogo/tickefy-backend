@@ -61,6 +61,21 @@ class CheckinControllerSecurityTest {
     }
 
     @Test
+    void checkinHistory_withWrongIssuerOrAudience_returnsInvalidToken() throws Exception {
+        mockMvc.perform(get("/api/checkin/events/concert-1")
+                        .header("Authorization", bearerWith("staff-1", "CHECKIN_STAFF", "wrong-issuer", "tickefy-api")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+
+        mockMvc.perform(get("/api/checkin/events/concert-1")
+                        .header("Authorization", bearerWith("staff-1", "CHECKIN_STAFF", "tickefy-auth-service", "wrong-audience")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+    }
+
+    @Test
     void scan_withSpoofedHeader_usesJwtSubjectAsStaffId() throws Exception {
         when(checkinService.scan(any(ScanRequest.class), eq("staff-jwt")))
                 .thenReturn(new ScanResponse("ACCEPTED", "ticket-1", "concert-1", "gate-A", Instant.now()));
@@ -107,12 +122,17 @@ class CheckinControllerSecurityTest {
     }
 
     private static String bearer(String subject, String role) {
+        return bearerWith(subject, role, "tickefy-auth-service", "tickefy-api");
+    }
+
+    private static String bearerWith(String subject, String role, String issuer, String audience) {
         try {
             PrivateKey privateKey = loadPrivateKey();
             Instant now = Instant.now();
             String token = Jwts.builder()
                     .subject(subject)
-                    .issuer("tickefy-auth")
+                    .issuer(issuer)
+                    .audience().add(audience).and()
                     .claim("roles", List.of(role))
                     .issuedAt(Date.from(now))
                     .expiration(Date.from(now.plusSeconds(3600)))

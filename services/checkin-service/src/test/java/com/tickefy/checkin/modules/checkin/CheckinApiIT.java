@@ -87,13 +87,13 @@ class CheckinApiIT extends PostgresContainerITBase {
                 .then()
                 .statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.result", equalTo("CANCELLED_TICKET"));
+                .body("data.result", equalTo("CANCELLED_REJECTED"));
 
         scan("refunded-token", "concert-1")
                 .then()
                 .statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.result", equalTo("REFUNDED_TICKET"));
+                .body("data.result", equalTo("REFUNDED_REJECTED"));
     }
 
     @Test
@@ -101,7 +101,8 @@ class CheckinApiIT extends PostgresContainerITBase {
         when(eTicketClient.getSnapshot("concert-1")).thenReturn(List.of(
                 new ETicketClient.SnapshotTicket(
                         "ticket-1",
-                        "qr-token-1",
+                        "qr-t****en-1",
+                        "hash-token-1",
                         "concert-1",
                         "GA",
                         "General Admission",
@@ -117,6 +118,8 @@ class CheckinApiIT extends PostgresContainerITBase {
                 .statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.concertId", equalTo("concert-1"))
+                .body("data.tickets[0].qrTokenMasked", equalTo("qr-t****en-1"))
+                .body("data.tickets[0].qrTokenHash", equalTo("hash-token-1"))
                 .body("data.tickets[0].concertId", equalTo("concert-1"));
     }
 
@@ -152,6 +155,7 @@ class CheckinApiIT extends PostgresContainerITBase {
                 .statusCode(200)
                 .body("success", equalTo(true))
                 .body("data.accepted[0].qrTokenMasked", equalTo("raw-****1234"))
+                .body("data.accepted[0].serverResult", equalTo("SYNC_ACCEPTED"))
                 .extract()
                 .asString();
 

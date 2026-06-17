@@ -57,7 +57,11 @@ public class CorsConfig {
         List.of(
             "X-Request-ID",
             HttpHeaders.RETRY_AFTER,
-            HttpHeaders.LOCATION));
+            HttpHeaders.LOCATION,
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Replenish-Rate",
+            "X-RateLimit-Burst-Capacity",
+            "X-RateLimit-Requested-Tokens"));
 
     configuration.setAllowCredentials(true);
     configuration.setMaxAge(properties.getMaxAgeSeconds());

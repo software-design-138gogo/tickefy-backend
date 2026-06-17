@@ -3,6 +3,12 @@ spring:
     activate:
       on-profile: local
 
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
+      timeout: ${REDIS_COMMAND_TIMEOUT:500ms}
+
 app:
   services:
     auth-url: ${AUTH_SERVICE_URL:http://localhost:8081}

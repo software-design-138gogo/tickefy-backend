@@ -2,6 +2,11 @@ spring:
   config:
     activate:
       on-profile: docker
+  data:
+    redis:
+      url: ${REDIS_URL:redis://redis:6379}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
+      timeout: ${REDIS_COMMAND_TIMEOUT:500ms}
 
 app:
   services:

@@ -7,6 +7,9 @@ import com.tickefy.gateway.config.RateLimitConfig;
 import com.tickefy.gateway.config.RateLimitProperties;
 import com.tickefy.gateway.error.GatewayErrorWriter;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,16 +43,19 @@ public final class RateLimitGlobalFilter
   private final RateLimitKeyResolver keyResolver;
   private final RateLimitProperties properties;
   private final GatewayErrorWriter errorWriter;
+  private final MeterRegistry meterRegistry;
 
   public RateLimitGlobalFilter(
       RedisRateLimiter redisRateLimiter,
       RateLimitKeyResolver keyResolver,
       RateLimitProperties properties,
-      GatewayErrorWriter errorWriter) {
+      GatewayErrorWriter errorWriter,
+      MeterRegistry meterRegistry) {
     this.redisRateLimiter = redisRateLimiter;
     this.keyResolver = keyResolver;
     this.properties = properties;
     this.errorWriter = errorWriter;
+    this.meterRegistry = meterRegistry;
   }
 
   @Override
@@ -68,6 +74,12 @@ public final class RateLimitGlobalFilter
             policyId,
             key))
         .flatMap(rateLimitResponse -> {
+          if (isFailOpen(rateLimitResponse)) {
+            incrementMetric(
+                "tickefy.gateway.rate.limit.fail.open",
+                policyId);
+          }
+
           copyRateLimitHeaders(
               exchange,
               rateLimitResponse);
@@ -75,6 +87,10 @@ public final class RateLimitGlobalFilter
           if (rateLimitResponse.isAllowed()) {
             return chain.filter(exchange);
           }
+
+          incrementMetric(
+              "tickefy.gateway.rate.limit.rejected",
+              policyId);
 
           int retryAfterSeconds = properties.getRetryAfterSeconds();
 
@@ -116,15 +132,40 @@ public final class RateLimitGlobalFilter
                   .getRequestId(exchange),
               policyId,
               exchange.getRequest()
-                  .getPath()
+              .getPath()
                   .value(),
               exception);
+
+          incrementMetric(
+              "tickefy.gateway.rate.limit.fail.open",
+              policyId);
 
           return Mono.just(
               new RateLimiter.Response(
                   true,
                   Map.of()));
         });
+  }
+
+  private boolean isFailOpen(
+      RateLimiter.Response response) {
+    String remaining = response.getHeaders().get(
+        RedisRateLimiter.REMAINING_HEADER);
+
+    return "-1".equals(remaining);
+  }
+
+  private void incrementMetric(
+      String metricName,
+      String policyId) {
+    Counter.builder(metricName)
+        .description(
+            "Tickefy API Gateway rate limiting events")
+        .tag(
+            "policy",
+            policyId)
+        .register(meterRegistry)
+        .increment();
   }
 
   private String resolvePolicyId(

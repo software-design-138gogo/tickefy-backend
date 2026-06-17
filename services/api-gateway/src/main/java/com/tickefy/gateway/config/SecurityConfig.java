@@ -47,7 +47,10 @@ public class SecurityConfig {
             // Gateway health endpoint.
             .pathMatchers(
                 "/actuator/health",
-                "/actuator/health/**")
+                "/actuator/health/**",
+                "/livez",
+                "/readyz"
+            )
             .permitAll()
 
             // Auth public endpoints.

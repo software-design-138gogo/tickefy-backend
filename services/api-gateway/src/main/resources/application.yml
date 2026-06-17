@@ -2,6 +2,10 @@ server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
 
+logging:
+  level:
+    gateway.access: INFO
+
 spring:
   application:
     name: api-gateway
@@ -16,6 +20,10 @@ spring:
     gateway:
       server:
         webflux:
+          metrics:
+            enabled: true
+          path-tags:
+              enabled: false
           httpclient:
             connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
             response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:15s}
@@ -203,10 +211,49 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include:
+          - health
+          - info
+          - metrics
+          - prometheus
+          - gateway
 
   endpoint:
     health:
       show-details: never
       probes:
         enabled: true
+        add-additional-paths: true
+      group:
+        liveness:
+          include:
+            - livenessState
+        readiness:
+          include:
+            - readinessState
+    gateway:
+      access: read-only
+
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      environment: ${SPRING_PROFILES_ACTIVE:${spring.profiles.default:local}}
+    distribution:
+      percentiles-histogram:
+        "http.server.requests": true
+        "spring.cloud.gateway.requests": true
+      slo:
+        "http.server.requests":
+          - 100ms
+          - 300ms
+          - 1s
+          - 3s
+          - 5s
+          - 15s
+        "spring.cloud.gateway.requests":
+          - 100ms
+          - 300ms
+          - 1s
+          - 3s
+          - 5s
+          - 15s

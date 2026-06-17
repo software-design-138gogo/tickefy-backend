@@ -146,7 +146,7 @@ stateDiagram-v2
 
 ## 12. Security
 
-- Authentication: Endpoint protected dùng `Authorization: Bearer <access-token>` theo Auth Contract; `payment-service` verify RS256 bằng public key. Internal calls từ `order-service` forward access token của request gốc; MVP chưa định nghĩa service-token/client-credentials riêng.
+- Authentication: Endpoint protected dùng `Authorization: Bearer <access-token>` theo Auth Contract; Gateway verify JWT cơ bản khi request đi qua Gateway; `payment-service` vẫn verify lại RS256 bằng public key. Internal calls từ `order-service` forward access token của request gốc khi call đại diện user; MVP chưa định nghĩa service-token/client-credentials riêng.
 - Authorization: Admin refund yêu cầu role `ADMIN`; internal payment/refund endpoints chỉ chấp nhận caller backend được route nội bộ và bearer token hợp lệ.
 - Webhook Signature: Mọi payload gửi từ SePay vào `/api/payments/callback` phải được kiểm tra bằng HMAC-SHA256 (tùy chuẩn SePay) trước khi xử lý.
 

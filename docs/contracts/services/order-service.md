@@ -159,7 +159,7 @@ stateDiagram-v2
 | (none) | ✅ Order **KHÔNG dùng Redis** (no Redis trong yml/pom) — không lock/cache | — | — |
 
 ## 12. Security
-- **Authentication:** JWT verify-only (public key). Gọi Inventory/Payment kèm `Authorization: Bearer` (service-to-service).
+- **Authentication:** Gateway verify JWT cơ bản khi request đi qua Gateway; `order-service` vẫn verify lại RS256 bằng public key. Gọi Inventory/Payment kèm `Authorization: Bearer` gốc khi call đại diện user (service-to-service).
 - **Authorization:** tạo/xem order = AUDIENCE (của mình); xem mọi order = ADMIN; expire = internal/worker.
 - **Sensitive data:** không lưu thông tin thẻ (Payment lo). 
 - **Logging mask:** requestId; không secret/payment signature.

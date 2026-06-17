@@ -187,7 +187,7 @@ stateDiagram-v2
 
 ## 12. Security
 
-- Authentication: JWT access token dùng `Authorization: Bearer`; service verify RS256 bằng public key theo Auth Contract. Gateway có thể route request nhưng không phải nguồn tin cậy cho `X-User-*` trong MVP.
+- Authentication: JWT access token dùng `Authorization: Bearer`; Gateway verify cơ bản khi request đi qua Gateway, sau đó forward nguyên `Authorization`; `csv-ingestion-service` vẫn verify lại RS256 bằng public key theo Auth Contract. Không dùng `X-User-*` làm nguồn xác thực/phân quyền duy nhất.
 - Authorization: chỉ `ORGANIZER` sở hữu concert hoặc `ADMIN` được upload, xem và retry job.
 - Sensitive data: tên, email, raw CSV và error report là dữ liệu cá nhân; object storage bucket phải private.
 - Logging mask: không log full email, raw CSV row, JWT, object storage secret hoặc signed URL.

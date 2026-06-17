@@ -33,7 +33,7 @@ lastUpdated: 2026-06-16
 
 ### KHÔNG chịu trách nhiệm
 - Business logic service khác (concert/order/ticket/payment).
-- **Check blacklist cho service khác** — inventory/order chỉ **verify-only** (chữ ký + exp), KHÔNG check blacklist.
+- **Check blacklist cho Gateway/service khác** — Gateway và business service chỉ verify chữ ký + exp bằng public key nếu chưa tích hợp Redis blacklist, KHÔNG mặc định gọi Auth Service để check blacklist.
 - Gateway routing + CORS prod (Hoàng).
 - Fine-grained permission (chỉ role-based — ADR-AUTH-004).
 
@@ -135,7 +135,7 @@ stateDiagram-v2
 > Redis-down fail-safe: `isBlacklisted` lỗi → trả `false` (cho qua nếu chữ ký + exp hợp lệ) + log WARN. ✅
 
 ## 12. Security
-- **Authentication:** JWT RS256 — auth giữ **private key** (ký); service khác verify **public key**. Login so bcrypt.
+- **Authentication:** JWT RS256 — auth giữ **private key** (ký); API Gateway và service khác verify bằng **public key**. Login so bcrypt.
 - **Authorization:** RBAC 4 role, authority `ROLE_{code}`, `@PreAuthorize` method-level. ⚠️ Role nhúng token lúc login → đổi role chỉ hiệu lực authority ở token LẦN SAU; `/auth/me` đọc DB tươi.
 - **Sensitive data:** password bcrypt (cost ≥10); refresh token SHA-256 hash; private key KHÔNG commit (prod key path).
 - **Logging mask:** KHÔNG log token/password/secret; CookieFactory KHÔNG log giá trị cookie.

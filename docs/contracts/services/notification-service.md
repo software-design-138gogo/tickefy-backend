@@ -143,7 +143,7 @@ stateDiagram-v2
 
 ## 12. Security
 
-- Authentication: Mọi Endpoint Public (`/stream`, `/notifications`) đều yêu cầu Bearer JWT Token xác thực từ Gateway.
+- Authentication: Mọi endpoint protected (`/stream`, `/notifications`) yêu cầu `Authorization: Bearer <access-token>`. Gateway verify JWT cơ bản khi request đi qua Gateway và forward nguyên `Authorization`; `notification-service` vẫn phải verify lại RS256 bằng public key trước khi mở stream/trả dữ liệu cá nhân.
 - Privacy: Các kênh gửi ra bên ngoài (FCM, Email) không được chứa thông tin quá nhạy cảm (như Full Card Number hay Token Auth).
 - Firebase SDK Security: Chìa khóa Service Account JSON phải nạp qua Environment Variable, tuyệt đối không hardcode trong Source code.
 

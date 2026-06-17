@@ -4,7 +4,7 @@ status: DRAFT
 version: 1.1
 owner: BE Lead
 reviewers: []
-lastUpdated: 2026-06-16
+lastUpdated: 2026-06-17
 ---
 
 # Backend Service Implementation and Integration Workflow
@@ -338,6 +338,7 @@ Cập nhật `.env.example` + `docker-compose.dev.yml` (+ `docker-compose.image.
 ## 14. API Gateway route — 🔭 TARGET (gateway chưa build)
 
 > Gateway (Hoàng) **chưa build** — hiện comment-out trong compose. FE/admin/mobile tạm gọi **trực tiếp service** qua host port (hoặc dev proxy). Phần dưới là target khi gateway có.
+> Khi Gateway live, Gateway verify JWT cơ bản ở biên hệ thống rồi forward nguyên `Authorization` header. Service phía sau vẫn phải tự verify RS256 bằng public key và tự kiểm RBAC/ownership; không thiết kế service chỉ tin `X-User-*` do Gateway inject.
 
 ```yaml
 - id: order-service

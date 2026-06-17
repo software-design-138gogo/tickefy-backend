@@ -140,7 +140,7 @@ stateDiagram-v2
 > Availability đọc **THẲNG counter** (`resolveAvailable` → seed-if-missing + GET, fallback PG; `TicketTypeService.java:103-126`) — **KHÔNG có lớp cache TTL riêng, KHÔNG có mutex/stampede lock** (claim cũ bỏ).
 
 ## 12. Security
-- **Authentication:** JWT verify-only (public key auth). Reservation endpoint = internal, Order gọi kèm `Authorization: Bearer` (service-to-service); commit/release đi qua Order events từ RabbitMQ.
+- **Authentication:** Gateway verify JWT cơ bản khi request đi qua Gateway; `inventory-service` vẫn verify lại RS256 bằng public key. Reservation endpoint = internal, Order gọi kèm `Authorization: Bearer` gốc khi call đại diện user; commit/release đi qua Order events từ RabbitMQ.
 - **Authorization:** tạo ticket type = ORGANIZER/ADMIN (`@PreAuthorize`); availability = public; reservations = internal (Order).
 - **Sensitive data:** không có dữ liệu nhạy đặc biệt.
 - **Logging mask:** requestId; không secret.

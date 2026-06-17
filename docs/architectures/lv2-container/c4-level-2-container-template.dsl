@@ -48,7 +48,7 @@ workspace "Tickefy - C4 Level 2" "Container template showing Tickefy application
             }
 
             group "Edge" {
-                apiGateway = container "API Gateway" "Single entry point for routing, JWT enforcement, rate limiting, CORS, and request tracing." "Spring Cloud Gateway/Nginx" {
+                apiGateway = container "API Gateway" "Single entry point for routing, edge JWT verification, rate limiting, CORS, and request tracing. Downstream services still verify JWT and enforce business authorization." "Spring Cloud Gateway/Nginx" {
                     tags "API"
                 }
             }
@@ -101,15 +101,15 @@ workspace "Tickefy - C4 Level 2" "Container template showing Tickefy application
         // Có thể rút gọn các quan hệ này nếu sơ đồ quá dày.
         // =============================================================
         tickefy.apiGateway -> tickefy.authService "Routes authentication and user requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.eventService "Routes concert requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.inventoryService "Routes ticket availability requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.orderService "Routes order requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.paymentService "Routes payment and callback requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.notificationService "Routes notification requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.ticketService "Routes e-ticket requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.checkinService "Routes check-in requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.aiBioService "Routes AI-bio job requests" "HTTP/JSON"
-        tickefy.apiGateway -> tickefy.csvService "Routes VIP-import job requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.eventService "Verifies JWT at edge, forwards Authorization, routes concert requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.inventoryService "Verifies JWT at edge, forwards Authorization, routes ticket availability requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.orderService "Verifies JWT at edge, forwards Authorization, routes order requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.paymentService "Verifies JWT at edge, forwards Authorization, routes payment and callback requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.notificationService "Verifies JWT at edge, forwards Authorization, routes notification requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.ticketService "Verifies JWT at edge, forwards Authorization, routes e-ticket requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.checkinService "Verifies JWT at edge, forwards Authorization, routes check-in requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.aiBioService "Verifies JWT at edge, forwards Authorization, routes AI-bio job requests" "HTTP/JSON"
+        tickefy.apiGateway -> tickefy.csvService "Verifies JWT at edge, forwards Authorization, routes VIP-import job requests" "HTTP/JSON"
 
         // =============================================================
         // SYNCHRONOUS SERVICE-TO-SERVICE COMMUNICATION

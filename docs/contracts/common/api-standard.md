@@ -4,7 +4,7 @@ status: ACCEPTED
 version: 1.0
 owner: BE Lead (Hiệp)
 reviewers: [Dương, Hòa, Hoàng]
-lastUpdated: 2026-06-16
+lastUpdated: 2026-06-17
 ---
 
 # API Standard — Tickefy (Backend / Frontend / Mobile / Admin)
@@ -32,6 +32,8 @@ Content-Type: application/json
 X-Request-ID: <optional-client-request-id>
 ```
 - **Service-to-service auth = `Authorization: Bearer`** (access token forward từ JWT). KHÔNG dùng cookie cho cross-service — cookie (HttpOnly) chỉ là kênh refresh token ở web (xem `./auth-contract.md` §1b + `../services/auth-service.md`).
+- Protected request đi qua API Gateway phải được Gateway verify JWT để reject sớm, nhưng Gateway không phải lớp bảo mật duy nhất. Protected service vẫn phải tự verify RS256 bằng public key và tự kiểm role/ownership nghiệp vụ.
+- Gateway phải forward nguyên `Authorization: Bearer <access-token>` cho downstream service. Service không được xem `X-User-*` header là nguồn xác thực/phân quyền duy nhất.
 - Client có thể gửi `X-Request-ID`; backend echo lại ở response header + body; thiếu thì backend tự sinh.
 - **Idempotency key — hiện đặt trong BODY:** command tạo tài nguyên nhạy (order) gửi field `idempotencyKey` trong request body (`CreateOrderRequest.idempotencyKey`), backend lưu key UNIQUE → gửi lại cùng key trả kết quả cũ (xem §10 replay). (🔭 target khi refactor: chuyển sang HTTP header `Idempotency-Key` — chưa làm.)
 

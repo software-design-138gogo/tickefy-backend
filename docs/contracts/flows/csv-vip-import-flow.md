@@ -29,7 +29,7 @@ Kết quả cuối cùng mong muốn:
 | Participant | Responsibility |
 |---|---|
 | Organizer/Admin web | Upload CSV, poll status, tải/xem error report |
-| API Gateway | Route request and propagate `X-Request-ID`; `csv-ingestion-service` remains the trust boundary for JWT verification |
+| API Gateway | Verify JWT cơ bản khi gateway live, route request, propagate `Authorization` và `X-Request-ID` |
 | `csv-ingestion-service` | Validate file/concert, tạo job, stream process CSV, publish import result |
 | `event-service` | Kiểm tra concert tồn tại và Organizer có quyền quản lý |
 | `inventory-service` | Resolve và validate `ticket_type`/`ticketTypeId` theo concert |
@@ -46,7 +46,7 @@ Kết quả cuối cùng mong muốn:
 - Organizer sở hữu concert, hoặc user là `ADMIN`.
 - Concert tồn tại trong `event-service`.
 - `inventory-service` có ticket types của concert để resolve `ticket_type`.
-- Gateway route `/api/admin/csv-import/**` đã cấu hình.
+- Gateway route `/api/admin/csv-import/**` đã cấu hình nếu client đi qua Gateway; Gateway verify JWT cơ bản nhưng `csv-ingestion-service` vẫn verify lại JWT.
 - `csv-ingestion-service` có kết nối PostgreSQL, Object Storage và RabbitMQ.
 - CSV dùng UTF-8, đúng header đã chốt, kích thước không vượt `CSV_MAX_FILE_SIZE_MB` mặc định 10 MB.
 - RabbitMQ exchange `tickefy.events`, routing keys, queue consumer và DLQ đã configured.
@@ -91,6 +91,7 @@ sequenceDiagram
     participant Checkin as checkin-service
 
     Client->>Gateway: POST /api/admin/csv-import
+    Gateway->>Gateway: Verify JWT signature/exp/issuer/audience
     Gateway->>Csv: Forward Authorization bearer and X-Request-ID
     Csv->>Csv: Verify JWT, role and file size/header/UTF-8
     Csv->>Event: GET /internal/concerts/{concertId}
@@ -122,7 +123,7 @@ sequenceDiagram
 | Step | From | To | Sync/Async | Contract | State change |
 |---:|---|---|---|---|---|
 | 1 | Organizer/Admin web | API Gateway | Sync HTTP | `POST /api/admin/csv-import` multipart | None |
-| 2 | API Gateway | `csv-ingestion-service` | Sync HTTP | Forward `Authorization: Bearer` and `X-Request-ID` | None |
+| 2 | API Gateway | `csv-ingestion-service` | Sync HTTP | Verify JWT signature/exp/issuer/audience, then forward `Authorization: Bearer` and `X-Request-ID` | None |
 | 3 | `csv-ingestion-service` | `csv-ingestion-service` | Sync local | Verify JWT/role and validate file size, extension/header, UTF-8 | Reject before job if invalid |
 | 4 | `csv-ingestion-service` | `event-service` | Sync HTTP | `GET /internal/concerts/{concertId}` | None |
 | 5 | `csv-ingestion-service` | Object Storage | Sync infra | Store original CSV privately | CSV object created |

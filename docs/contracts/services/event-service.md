@@ -192,7 +192,7 @@ stateDiagram-v2
 
 ## 12. Security
 
-- Authentication: JWT access token dùng `Authorization: Bearer`; service verify RS256 bằng public key theo Auth Contract. Gateway có thể route request nhưng không phải nguồn tin cậy cho `X-User-*` trong MVP.
+- Authentication: JWT access token dùng `Authorization: Bearer`; Gateway verify cơ bản khi request đi qua Gateway, sau đó forward nguyên `Authorization`; `event-service` vẫn verify lại RS256 bằng public key theo Auth Contract. Không dùng `X-User-*` làm nguồn xác thực/phân quyền duy nhất.
 - Authorization: Các endpoint `/api/admin/*` yêu cầu quyền `ORGANIZER` hoặc `ADMIN`.
 - Logging mask: Không yêu cầu che giấu dữ liệu sự kiện vì bản chất là Public. Tránh log JWT Token.
 

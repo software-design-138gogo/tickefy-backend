@@ -245,7 +245,7 @@ Cache is optional; PostgreSQL remains source of truth.
 
 ## 12. Security
 
-- Authentication: public/internal protected endpoints use `Authorization: Bearer <access-token>`; `ticket-service` verifies RS256 locally. `checkin-service` forwards the original access token for internal calls. MVP has no separate service token/client-credentials flow.
+- Authentication: public/internal protected endpoints use `Authorization: Bearer <access-token>`; Gateway verifies JWT at the edge when requests pass through Gateway; `ticket-service` still verifies RS256 locally. `checkin-service` forwards the original access token for internal calls made on behalf of a user. MVP has no separate service token/client-credentials flow.
 - Authorization: audience can only access own tickets; `checkin-service` calls internal endpoints for staff operations.
 - Sensitive data: raw `qrToken` must not leave trusted boundary unless explicitly required by implementation.
 - Logging mask: log `qrTokenMasked`/prefix only; never log JWT, raw QR, secrets.

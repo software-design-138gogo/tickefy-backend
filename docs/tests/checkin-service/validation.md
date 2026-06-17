@@ -47,7 +47,7 @@ Cách chạy lại test nằm trong `services/checkin-service/TESTING.md`.
 | Id | Mức độ | Vấn đề | Đề xuất |
 |---|---|---|---|
 | BE-RAISE-004 | P2 | Sync lock bằng `String.intern()` chỉ ổn trên một instance | Đổi sang DB-based status (`PROCESSING`, `COMPLETED`) |
-| BE-RAISE-006 | P2 | Forward staff JWT sang `e-ticket-service` | Dùng service token hoặc mTLS |
+| BE-RAISE-006 | P2 | Forward staff JWT sang `e-ticket-service` | Theo Auth Contract MVP: forward access token gốc và downstream verify RS256; service token/mTLS chỉ là hardening sau MVP |
 | BE-RAISE-007 | P2 | Result naming chưa đồng nhất | Chuẩn hóa result catalog |
 | BE-RAISE-008 | P2 | Sync response còn trả raw `qrToken` | Trả masked token hoặc chỉ `localId` |
 | BE-RAISE-009 | P2 | Logging chưa cấu hình file/centralized | Thêm file appender hoặc centralized logging |

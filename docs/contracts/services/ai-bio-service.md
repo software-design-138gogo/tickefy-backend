@@ -266,7 +266,7 @@ Redis có thể được dùng sau cho distributed lock hoặc dedup ngắn hạ
 
 ## 12. Security
 
-- Authentication: JWT access token dùng `Authorization: Bearer`; service verify RS256 bằng public key theo Auth Contract. Gateway có thể route request nhưng không phải nguồn tin cậy cho `X-User-*` trong MVP.
+- Authentication: JWT access token dùng `Authorization: Bearer`; Gateway verify cơ bản khi request đi qua Gateway, sau đó forward nguyên `Authorization`; `ai-bio-service` vẫn verify lại RS256 bằng public key theo Auth Contract. Không dùng `X-User-*` làm nguồn xác thực/phân quyền duy nhất.
 - Authorization: chỉ `ORGANIZER` sở hữu concert hoặc `ADMIN` được upload, xem và retry job.
 - Sensitive data: PDF, extracted text, cleaned text, AI prompt, provider response, JWT và AI API key là dữ liệu nhạy cảm.
 - Logging mask: không log full JWT/API key/full document text/full prompt; mask `Authorization`; chỉ log `requestId`, `jobId`, `concertId`, `documentId`, `userId`, stage, duration và error code.

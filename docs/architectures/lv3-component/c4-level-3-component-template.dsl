@@ -13,7 +13,7 @@ workspace "Tickefy - C4 Level 3" "Component template that zooms into one backend
         tickefy = softwareSystem "Tickefy" "Concert ticketing and check-in platform." {
             tags "InternalSystem"
 
-            apiGateway = container "API Gateway" "Routes requests, verifies JWT, rate limits, and propagates request IDs." "Spring Cloud Gateway/Nginx" {
+            apiGateway = container "API Gateway" "Routes requests, verifies JWT at the edge, rate limits, and propagates request IDs. The target service still verifies JWT and enforces business authorization." "Spring Cloud Gateway/Nginx" {
                 tags "API"
             }
 

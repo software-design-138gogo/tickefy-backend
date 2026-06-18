@@ -36,14 +36,13 @@ Tài liệu này ghi trạng thái QA riêng cho `checkin-service`.
 
 ## Test evidence
 
-Evidence cũ nằm ở:
+Các test document chi tiết:
 
-- `evidence/checkin-service/mvn-test.log`
-- `evidence/checkin-service/concurrency-test.log`
-- `evidence/checkin-service/security-test.log`
-- `evidence/checkin-service/docker-build.log`
-
-Cách chạy lại test nằm trong `services/checkin-service/TESTING.md`.
+- Unit/Integration: `01-unit-integration.md` (trong thư mục này)
+- Testcontainers DB: `02-real-db-testcontainers.md`
+- API Contract (REST Assured): `03-api-rest-assured.md`
+- Security: `04-security.md`
+- Performance (k6): `05-performance.md`
 
 Evidence mới nhất cho pass stabilization ngày 2026-06-17:
 
@@ -55,7 +54,7 @@ Evidence mới nhất cho pass stabilization ngày 2026-06-17:
 - Security check: spoofed `X-User-*` không được dùng làm identity/authorization; service-to-service vẫn forward `Authorization: Bearer <access-token>`.
 - Logging check: checkin logs ghi `qrMasked=...`, không ghi raw QR.
 
-Chi tiết cross-service smoke nằm ở `../evidence/backend-services-real-api/2026-06-17-e-ticket-checkin-stabilization.md`.
+Chi tiết cross-service smoke: xem `docs/tests/evidence/` — đã xóa, dùng các test doc trong thư mục này thay thế.
 
 ## Resolved in 2026-06-17 stabilization pass
 

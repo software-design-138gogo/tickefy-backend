@@ -36,14 +36,12 @@ Tài liệu này ghi trạng thái QA riêng cho `e-ticket-service`.
 
 ## Test evidence
 
-Evidence cũ nằm ở:
+Các test document chi tiết:
 
-- `evidence/e-ticket-service/mvn-test.log`
-- `evidence/e-ticket-service/concurrency-test.log`
-- `evidence/e-ticket-service/security-test.log`
-- `evidence/e-ticket-service/docker-build.log`
-
-Cách chạy lại test nằm trong `services/e-ticket-service/TESTING.md`.
+- Unit/Integration: `01-unit-integration.md` (trong thư mục này)
+- Testcontainers DB: `02-real-db-testcontainers.md`
+- API Contract (REST Assured): `03-api-rest-assured.md`
+- Security: `04-security.md`
 
 Evidence mới nhất cho pass stabilization ngày 2026-06-17:
 
@@ -55,7 +53,7 @@ Evidence mới nhất cho pass stabilization ngày 2026-06-17:
 - Event check: unit tests cover `TicketsIssued` envelope, routing key `tickets.issued`, stable child `messageId`, no QR fields, replay idempotency.
 - Logging check: request path chứa `/internal/tickets/by-token/{token}` không ghi raw token trong log.
 
-Chi tiết cross-service smoke nằm ở `../evidence/backend-services-real-api/2026-06-17-e-ticket-checkin-stabilization.md`.
+Chi tiết cross-service smoke: dùng các test doc trong thư mục này thay thế.
 
 ## Resolved in 2026-06-17 stabilization pass
 

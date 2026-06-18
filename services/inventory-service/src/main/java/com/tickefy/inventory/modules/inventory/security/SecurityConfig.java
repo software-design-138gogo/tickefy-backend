@@ -41,8 +41,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/events/*/ticket-types",
-                                "/events/*/ticket-types/*/availability",
+                                "/api/inventory/concerts/*/ticket-types",
+                                "/api/inventory/concerts/*/ticket-types/*/availability",
                                 "/actuator/**",
                                 "/health",
                                 "/v3/api-docs/**",

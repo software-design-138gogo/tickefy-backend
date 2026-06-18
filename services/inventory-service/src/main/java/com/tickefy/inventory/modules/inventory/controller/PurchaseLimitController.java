@@ -1,6 +1,7 @@
 package com.tickefy.inventory.modules.inventory.controller;
 
 import com.tickefy.inventory.common.constants.HeaderConstants;
+import com.tickefy.inventory.common.constants.InventoryApiPaths;
 import com.tickefy.inventory.common.response.ApiResponse;
 import com.tickefy.inventory.modules.inventory.dto.PurchaseLimitResponse;
 import com.tickefy.inventory.modules.inventory.service.PurchaseLimitService;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/inventory/users")
+@RequestMapping(InventoryApiPaths.USERS)
 public class PurchaseLimitController {
 
     private final PurchaseLimitService purchaseLimitService;

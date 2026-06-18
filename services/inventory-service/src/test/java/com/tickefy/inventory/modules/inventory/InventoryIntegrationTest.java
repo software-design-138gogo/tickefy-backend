@@ -114,7 +114,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
 
     private UUID createTicketType(CreateTicketTypeRequest req) throws Exception {
         UUID concertId = UUID.randomUUID();
-        MvcResult result = mockMvc.perform(post("/events/{cid}/ticket-types", concertId)
+        MvcResult result = mockMvc.perform(post("/api/inventory/concerts/{cid}/ticket-types", concertId)
                         .header("Authorization", "Bearer " + ORGANIZER_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -136,7 +136,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         try {
             String body = objectMapper.writeValueAsString(req);
             ResponseEntity<String> response = restTemplate.exchange(
-                    "http://localhost:" + port + "/inventory/reservations",
+                    "http://localhost:" + port + "/api/inventory/reservations",
                     HttpMethod.POST,
                     new HttpEntity<>(body, headers),
                     String.class);
@@ -150,7 +150,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
 
     private int reserveViaHttp(UUID ticketTypeId, UUID userId, UUID orderId, int qty, String token) throws Exception {
         ReserveRequest req = new ReserveRequest(userId, ticketTypeId, orderId, qty);
-        return mockMvc.perform(post("/inventory/reservations")
+        return mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -267,7 +267,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID ticketTypeId = createTicketType(InventoryTestFixture.onSaleRequest(100, null));
         ReserveRequest req = new ReserveRequest(UUID.randomUUID(), ticketTypeId, UUID.randomUUID(), 0);
 
-        mockMvc.perform(post("/inventory/reservations")
+        mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + AUDIENCE_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -358,7 +358,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         // Reserve 10 tickets across 5 requests of 2 each — should all succeed (no per-user limit)
         for (int i = 0; i < 5; i++) {
             ReserveRequest req = new ReserveRequest(userId, ticketTypeId, UUID.randomUUID(), 2);
-            mockMvc.perform(post("/inventory/reservations")
+            mockMvc.perform(post("/api/inventory/reservations")
                             .header("Authorization", "Bearer " + userToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(req)))
@@ -379,7 +379,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID ticketTypeId = createTicketType(InventoryTestFixture.upcomingRequest(100));
 
         ReserveRequest req = new ReserveRequest(UUID.randomUUID(), ticketTypeId, UUID.randomUUID(), 1);
-        mockMvc.perform(post("/inventory/reservations")
+        mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + AUDIENCE_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -396,7 +396,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID ticketTypeId = createTicketType(InventoryTestFixture.closedRequest(100));
 
         ReserveRequest req = new ReserveRequest(UUID.randomUUID(), ticketTypeId, UUID.randomUUID(), 1);
-        mockMvc.perform(post("/inventory/reservations")
+        mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + AUDIENCE_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -491,7 +491,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         ReserveRequest req = new ReserveRequest(userId, ticketTypeId, orderId, 2);
 
         // First call
-        MvcResult r1 = mockMvc.perform(post("/inventory/reservations")
+        MvcResult r1 = mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -499,7 +499,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
                 .andReturn();
 
         // Second call — same orderId + ticketTypeId
-        MvcResult r2 = mockMvc.perform(post("/inventory/reservations")
+        MvcResult r2 = mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -554,7 +554,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
 
         // Now reserve — should NOT see false SOLD_OUT, should rebuild from DB
         ReserveRequest req = new ReserveRequest(UUID.randomUUID(), ticketTypeId, UUID.randomUUID(), 1);
-        mockMvc.perform(post("/inventory/reservations")
+        mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + AUDIENCE_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -581,7 +581,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         CreateTicketTypeRequest createReq = InventoryTestFixture.onSaleRequest(totalQty, null);
 
         // Create via controller
-        MvcResult createResult = mockMvc.perform(post("/events/{cid}/ticket-types", concertId)
+        MvcResult createResult = mockMvc.perform(post("/api/inventory/concerts/{cid}/ticket-types", concertId)
                         .header("Authorization", "Bearer " + ORGANIZER_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createReq)))
@@ -591,7 +591,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID ticketTypeId = UUID.fromString((String) createData.get("id"));
 
         // GET availability (public endpoint — no token required)
-        mockMvc.perform(get("/events/{cid}/ticket-types/{tid}/availability", concertId, ticketTypeId))
+        mockMvc.perform(get("/api/inventory/concerts/{cid}/ticket-types/{tid}/availability", concertId, ticketTypeId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.ticketTypeId").value(ticketTypeId.toString()))
@@ -601,7 +601,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         // Reserve 5 tickets
         for (int i = 0; i < 5; i++) {
             ReserveRequest req = new ReserveRequest(UUID.randomUUID(), ticketTypeId, UUID.randomUUID(), 1);
-            mockMvc.perform(post("/inventory/reservations")
+            mockMvc.perform(post("/api/inventory/reservations")
                             .header("Authorization", "Bearer " + AUDIENCE_TOKEN)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(req)))
@@ -609,7 +609,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         }
 
         // Availability should now show 70
-        mockMvc.perform(get("/events/{cid}/ticket-types/{tid}/availability", concertId, ticketTypeId))
+        mockMvc.perform(get("/api/inventory/concerts/{cid}/ticket-types/{tid}/availability", concertId, ticketTypeId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.available").value(totalQty - 5));
     }
@@ -622,7 +622,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID concertId = UUID.randomUUID();
         CreateTicketTypeRequest req = InventoryTestFixture.onSaleRequest(100, null);
 
-        mockMvc.perform(post("/events/{cid}/ticket-types", concertId)
+        mockMvc.perform(post("/api/inventory/concerts/{cid}/ticket-types", concertId)
                         .header("Authorization", "Bearer " + AUDIENCE_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -638,7 +638,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID concertId = UUID.randomUUID();
         CreateTicketTypeRequest req = InventoryTestFixture.onSaleRequest(100, 4);
 
-        mockMvc.perform(post("/events/{cid}/ticket-types", concertId)
+        mockMvc.perform(post("/api/inventory/concerts/{cid}/ticket-types", concertId)
                         .header("Authorization", "Bearer " + ORGANIZER_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
@@ -651,7 +651,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
 
     // ============================================================
     // RBAC: No token on ORGANIZER-only endpoint → 403
-    // Note: POST /events/*/ticket-types is in permitAll() at filter level,
+    // Note: POST /api/inventory/concerts/*/ticket-types is in permitAll() at filter level,
     // but @PreAuthorize("hasAnyRole('ORGANIZER','ADMIN')") fires AFTER → 403 (AccessDeniedException).
     // Anonymous users (no authentication object) get 403 from @PreAuthorize, not 401 from filter.
     // This is correct Spring Security behavior and matches SecurityConfig.
@@ -661,7 +661,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID concertId = UUID.randomUUID();
         CreateTicketTypeRequest req = InventoryTestFixture.onSaleRequest(100, null);
 
-        mockMvc.perform(post("/events/{cid}/ticket-types", concertId)
+        mockMvc.perform(post("/api/inventory/concerts/{cid}/ticket-types", concertId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isForbidden())
@@ -676,7 +676,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID ticketTypeId = createTicketType(InventoryTestFixture.onSaleRequest(10, null));
         ReserveRequest req = new ReserveRequest(UUID.randomUUID(), ticketTypeId, UUID.randomUUID(), 1);
 
-        mockMvc.perform(post("/inventory/reservations")
+        mockMvc.perform(post("/api/inventory/reservations")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isUnauthorized())
@@ -691,7 +691,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         String badToken = TestJwtHelper.tamperToken(AUDIENCE_TOKEN);
         UUID ticketTypeId = createTicketType(InventoryTestFixture.onSaleRequest(10, null));
 
-        mockMvc.perform(post("/inventory/reservations")
+        mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + badToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -709,7 +709,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         UUID ticketTypeId = createTicketType(InventoryTestFixture.onSaleRequest(10, null));
 
         // Availability endpoint is public — no Authorization header
-        mockMvc.perform(get("/events/{cid}/ticket-types/{tid}/availability", concertId, ticketTypeId))
+        mockMvc.perform(get("/api/inventory/concerts/{cid}/ticket-types/{tid}/availability", concertId, ticketTypeId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
     }
@@ -725,7 +725,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
         String userToken = TestJwtHelper.generateToken(userId.toString(), List.of("AUDIENCE"));
 
         // First reserve: 2 → hits limit exactly
-        mockMvc.perform(post("/inventory/reservations")
+        mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -733,7 +733,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isCreated());
 
         // Second reserve: 1 more → should 422 (already at limit)
-        mockMvc.perform(post("/inventory/reservations")
+        mockMvc.perform(post("/api/inventory/reservations")
                         .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -755,7 +755,7 @@ class InventoryIntegrationTest extends BaseIntegrationTest {
                 Instant.now().plusSeconds(7200),  // start after end
                 Instant.now().plusSeconds(3600));  // end before start
 
-        mockMvc.perform(post("/events/{cid}/ticket-types", concertId)
+        mockMvc.perform(post("/api/inventory/concerts/{cid}/ticket-types", concertId)
                         .header("Authorization", "Bearer " + ORGANIZER_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))

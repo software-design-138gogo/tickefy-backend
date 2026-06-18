@@ -1,6 +1,7 @@
 package com.tickefy.inventory.modules.inventory.controller;
 
 import com.tickefy.inventory.common.constants.HeaderConstants;
+import com.tickefy.inventory.common.constants.InventoryApiPaths;
 import com.tickefy.inventory.common.response.ApiResponse;
 import com.tickefy.inventory.modules.inventory.dto.AvailabilityResponse;
 import com.tickefy.inventory.modules.inventory.dto.CreateTicketTypeRequest;
@@ -21,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/events/{concertId}/ticket-types")
+@RequestMapping(InventoryApiPaths.TICKET_TYPES)
 public class TicketTypeController {
 
     private final TicketTypeService ticketTypeService;

@@ -112,7 +112,7 @@ spring:
             - id: checkin-service-route
               uri: ${app.services.checkin-url}
               predicates:
-                - Path=/api/checkins/**
+                - Path=/api/checkin/**
               metadata:
                 connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
                 response-timeout: ${GATEWAY_CHECKIN_RESPONSE_TIMEOUT_MS:5000}

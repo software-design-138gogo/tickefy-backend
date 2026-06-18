@@ -44,7 +44,7 @@ class InventoryClientUnitTest {
     @BeforeEach
     void setUp() throws Exception {
         // Use a dummy base URL — handleErrorResponse is never going to make HTTP calls
-        inventoryClient = new InventoryClient("http://localhost:9999", objectMapper);
+        inventoryClient = new InventoryClient("http://localhost:9999", "/api/inventory/reservations", objectMapper);
 
         // Reflect into the private mapping method
         handleErrorResponse = InventoryClient.class

@@ -23,11 +23,14 @@ public class InventoryClient {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+    private final String reservationsPath;
 
     public InventoryClient(
             @Value("${app.inventory.base-url}") String baseUrl,
+            @Value("${app.inventory.reservations-path}") String reservationsPath,
             ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
+        this.reservationsPath = reservationsPath;
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .requestInitializer(req -> {
@@ -37,7 +40,7 @@ public class InventoryClient {
     }
 
     /**
-     * POST /inventory/reservations — forward caller's Bearer token.
+     * POST /api/inventory/reservations — forward caller's Bearer token.
      * Throws InventoryBusinessException for 409/422/403 (order → CANCELLED).
      * Throws InventoryUnavailableException for 5xx / timeout / connect error (order stays CREATED).
      */
@@ -46,7 +49,7 @@ public class InventoryClient {
                 req.orderId(), req.ticketTypeId(), req.quantity());
         try {
             byte[] responseBytes = restClient.post()
-                    .uri("/inventory/reservations")
+                    .uri(reservationsPath)
                     .header("Authorization", "Bearer " + bearerToken)
                     .header("Content-Type", "application/json")
                     .body(req)

@@ -1,6 +1,7 @@
 package com.tickefy.inventory.modules.inventory.controller;
 
 import com.tickefy.inventory.common.constants.HeaderConstants;
+import com.tickefy.inventory.common.constants.InventoryApiPaths;
 import com.tickefy.inventory.common.response.ApiResponse;
 import com.tickefy.inventory.modules.inventory.dto.ReservationResponse;
 import com.tickefy.inventory.modules.inventory.dto.ReserveRequest;
@@ -15,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/inventory/reservations")
+@RequestMapping(InventoryApiPaths.RESERVATIONS)
 public class ReservationController {
 
     private final ReservationService reservationService;

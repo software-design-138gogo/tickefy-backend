@@ -51,6 +51,7 @@ app:
     public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
   inventory:
     base-url: ${INVENTORY_SERVICE_URL:http://localhost:8083}
+    reservations-path: /api/inventory/reservations
   payment:
     base-url: ${PAYMENT_SERVICE_URL:http://localhost:8085}
     stub: ${PAYMENT_STUB:true}

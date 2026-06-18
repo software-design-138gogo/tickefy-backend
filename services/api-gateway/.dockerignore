@@ -1,0 +1,43 @@
+# Maven output
+target/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Test and coverage output
+coverage/
+surefire-reports/
+
+# Documentation not required at runtime
+README.md
+docs/
+
+# Never place private keys in Docker build context
+**/private.pem
+**/*private*.pem
+**/*private-key*.pem

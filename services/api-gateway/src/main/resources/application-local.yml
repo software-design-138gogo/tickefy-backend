@@ -1,0 +1,23 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
+      timeout: ${REDIS_COMMAND_TIMEOUT:500ms}
+
+app:
+  services:
+    auth-url: ${AUTH_SERVICE_URL:http://localhost:8081}
+    event-url: ${EVENT_SERVICE_URL:http://localhost:8082}
+    ticket-url: ${TICKET_SERVICE_URL:http://localhost:8083}
+    order-url: ${ORDER_SERVICE_URL:http://localhost:8084}
+    payment-url: ${PAYMENT_SERVICE_URL:http://localhost:8085}
+    notification-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+    checkin-url: ${CHECKIN_SERVICE_URL:http://localhost:8087}
+    inventory-url: ${INVENTORY_SERVICE_URL:http://localhost:8088}
+    ai-bio-url: ${AI_BIO_SERVICE_URL:http://localhost:8089}
+    csv-ingestion-url: ${CSV_INGESTION_SERVICE_URL:http://localhost:8091}

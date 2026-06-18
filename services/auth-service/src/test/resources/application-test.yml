@@ -52,8 +52,6 @@ app:
     refresh-path: /auth
     secure: false
     same-site: Lax
-  cors:
-    allowed-origins: http://localhost:3000
   security:
     # Low cost for fast tests
     bcrypt-strength: 4

@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.jwt")
 public class JwtProperties {
 
-    private String issuer = "tickefy-auth";
+    private String issuer = "tickefy-auth-service";
     private String publicKey = "classpath:keys/jwt-dev-public.pem";
 
     public String getIssuer() {

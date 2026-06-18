@@ -15,7 +15,7 @@ spring:
 
 app:
   jwt:
-    issuer: tickefy-auth
+    issuer: tickefy-auth-service
     public-key: classpath:keys/jwt-dev-public.pem
   redis:
     stock-key-prefix: "tickefy:inventory:available:"

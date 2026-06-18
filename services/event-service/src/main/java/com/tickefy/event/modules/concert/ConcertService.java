@@ -202,6 +202,13 @@ public class ConcertService {
         return ConcertResponse.from(saved);
     }
 
+    // --- UPDATE AI INTRODUCTION ---
+    public void updateAiIntroduction(UUID id, String aiIntroduction) {
+        Concert concert = findById(id);
+        concert.setAiIntroduction(aiIntroduction);
+        concertRepository.save(concert);
+    }
+
     // --- HELPER ---
     private Concert findById(UUID id) {
         return concertRepository.findById(id)

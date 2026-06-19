@@ -1,18 +1,31 @@
 from fastapi import APIRouter, Request
+
 from app.core.config import get_settings
 from app.schemas.common import success_response
 
 router = APIRouter(tags=["health"])
 
 
+def health_payload() -> dict:
+    settings = get_settings()
+    return {
+        "status": "UP",
+        "service": settings.service_name,
+    }
+
+
+@router.get("/health")
+async def health(request: Request):
+    return success_response(
+        data=health_payload(),
+        request_id=request.state.request_id,
+    )
+
+
 @router.get("/actuator/health")
 async def actuator_health(request: Request):
-    settings = get_settings()
     return success_response(
-        data={
-            "status": "UP",
-            "service": settings.service_name,
-        },
+        data=health_payload(),
         request_id=request.state.request_id,
     )
 

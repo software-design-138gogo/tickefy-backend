@@ -1,58 +1,57 @@
-workspace "Tickefy - C4 Level 1" "System Context template showing users, Tickefy, and external systems." {
+workspace "Tickefy" "C4 Level 1 - System Context: users, the Tickefy platform, and its external dependencies." {
 
     !identifiers hierarchical
 
     model {
         // =============================================================
-        // PEOPLE
-        // Chỉ khai báo các vai trò thực sự tương tác với hệ thống.
+        // PEOPLE  -  chi vai tro thuc su tuong tac voi he thong
         // =============================================================
-        audience = person "Audience" "Discovers concerts, purchases tickets, and views e-tickets."
-        organizer = person "Organizer" "Creates and manages concerts, ticket configurations, and import jobs."
-        checkinStaff = person "Check-in Staff" "Scans tickets and synchronizes online/offline check-in data."
+        audience     = person "Audience"      "Discovers concerts, purchases tickets, and views e-tickets."
+        organizer    = person "Organizer"     "Creates and manages concerts, ticket types, and import jobs."
+        checkinStaff = person "Check-in Staff" "Scans tickets and syncs online/offline check-in data."
+
+        // RBAC he thong co 4 role. Bo comment 2 dong (person + relationship)
+        // neu muon tach Admin khoi Organizer o Level 1:
+        // admin     = person "Admin"          "Manages users/roles, cancels concerts, triggers refunds."
 
         // =============================================================
-        // SYSTEM IN SCOPE
-        // Level 1 chỉ xem Tickefy như một khối duy nhất.
-        // Không đưa service, database, Redis hoặc RabbitMQ vào đây.
+        // SYSTEM IN SCOPE  -  Level 1 xem Tickefy nhu mot khoi duy nhat
+        // (khong dua service / DB / Redis / RabbitMQ vao day)
         // =============================================================
-        tickefy = softwareSystem "Tickefy" "Concert ticketing platform supporting ticket sales, e-tickets, online/offline check-in, AI artist bios, and CSV VIP ingestion." {
+        tickefy = softwareSystem "Tickefy" "Concert ticketing platform: ticket sales, e-tickets, online/offline check-in, AI artist bios, and CSV VIP ingestion." {
             tags "InternalSystem"
         }
 
         // =============================================================
         // EXTERNAL SOFTWARE SYSTEMS
-        // Chỉ khai báo hệ thống nằm ngoài phạm vi Tickefy.
         // =============================================================
         paymentProvider = softwareSystem "Payment Provider" "External VNPAY/MoMo payment gateway." {
             tags "ExternalSystem"
         }
-
-        emailProvider = softwareSystem "Email Provider" "External transactional email delivery provider." {
+        emailProvider = softwareSystem "Email Provider" "External transactional email/push delivery provider." {
             tags "ExternalSystem"
         }
-
         aiProvider = softwareSystem "AI Provider" "External generative AI API used to summarize artist press kits." {
             tags "ExternalSystem"
         }
 
         // =============================================================
-        // RELATIONSHIPS
-        // Relationship phải mô tả hành động/nghiệp vụ, tránh chỉ ghi "Uses".
+        // RELATIONSHIPS  -  mo ta hanh dong nghiep vu, tranh chi ghi "Uses"
         // =============================================================
-        audience -> tickefy "Discovers concerts, purchases tickets, and accesses e-tickets" "HTTPS"
-        organizer -> tickefy "Manages concerts, artists, ticket configurations, and import jobs" "HTTPS"
-        checkinStaff -> tickefy "Performs online and offline ticket check-in" "HTTPS/Local storage"
+        audience     -> tickefy "Discovers concerts, buys tickets, accesses e-tickets" "HTTPS"
+        organizer    -> tickefy "Manages concerts, ticket configs, and import jobs" "HTTPS"
+        checkinStaff -> tickefy "Performs online and offline ticket check-in" "HTTPS online; offline: pre-downloaded snapshot + local SQLite, synced on reconnect"
+        // admin     -> tickefy "Manages users/roles, cancels concerts, triggers refunds" "HTTPS"
 
         tickefy -> paymentProvider "Creates payments and receives payment results" "HTTPS"
-        tickefy -> emailProvider "Sends transactional email notifications" "HTTPS/SMTP"
-        tickefy -> aiProvider "Requests artist-biography generation" "HTTPS"
+        tickefy -> emailProvider   "Sends transactional notifications" "SMTP/HTTPS"
+        tickefy -> aiProvider      "Requests artist-biography generation" "HTTPS"
     }
 
     views {
         systemContext tickefy "L1-SystemContext" {
             title "C4 Level 1 - Tickefy System Context"
-            description "Shows Tickefy, its users, and external software-system dependencies."
+            description "Tickefy, its users, and external software-system dependencies."
             include *
             autoLayout lr 300 200
         }
@@ -66,29 +65,24 @@ workspace "Tickefy - C4 Level 1" "System Context template showing users, Tickefy
                 strokeWidth 2
                 fontSize 20
             }
-
             element "Person" {
                 shape Person
                 background #08427b
                 color #ffffff
             }
-
             element "Software System" {
                 background #1168bd
                 color #ffffff
             }
-
             element "InternalSystem" {
                 background #1168bd
                 color #ffffff
             }
-
             element "ExternalSystem" {
                 background #999999
                 color #ffffff
                 border dashed
             }
-
             relationship "Relationship" {
                 thickness 2
                 color #64748b

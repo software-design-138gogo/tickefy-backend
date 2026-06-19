@@ -50,11 +50,22 @@ spring:
               uri: ${app.services.event-url}
               predicates:
                 - Path=/api/concerts/**
+              filters:
+                - StripPrefix=1
 
             - id: event-service-admin-route
               uri: ${app.services.event-url}
               predicates:
                 - Path=/api/admin/concerts/**
+              filters:
+                - StripPrefix=1
+
+            - id: event-service-admin-venues-route
+              uri: ${app.services.event-url}
+              predicates:
+                - Path=/api/admin/venues/**
+              filters:
+                - StripPrefix=1
 
             # =========================================================
             # Inventory Service

@@ -1,10 +1,10 @@
 ---
 title: Service Specification - event-service
 status: PROPOSED
-version: 1.0
+version: 1.1
 owner: Dương
 reviewers: [Hiệp, Hoàng, Hòa]
-lastUpdated: 2026-06-16
+lastUpdated: 2026-06-19
 ---
 
 # Service Specification — `event-service`
@@ -41,7 +41,7 @@ lastUpdated: 2026-06-16
 - Không xử lý thanh toán (Thuộc về `payment-service`).
 - Không sinh mã vé QR hay quản lý vé đã xuất (Thuộc về `ticket-service` / `checkin-service`).
 - Không trực tiếp xử lý upload file nhị phân (Chỉ cấp Pre-signed URL cho FE tự đẩy lên S3).
-- Không gọi AI Provider và không xử lý PDF source document; phần đó thuộc `ai-bio-service`.
+- Không gọi AI Provider và không xử lý source document; phần đó thuộc `ai-bio-service`.
 
 ## 3. Data ownership
 
@@ -147,7 +147,7 @@ lastUpdated: 2026-06-16
 
 | Event | Producer | Queue | Behavior | Idempotency key |
 |---|---|---|---|---|
-| `ConcertIntroductionGenerated` | `ai-bio-service` | `event.concert-introduction-generated` | Cập nhật `concert_introduction` của concert nếu không bị manual update mới hơn. | `messageId`, `jobId`, `concertId` |
+| `ConcertIntroductionGenerated` | `ai-bio-service` | `event-service.concert-introduction-generated.queue` | Cập nhật `concert_introduction` của concert nếu không bị manual update mới hơn. | `messageId`, `jobId`, `concertId` |
 
 ## 9. State machines
 

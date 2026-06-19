@@ -1,12 +1,10 @@
 ---
-
 title: Event Envelope
 status: DRAFT
-version: 1.0
+version: 1.1
 owner: BE Lead
 reviewers:
-lastUpdated: 2026-06-16
-
+lastUpdated: 2026-06-19
 ---
 
 # Event Envelope
@@ -548,7 +546,7 @@ Nên:
 Integration event của Tickefy dùng topic exchange:
 
 ```text
-tickefy.events
+tickefy.exchange
 ```
 
 Cấu hình đề xuất:
@@ -599,29 +597,29 @@ Mỗi service có một queue riêng cho mỗi event hoặc nhóm event mà serv
 Quy ước:
 
 ```text
-{consumer-service}.{event-name}
+{consumer-service}.{event-name}.queue
 ```
 
 Ví dụ:
 
 ```text
-order.payment-succeeded
-order.payment-failed
-inventory.order-paid
-inventory.order-payment-failed
-inventory.order-expired
-inventory.order-cancelled
-inventory.concert-published
-inventory.concert-cancelled
-order.concert-cancelled
-ticket.order-paid
-ticket.order-refunded
-ticket.concert-cancelled
-notification.tickets-issued
-notification.order-refunded
-notification.concert-cancelled
-event.concert-introduction-generated
-checkin.vip-guest-import-completed
+order-service.payment-succeeded.queue
+order-service.payment-failed.queue
+inventory-service.order-paid.queue
+inventory-service.order-payment-failed.queue
+inventory-service.order-expired.queue
+inventory-service.order-cancelled.queue
+inventory-service.concert-published.queue
+inventory-service.concert-cancelled.queue
+order-service.concert-cancelled.queue
+ticket-service.order-paid.queue
+ticket-service.order-refunded.queue
+ticket-service.concert-cancelled.queue
+notification-service.tickets-issued.queue
+notification-service.order-refunded.queue
+notification-service.concert-cancelled.queue
+event-service.concert-introduction-generated.queue
+checkin-service.vip-guest-import-completed.queue
 ```
 
 Không cho nhiều loại service khác nhau dùng chung một queue.
@@ -637,9 +635,9 @@ Nếu Ticket Service và Notification Service cùng consume queue này, một me
 Đúng:
 
 ```text
-ticket.order-paid
-notification.order-paid
-inventory.order-paid
+ticket-service.order-paid.queue
+notification-service.order-paid.queue
+inventory-service.order-paid.queue
 ```
 
 Mỗi queue nhận một bản sao của event từ topic exchange.
@@ -648,7 +646,7 @@ Các instance thuộc cùng một service dùng chung queue để hoạt động
 
 ```text
 ticket-service instance 1 ─┐
-ticket-service instance 2 ─┼→ queue ticket.order-paid
+ticket-service instance 2 ─┼→ queue ticket-service.order-paid.queue
 ticket-service instance 3 ─┘
 ```
 
@@ -669,9 +667,9 @@ Quy ước:
 Ví dụ:
 
 ```text
-ticket.order-paid.dlq
-notification.tickets-issued.dlq
-event.concert-introduction-generated.dlq
+ticket-service.order-paid.queue.dlq
+notification-service.tickets-issued.queue.dlq
+event-service.concert-introduction-generated.queue.dlq
 ```
 
 DLQ phải giữ nguyên:
@@ -1286,7 +1284,7 @@ Trừ khi event dành cho Notification Service và các field này đã được
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: payment.succeeded
 Queue: order.payment-succeeded
 ```
@@ -1320,7 +1318,7 @@ Queue: order.payment-succeeded
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: payment.failed
 Queue: order.payment-failed
 ```
@@ -1361,7 +1359,7 @@ Queue: order.payment-failed
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: order.paid
 
 Queues:
@@ -1397,7 +1395,7 @@ Queues:
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: order.payment.failed
 Queues:
 - inventory.order-payment-failed
@@ -1430,7 +1428,7 @@ Queues:
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: order.expired
 Queues:
 - inventory.order-expired
@@ -1464,7 +1462,7 @@ Queues:
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: order.cancelled
 Queues:
 - inventory.order-cancelled
@@ -1500,7 +1498,7 @@ Queues:
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: order.refunded
 Queues:
 - ticket.order-refunded
@@ -1550,7 +1548,7 @@ Không đưa full QR token vào event này nếu Notification Service có thể 
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: tickets.issued
 Queue: notification.tickets-issued
 ```
@@ -1581,7 +1579,7 @@ Queue: notification.tickets-issued
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: concert.published
 Queues:
 - inventory.concert-published
@@ -1611,7 +1609,7 @@ Queues:
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: concert.cancelled
 Queues:
 - order.concert-cancelled
@@ -1651,7 +1649,7 @@ Payload không chứa raw `qrToken`.
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: ticket.checked-in
 Queue: analytics.ticket-checked-in   # optional / future
 ```
@@ -1677,6 +1675,7 @@ Queue: analytics.ticket-checked-in   # optional / future
     "sourceDocumentIds": [
       "source-document-uuid"
     ],
+    "sourceTypes": ["PDF", "DOCX"],
     "requestedAt": "2026-06-16T10:55:00Z",
     "generatedAt": "2026-06-16T11:00:00Z"
   }
@@ -1686,9 +1685,9 @@ Queue: analytics.ticket-checked-in   # optional / future
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: concert.introduction.generated
-Queue: event.concert-introduction-generated
+Queue: event-service.concert-introduction-generated.queue
 ```
 
 ---
@@ -1720,7 +1719,7 @@ Queue: event.concert-introduction-generated
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: vip-guest-import.completed
 Queue: checkin.vip-guest-import-completed
 ```
@@ -1753,7 +1752,7 @@ Queue: checkin.vip-guest-import-completed
 Routing:
 
 ```text
-Exchange: tickefy.events
+Exchange: tickefy.exchange
 Routing key: vip-guest-import.failed
 Queue: monitoring.vip-guest-import-failed
 ```

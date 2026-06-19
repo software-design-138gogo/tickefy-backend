@@ -49,7 +49,7 @@ Kết quả cuối cùng mong muốn:
 - Gateway route `/api/admin/csv-import/**` đã cấu hình nếu client đi qua Gateway; Gateway verify JWT cơ bản nhưng `csv-ingestion-service` vẫn verify lại JWT.
 - `csv-ingestion-service` có kết nối PostgreSQL, Object Storage và RabbitMQ.
 - CSV dùng UTF-8, đúng header đã chốt, kích thước không vượt `CSV_MAX_FILE_SIZE_MB` mặc định 10 MB.
-- RabbitMQ exchange `tickefy.events`, routing keys, queue consumer và DLQ đã configured.
+- RabbitMQ exchange `tickefy.exchange`, routing keys, queue consumer và DLQ đã configured.
 - `checkin-service` có consumer cho `VipGuestImportCompleted` hoặc cơ chế bootstrap qua internal API.
 
 ## 4. Trigger

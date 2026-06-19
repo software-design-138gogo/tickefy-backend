@@ -112,7 +112,7 @@ Mọi response tuân theo envelope chung: `success`, `data`, `error`, `requestId
 | `VipGuestImportCompleted` | `vip-guest-import.completed` | Job chuyển sang `COMPLETED` hoặc `PARTIALLY_COMPLETED`. | `checkin-service` | `../common/event-envelope.md` §14.8 |
 | `VipGuestImportFailed` | `vip-guest-import.failed` | Job chuyển sang `FAILED`. | Monitoring/Admin integration | `../common/event-envelope.md` §14.9 |
 
-Event dùng exchange `tickefy.events` và common envelope gồm `messageId`, `eventType`, `eventVersion`, `source`, `occurredAt`, `correlationId`, `causationId` và `payload`. Payload dùng `importJobId` làm định danh import job. Khi publish lại cùng job, service phải dùng lại `messageId` đã lưu.
+Event dùng exchange `tickefy.exchange` và common envelope gồm `messageId`, `eventType`, `eventVersion`, `source`, `occurredAt`, `correlationId`, `causationId` và `payload`. Payload dùng `importJobId` làm định danh import job. Khi publish lại cùng job, service phải dùng lại `messageId` đã lưu.
 
 ## 8. Events consumed
 
@@ -209,7 +209,7 @@ stateDiagram-v2
 | `RABBITMQ_PORT` | Yes | `5672` | Broker port. |
 | `RABBITMQ_USERNAME` | Yes | `tickefy` | Broker user. |
 | `RABBITMQ_PASSWORD` | Yes | `***` | Broker password. |
-| `RABBITMQ_EXCHANGE` | Yes | `tickefy.events` | Topic exchange. |
+| `RABBITMQ_EXCHANGE` | Yes | `tickefy.exchange` | Topic exchange. |
 | `OBJECT_STORAGE_ENDPOINT` | Yes | `http://minio:9000` | S3-compatible endpoint. |
 | `OBJECT_STORAGE_BUCKET` | Yes | `tickefy-csv` | Private CSV/error-report bucket. |
 | `OBJECT_STORAGE_ACCESS_KEY` | Yes | `minio` | Storage access key. |

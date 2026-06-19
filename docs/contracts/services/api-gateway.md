@@ -1,10 +1,10 @@
 ---
 title: Service Specification - api-gateway
 status: IMPLEMENTED
-version: 1.1
+version: 1.2
 owner: Hoàng
 reviewers: [BE Lead, Auth Service, Frontend, Mobile]
-lastUpdated: 2026-06-18
+lastUpdated: 2026-06-19
 ---
 
 # Service Specification — `api-gateway`
@@ -80,8 +80,8 @@ Local compose hiện có thể override `TICKET_SERVICE_URL=http://e-ticket-serv
 | `checkin-service-route` | `/api/checkin/**` | `checkin-service` | 5s response timeout |
 | `notification-service-sse-route` | `GET /api/notifications/stream` | `notification-service` | Response timeout disabled |
 | `notification-service-route` | `/api/notifications/**` | `notification-service` | 15s response timeout |
-| `ai-bio-upload-route` | `POST /api/ai-bio/concerts/*/jobs` | `ai-bio-service` | 60s response timeout, upload limit |
-| `ai-bio-service-route` | `/api/ai-bio/**` | `ai-bio-service` | 15s response timeout |
+| `ai-bio-upload-route` | `POST /api/ai-bio/concerts/*/jobs` | `ai-bio-service` | 60s response timeout, multipart upload limit 30MB, no path rewrite |
+| `ai-bio-service-route` | `/api/ai-bio/**` | `ai-bio-service` | 15s response timeout, no path rewrite |
 | `csv-ingestion-upload-route` | `POST /api/admin/csv-import` | `csv-ingestion-service` | 60s response timeout, upload limit |
 | `csv-ingestion-service-route` | `/api/admin/csv-import/**` | `csv-ingestion-service` | 15s response timeout |
 
@@ -168,7 +168,7 @@ Upload transport checks use `Content-Length` only:
 
 | Upload | Limit | Gateway error |
 | --- | ---: | --- |
-| AI Bio PDF job | 30MB | `413 PDF_TOO_LARGE` |
+| AI Bio multi-source job | 30MB | `413 SOURCE_TOO_LARGE` |
 | CSV import | 12MB | `413 FILE_TOO_LARGE` |
 
 Gateway-generated errors use:
@@ -195,7 +195,7 @@ Common Gateway error codes:
 | 401 | `UNAUTHORIZED`, `INVALID_TOKEN` |
 | 403 | `FORBIDDEN` |
 | 404 | `RESOURCE_NOT_FOUND` |
-| 413 | `PDF_TOO_LARGE`, `FILE_TOO_LARGE` |
+| 413 | `SOURCE_TOO_LARGE`, `FILE_TOO_LARGE` |
 | 429 | `RATE_LIMIT_EXCEEDED` |
 | 503 | `SERVICE_UNAVAILABLE` |
 | 500 | `INTERNAL_SERVER_ERROR` |

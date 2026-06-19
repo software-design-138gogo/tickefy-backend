@@ -1,10 +1,10 @@
 ---
 title: Backend Service Implementation and Integration Workflow
 status: DRAFT
-version: 1.1
+version: 1.2
 owner: BE Lead
 reviewers: []
-lastUpdated: 2026-06-17
+lastUpdated: 2026-06-19
 ---
 
 # Backend Service Implementation and Integration Workflow
@@ -104,6 +104,51 @@ Quy tắc:
 - Không hard-code `localhost`, password, secret.
 - Bật `/actuator/health`. Bật Swagger/OpenAPI (`/swagger-ui/index.html`).
 
+### Python/FastAPI service exception
+
+Một service mới được phép dùng Python/FastAPI nếu service đó độc lập về runtime và vẫn tuân thủ các contract chung của Tickefy.
+
+Áp dụng cho `ai-bio-service`:
+
+```text
+tickefy-backend/services/ai-bio-service/
+├── app/
+│   ├── api/
+│   ├── core/
+│   ├── domain/
+│   ├── infrastructure/
+│   ├── workers/
+│   └── main.py
+├── alembic/
+├── tests/
+├── pyproject.toml
+├── Dockerfile
+├── .dockerignore
+├── .env.example
+└── README.md
+```
+
+Python service vẫn bắt buộc:
+
+- Container port `8080`.
+- Health endpoint `/health`; nếu cần compatibility thì expose thêm `/actuator/health`.
+- OpenAPI endpoint `/openapi.json`; Swagger UI `/docs`.
+- Config qua environment variables, không hard-code host/secret.
+- Common API envelope.
+- JWT RS256 verification bằng public key.
+- Database-per-service schema, không cross-service FK.
+- RabbitMQ event envelope + outbox pattern.
+- Docker Compose dùng service name + container port `8080`.
+
+Migration tool cho Python service:
+
+```text
+Spring service: Flyway
+Python service: Alembic
+```
+
+Quy tắc database vẫn giữ nguyên: table/column `snake_case`, PK `UUID`, time `TIMESTAMPTZ`, không cross-service foreign key.
+
 ---
 
 ## 5. Đăng ký tài nguyên infrastructure của service
@@ -167,6 +212,44 @@ Mẫu `@Bean` (mỗi consumer service — khớp RabbitMqConfig thật của ord
 > Mẫu trên là chuẩn self-declare DLQ (order/inventory/e-ticket đều đã áp dụng). Cả 3 service consume `order.paid` dùng dead-letter rk theo tên queue riêng → DLQ tách biệt, không ô nhiễm chéo.
 
 > ⚠️ Queue đã tồn tại trên broker đang chạy KHÔNG đổi args được (RabbitMQ `PRECONDITION_FAILED`). Muốn thêm DLQ vào queue cũ → xóa queue cũ trước rồi để service redeclare.
+
+AI Bio dùng exchange chính `tickefy.exchange` và DLX `tickefy.dlx`:
+
+```text
+Producer: ai-bio-service
+Exchange: tickefy.exchange
+Routing key: concert.introduction.generated
+Event type: ConcertIntroductionGenerated
+Consumer: event-service
+Consumer queue: event-service.concert-introduction-generated.queue
+DLQ: event-service.concert-introduction-generated.queue.dlq
+DLX: tickefy.dlx
+DLQ routing key: event-service.concert-introduction-generated.dlq
+```
+
+Payload giữ envelope chuẩn:
+
+```json
+{
+  "messageId": "uuid",
+  "eventType": "ConcertIntroductionGenerated",
+  "eventVersion": "1.0",
+  "source": "ai-bio-service",
+  "occurredAt": "2026-06-19T08:05:00Z",
+  "correlationId": "req-123",
+  "causationId": null,
+  "payload": {
+    "jobId": "uuid",
+    "concertId": "uuid",
+    "introduction": "...",
+    "language": "vi",
+    "sourceDocumentIds": ["uuid"],
+    "sourceTypes": ["PDF", "DOCX"],
+    "requestedAt": "2026-06-19T08:00:00Z",
+    "generatedAt": "2026-06-19T08:05:00Z"
+  }
+}
+```
 
 ### 5.3. Redis — key pattern (nếu service dùng)
 

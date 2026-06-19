@@ -62,7 +62,7 @@ workspace "Tickefy - C4 Level 2" "Container template showing Tickefy application
                 notificationService = container "Notification Service" "Sends email and in-app notifications asynchronously." "Spring Boot"
                 ticketService = container "E-Ticket Service" "Issues ticket instances and QR tokens and manages ticket lifecycle." "Spring Boot"
                 checkinService = container "Check-in Service" "Verifies tickets, records check-ins, creates snapshots, and resolves offline-sync conflicts." "Spring Boot"
-                aiBioService = container "AI Bio Service" "Processes PDF press kits asynchronously and generates artist biographies." "Spring Boot/Python Worker"
+                aiBioService = container "AI Bio Service" "Processes multi-source concert inputs asynchronously and generates concert introductions." "Python/FastAPI"
                 csvService = container "CSV Ingestion Service" "Validates, deduplicates, and imports VIP guest CSV files in background jobs." "Spring Boot"
             }
 

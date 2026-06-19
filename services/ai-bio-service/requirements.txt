@@ -1,0 +1,33 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-multipart==0.0.20
+
+# HTTP client
+httpx==0.28.1
+
+# PostgreSQL / migrations
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.13
+alembic==1.14.0
+
+# RabbitMQ
+aio-pika==9.5.4
+
+# JWT RS256
+PyJWT[crypto]==2.10.1
+
+# Object storage
+boto3==1.35.90
+
+# Document parsing
+pypdf==5.1.0
+python-docx==1.1.2
+python-pptx==1.0.2
+markdown==3.7
+beautifulsoup4==4.12.3
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.0

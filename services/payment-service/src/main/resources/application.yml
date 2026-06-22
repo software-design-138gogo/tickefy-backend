@@ -49,6 +49,17 @@ management:
 app:
   database:
     schema: ${DB_SCHEMA:payment_service}
+  payment:
+    expiry: ${PAYMENT_EXPIRY:PT15M}
+    provider: MOCK_SEPAY
+    callback:
+      secret: ${SEPAY_WEBHOOK_SECRET:}
+  messaging:
+    exchange: ${APP_MESSAGING_EXCHANGE:tickefy.exchange}
+    outbox-poll-delay: ${OUTBOX_POLL_DELAY:3000}
+  dev:
+    payment-sim:
+      enabled: ${DEV_PAYMENT_SIM_ENABLED:false}
 
 logging:
   level:

@@ -25,6 +25,9 @@ public class Concert {
     @Column(name = "ai_introduction", columnDefinition = "TEXT")
     private String aiIntroduction;
 
+    @Column(name = "ai_introduction_updated_at")
+    private Instant aiIntroductionUpdatedAt;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "venue_id")
     private Venue venue;
@@ -78,6 +81,7 @@ public class Concert {
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public String getAiIntroduction() { return aiIntroduction; }
+    public Instant getAiIntroductionUpdatedAt() { return aiIntroductionUpdatedAt; }
     public Venue getVenue() { return venue; }
     public ConcertStatus getStatus() { return status; }
     public Instant getSaleStartAt() { return saleStartAt; }
@@ -93,6 +97,7 @@ public class Concert {
     public void setTitle(String title) { this.title = title; }
     public void setDescription(String description) { this.description = description; }
     public void setAiIntroduction(String aiIntroduction) { this.aiIntroduction = aiIntroduction; }
+    public void setAiIntroductionUpdatedAt(Instant aiIntroductionUpdatedAt) { this.aiIntroductionUpdatedAt = aiIntroductionUpdatedAt; }
     public void setVenue(Venue venue) { this.venue = venue; }
     public void setStatus(ConcertStatus status) { this.status = status; }
     public void setSaleStartAt(Instant saleStartAt) { this.saleStartAt = saleStartAt; }

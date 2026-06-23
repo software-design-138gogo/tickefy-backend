@@ -5,6 +5,7 @@ import com.tickefy.payment.common.response.ApiResponse;
 import com.tickefy.payment.modules.payment.dto.CallbackRequest;
 import com.tickefy.payment.modules.payment.service.PaymentService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,7 +24,7 @@ public class PaymentCallbackController {
 
     @PostMapping("/callback")
     public ApiResponse<Map<String, String>> callback(
-            @RequestBody CallbackRequest req, HttpServletRequest request) {
+            @Valid @RequestBody CallbackRequest req, HttpServletRequest request) {
         String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
         paymentService.handleCallback(req, false);
         return ApiResponse.success(Map.of("status", "ok"), requestId);

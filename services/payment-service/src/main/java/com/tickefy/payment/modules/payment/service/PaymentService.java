@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tickefy.payment.common.exception.ApiException;
 import com.tickefy.payment.common.exception.ErrorCode;
+import com.tickefy.payment.modules.payment.cache.PaymentIdempotencyCache;
 import com.tickefy.payment.modules.payment.dto.CallbackRequest;
 import com.tickefy.payment.modules.payment.dto.CreatePaymentRequest;
 import com.tickefy.payment.modules.payment.dto.CreatePaymentResponse;
@@ -17,6 +18,7 @@ import com.tickefy.payment.modules.payment.repository.OutboxRepository;
 import com.tickefy.payment.modules.payment.repository.PaymentTransactionRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
@@ -31,6 +33,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class PaymentService {
@@ -41,6 +45,7 @@ public class PaymentService {
     private final OutboxRepository outboxRepo;
     private final SePayClient sePayClient;
     private final ObjectMapper objectMapper;
+    private final PaymentIdempotencyCache idempotencyCache;
 
     @Value("${app.payment.expiry:PT15M}")
     private Duration paymentExpiry;
@@ -51,36 +56,57 @@ public class PaymentService {
     @Value("${app.payment.callback.secret:}")
     private String callbackSecret;
 
-    @Value("${app.dev.payment-sim.enabled:false}")
-    private boolean devSimEnabled;
+    @Value("${app.payment.callback.require-signature:false}")
+    private boolean requireSignature;
 
     public PaymentService(
             PaymentTransactionRepository txRepo,
             OutboxRepository outboxRepo,
             SePayClient sePayClient,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            PaymentIdempotencyCache idempotencyCache) {
         this.txRepo = txRepo;
         this.outboxRepo = outboxRepo;
         this.sePayClient = sePayClient;
         this.objectMapper = objectMapper;
+        this.idempotencyCache = idempotencyCache;
     }
 
     @Transactional
     public CreatePaymentResponse createTransaction(CreatePaymentRequest req) {
-        // Idempotency: return existing if key already exists
+        // Lớp A §2 bước 1: Redis fast-path
+        var cached = idempotencyCache.get(req.idempotencyKey());
+        if (cached.isPresent()) {
+            var txOpt = txRepo.findById(cached.get());
+            if (txOpt.isPresent()) {
+                PaymentTransaction tx = txOpt.get();
+                log.info(
+                        "Cache hit idempotency: key={} paymentId={}",
+                        req.idempotencyKey(),
+                        tx.getId());
+                Instant expiresAt = tx.getCreatedAt().plus(paymentExpiry);
+                return new CreatePaymentResponse(tx.getId(), null, null, expiresAt);
+            }
+            // stale cache entry (tx rolled back) → fall-through to DB
+            log.warn("Stale idempotency cache entry key={} paymentId={}, falling through to DB", req.idempotencyKey(), cached.get());
+        }
+
+        // §2 bước 2: DB-first dedup (giữ nguyên từ 2.5:71)
         var existing = txRepo.findByIdempotencyKey(req.idempotencyKey());
         if (existing.isPresent()) {
             PaymentTransaction tx = existing.get();
             log.info(
-                    "Idempotent createTransaction: key={} existing paymentId={}",
+                    "Idempotent createTransaction (DB hit): key={} existing paymentId={}",
                     req.idempotencyKey(),
                     tx.getId());
+            // populate-on-miss: ghi cache cho lần sau
+            idempotencyCache.put(req.idempotencyKey(), tx.getId());
             Instant expiresAt = tx.getCreatedAt().plus(paymentExpiry);
             return new CreatePaymentResponse(tx.getId(), null, null, expiresAt);
         }
 
         try {
-            // Create INITIATED record
+            // §2 bước 3: Tạo mới (giữ nguyên từ 2.5:82-111)
             UUID paymentId = UUID.randomUUID();
             PaymentTransaction tx =
                     PaymentTransaction.builder()
@@ -102,6 +128,22 @@ public class PaymentService {
             tx.setStatus(PaymentStatus.PENDING.name());
             txRepo.save(tx);
 
+            // Ghi cache afterCommit (TX boundary active tại đây — @Transactional :68)
+            // Nếu registerSynchronization ném IllegalStateException (không có TX active) → inline fallback
+            String idempotencyKey = req.idempotencyKey();
+            try {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        idempotencyCache.put(idempotencyKey, paymentId);
+                    }
+                });
+            } catch (IllegalStateException e) {
+                // Không có TX active (edge case) → inline put ngay (best-effort, self-heal qua DB)
+                log.warn("No active transaction for afterCommit registration, writing cache inline for key={}", idempotencyKey, e);
+                idempotencyCache.put(idempotencyKey, paymentId);
+            }
+
             Instant expiresAt = Instant.now().plus(paymentExpiry);
             log.info(
                     "createTransaction paymentId={} orderId={} gatewayOrderId={} status=PENDING",
@@ -111,9 +153,8 @@ public class PaymentService {
             return new CreatePaymentResponse(paymentId, qr.paymentUrl(), qr.qrCodePayload(), expiresAt);
 
         } catch (DataIntegrityViolationException ex) {
-            // Race on unique idempotency_key — re-read and return existing
-            log.warn(
-                    "Race condition on idempotency_key={}, re-reading", req.idempotencyKey());
+            // Race on unique idempotency_key — re-read and return existing (giữ từ 2.5:113-127)
+            log.warn("Race condition on idempotency_key={}, re-reading", req.idempotencyKey());
             PaymentTransaction tx =
                     txRepo.findByIdempotencyKey(req.idempotencyKey())
                             .orElseThrow(
@@ -122,6 +163,8 @@ public class PaymentService {
                                                     ErrorCode.INTERNAL_SERVER_ERROR,
                                                     "Failed to resolve idempotency race",
                                                     HttpStatus.INTERNAL_SERVER_ERROR));
+            // populate cache for next request
+            idempotencyCache.put(req.idempotencyKey(), tx.getId());
             Instant expiresAt = tx.getCreatedAt().plus(paymentExpiry);
             return new CreatePaymentResponse(tx.getId(), null, null, expiresAt);
         }
@@ -129,15 +172,12 @@ public class PaymentService {
 
     @Transactional
     public void handleCallback(CallbackRequest req, boolean bypassHmac) {
-        // 1. HMAC verification
-        if (!bypassHmac && !devSimEnabled) {
-            if (callbackSecret != null && !callbackSecret.isEmpty()) {
-                verifyHmac(req);
-            }
-            // If secret empty: skip verify (dev mode without explicit bypass)
+        // §4 bước 1: HMAC gate — tách devSim, gate chỉ dựa bypassHmac
+        if (!bypassHmac) {
+            verifyCallbackAuth(req);
         }
 
-        // 2. Find tx by gatewayOrderId
+        // 2. Find tx by gatewayOrderId (giữ từ 2.5:141-149)
         PaymentTransaction tx =
                 txRepo.findByGatewayOrderId(req.gatewayOrderId())
                         .orElseThrow(
@@ -148,7 +188,20 @@ public class PaymentService {
                                                         + req.gatewayOrderId(),
                                                 HttpStatus.NOT_FOUND));
 
-        // 3. State-guard: terminal states are no-op
+        // §4 bước 4: amount-check (sau khi tìm tx, trước transition)
+        if (req.amount() != null && !req.amount().equals(tx.getAmount())) {
+            log.warn(
+                    "callback amount mismatch tx={} expected={} got={}",
+                    tx.getId(),
+                    tx.getAmount(),
+                    req.amount());
+            throw new ApiException(
+                    ErrorCode.CALLBACK_AMOUNT_MISMATCH,
+                    "Callback amount does not match transaction amount",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        // §3: State-guard terminal states (giữ từ 2.5:152-161) — Lớp B replay dedup
         PaymentStatus currentStatus = PaymentStatus.valueOf(tx.getStatus());
         if (currentStatus == PaymentStatus.SUCCESS
                 || currentStatus == PaymentStatus.FAILED
@@ -160,7 +213,7 @@ public class PaymentService {
             return;
         }
 
-        // 4. Map status
+        // 4. Map status (giữ từ 2.5:164-170)
         PaymentStatus newStatus =
                 "SUCCESS".equalsIgnoreCase(req.status()) ? PaymentStatus.SUCCESS : PaymentStatus.FAILED;
 
@@ -185,9 +238,24 @@ public class PaymentService {
             log.warn("Failed to serialize gateway response", e);
         }
 
-        txRepo.save(tx);
+        // §3 Tầng 2: bắt unique vi phạm uq_payment_gateway_txn (2.5:188 + thêm catch)
+        try {
+            txRepo.save(tx);
+        } catch (DataIntegrityViolationException e) {
+            // Kiểm tra có phải vi phạm uq_payment_gateway_txn không
+            String msg = e.getMessage();
+            if (msg != null && msg.contains("uq_payment_gateway_txn")) {
+                log.info(
+                        "duplicate webhook (gateway_txn unique) gatewayTransactionId={} — no-op",
+                        req.gatewayTransactionId());
+                return; // KHÔNG insert outbox
+            }
+            // Lỗi unique khác → ném lại
+            throw e;
+        }
 
-        // 5. Insert outbox row in same TX
+        // 5. Insert outbox row in same TX (giữ từ 2.5:194-203)
+        // Chỉ đến đây nếu save(tx) thành công (không ném)
         String eventType = newStatus == PaymentStatus.SUCCESS ? "PaymentSucceeded" : "PaymentFailed";
         String innerPayload = buildInnerPayload(tx, newStatus);
 
@@ -214,9 +282,8 @@ public class PaymentService {
         try {
             ObjectNode payload = objectMapper.createObjectNode();
             payload.put("orderId", tx.getOrderId().toString());
-            // paymentTransactionId = tx.id (adjustment 1: use payment id, not gateway txn id)
+            // paymentTransactionId = tx.id (B2 contract giữ nguyên)
             payload.put("paymentTransactionId", tx.getId().toString());
-            // also include gatewayTransactionId as separate field if present
             if (tx.getGatewayTransactionId() != null) {
                 payload.put("gatewayTransactionId", tx.getGatewayTransactionId());
             }
@@ -239,7 +306,45 @@ public class PaymentService {
         }
     }
 
+    /**
+     * §4 bước 2: fail-closed HMAC auth gate.
+     * secret nonempty → LUÔN verify (dù require=false).
+     * require=true + secret rỗng → reject 503.
+     * require=false + secret rỗng → skip + log.warn (dev).
+     */
+    private void verifyCallbackAuth(CallbackRequest req) {
+        boolean secretEmpty = callbackSecret == null || callbackSecret.isEmpty();
+        if (!secretEmpty) {
+            // secret có → LUÔN verify (đóng fail-open 2.5)
+            verifyHmac(req);
+        } else if (requireSignature) {
+            // require=true + secret rỗng → fail-closed
+            log.error("callback secret missing but required (app.payment.callback.require-signature=true)");
+            throw new ApiException(
+                    ErrorCode.SERVICE_UNAVAILABLE,
+                    "callback secret missing but required",
+                    HttpStatus.SERVICE_UNAVAILABLE);
+        } else {
+            // require=false + secret rỗng → dev convenience skip
+            log.warn("HMAC verification skipped: callback secret not configured (dev mode)");
+        }
+    }
+
+    /**
+     * §4 bước 3: constant-time HMAC verify.
+     * sig null/empty/parse-fail → reject INVALID_CALLBACK_SIGNATURE 401.
+     */
     private void verifyHmac(CallbackRequest req) {
+        // §F.1 [CHỐT]: INVALID_CALLBACK_SIGNATURE → 401 (KHÔNG đổi 400)
+        String sig = req.signature();
+        if (sig == null || sig.isEmpty()) {
+            log.warn("HMAC verification failed: signature missing for gatewayOrderId={}", req.gatewayOrderId());
+            throw new ApiException(
+                    ErrorCode.INVALID_CALLBACK_SIGNATURE,
+                    "Invalid callback signature",
+                    HttpStatus.UNAUTHORIZED);
+        }
+
         // Build canonical message: gatewayOrderId|gatewayTransactionId|status|amount
         String message =
                 (req.gatewayOrderId() != null ? req.gatewayOrderId() : "")
@@ -255,8 +360,20 @@ public class PaymentService {
                     new SecretKeySpec(callbackSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             mac.init(keySpec);
             byte[] hmacBytes = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
-            String computed = HexFormat.of().formatHex(hmacBytes);
-            if (!computed.equalsIgnoreCase(req.signature())) {
+
+            // §4 bước 3: constant-time compare via MessageDigest.isEqual
+            byte[] parsedSig;
+            try {
+                parsedSig = HexFormat.of().parseHex(sig.toLowerCase());
+            } catch (IllegalArgumentException e) {
+                log.warn("HMAC verification failed: invalid signature format for gatewayOrderId={}", req.gatewayOrderId());
+                throw new ApiException(
+                        ErrorCode.INVALID_CALLBACK_SIGNATURE,
+                        "Invalid callback signature",
+                        HttpStatus.UNAUTHORIZED);
+            }
+
+            if (!MessageDigest.isEqual(hmacBytes, parsedSig)) {
                 log.warn("HMAC verification failed for gatewayOrderId={}", req.gatewayOrderId());
                 throw new ApiException(
                         ErrorCode.INVALID_CALLBACK_SIGNATURE,

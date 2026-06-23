@@ -19,6 +19,7 @@ from app.security.principal import CurrentUser
 from app.integrations.event_service_client import event_service_client
 from app.services.job_creation_service import job_creation_service
 from app.services.source_storage_service import source_storage_service
+from app.services.generation_service import generation_service
 from app.db.session import get_db
 from app.services.extraction_worker_service import extraction_worker_service
 
@@ -196,6 +197,23 @@ async def extract_job_sources_demo(
     db: Session = Depends(get_db),
 ):
     result = await extraction_worker_service.extract_job_sources(
+        db=db,
+        job_id=job_id,
+    )
+
+    return success_response(
+        data=result.model_dump(mode="json"),
+        request_id=request.state.request_id,
+    )
+
+@router.post("/_dev/jobs/{job_id}/generate")
+async def generate_job_introduction_demo(
+    job_id: UUID,
+    request: Request,
+    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    db: Session = Depends(get_db),
+):
+    result = await generation_service.generate_introduction(
         db=db,
         job_id=job_id,
     )

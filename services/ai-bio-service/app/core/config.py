@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     object_storage_bucket_ai_bio: str = "tickefy-ai-bio"
     object_storage_region: str = "us-east-1"
     object_storage_secure: bool = False
+    
+    # AI generation
+    ai_provider: str = "mock"
+    ai_model: str = "mock-concert-introduction-v1"
+    ai_max_context_chars: int = 12000
+    ai_min_output_chars: int = 80
+    ai_max_output_chars: int = 1200
 
     model_config = SettingsConfigDict(
         env_file=".env",

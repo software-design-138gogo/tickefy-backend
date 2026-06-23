@@ -21,6 +21,7 @@ public class ConcertResponse {
     private List<ZoneResponse> ticketTypes;
     private Instant createdAt;
     private Instant updatedAt;
+    private UUID organizerId;
 
     // --- Static factory ---
     public static ConcertResponse from(Concert concert) {
@@ -35,6 +36,7 @@ public class ConcertResponse {
         r.saleEndAt = concert.getSaleEndAt();
         r.createdAt = concert.getCreatedAt();
         r.updatedAt = concert.getUpdatedAt();
+        r.organizerId = concert.getCreatedBy();
 
         if (concert.getVenue() != null) {
             r.venue = VenueSummary.from(concert.getVenue());
@@ -60,6 +62,7 @@ public class ConcertResponse {
         r.status = concert.getStatus();
         r.eventDate = concert.getEventDate();
         r.saleStartAt = concert.getSaleStartAt();
+        r.organizerId = concert.getCreatedBy();
         if (concert.getVenue() != null) {
             r.venue = VenueSummary.from(concert.getVenue());
         }
@@ -138,4 +141,5 @@ public class ConcertResponse {
     public List<ZoneResponse> getTicketTypes() { return ticketTypes; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public UUID getOrganizerId() { return organizerId; }
 }

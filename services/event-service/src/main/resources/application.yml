@@ -60,3 +60,20 @@ logging:
   level:
     root: ${LOG_LEVEL:INFO}
     com.tickefy.event: ${LOG_LEVEL:INFO}
+
+spring.data.redis.host: ${REDIS_HOST:localhost}
+spring.data.redis.port: ${REDIS_PORT:6379}
+spring.data.redis.connect-timeout: 500ms
+spring.data.redis.timeout: 500ms
+
+app.cache.concert-detail.l1-max-size: 10000
+app.cache.concert-detail.l1-expire-minutes: 5
+app.cache.concert-detail.l2-ttl-hours: 24
+app.cache.concert-detail.l2-jitter-minutes: 120
+app.cache.concert-list.l2-ttl-minutes: 60
+app.cache.concert-list.l2-jitter-minutes: 10
+app.cache.null-result-ttl-seconds: 60
+app.cache.stampede.lock-wait-ms: 50
+app.cache.stampede.lock-lease-ms: 2000
+app.cache.stampede.max-retries: 40
+app.cache.invalidation-channel: cache:invalidation:concerts

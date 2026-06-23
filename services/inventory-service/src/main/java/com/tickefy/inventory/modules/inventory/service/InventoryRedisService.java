@@ -81,6 +81,9 @@ public class InventoryRedisService {
 
     /**
      * Compensate: undo a successful Lua reserve (DB write failed).
+     * WARNING: non-atomic — 2 separate increments; if Redis down the second op may fail after the first
+     * succeeds (stock returned but user-limit not decremented). Redis down → fail-safe (exception caught,
+     * logged); DB remains authoritative (reserved_qty already adjusted by DB query). Accept for now.
      */
     public void compensateReserve(UUID ticketTypeId, UUID userId, int qty) {
         try {

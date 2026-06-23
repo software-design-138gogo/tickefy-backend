@@ -25,6 +25,7 @@ from app.services.pipeline_worker_service import pipeline_worker_service
 from app.db.session import get_db
 from app.services.extraction_worker_service import extraction_worker_service
 from app.security.dev_guard import RequireDevEndpoint
+from app.services.job_query_service import job_query_service
 from app.services.job_retry_service import job_retry_service
 
 router = APIRouter(prefix="/api/ai-bio", tags=["ai-bio"])
@@ -79,7 +80,49 @@ async def retry_ai_bio_job(
         data=result.model_dump(mode="json"),
         request_id=request.state.request_id,
     )
-    
+
+
+@router.get("/jobs/{job_id}")
+async def get_ai_bio_job(
+    job_id: UUID,
+    request: Request,
+    current_user: CurrentUser = RequireAuthenticated,
+    db: Session = Depends(get_db),
+):
+    result = job_query_service.get_job(
+        db=db,
+        job_id=job_id,
+        current_user=current_user,
+    )
+
+    return success_response(
+        data=result.model_dump(mode="json"),
+        request_id=request.state.request_id,
+    )
+
+
+@router.get("/concerts/{concert_id}/jobs")
+async def list_ai_bio_jobs_by_concert(
+    concert_id: UUID,
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: CurrentUser = RequireAuthenticated,
+    db: Session = Depends(get_db),
+):
+    result = job_query_service.list_jobs_by_concert(
+        db=db,
+        concert_id=concert_id,
+        current_user=current_user,
+        limit=limit,
+        offset=offset,
+    )
+
+    return success_response(
+        data=result.model_dump(mode="json"),
+        request_id=request.state.request_id,
+    )
+
 
 @router.get("/_me")
 async def me(

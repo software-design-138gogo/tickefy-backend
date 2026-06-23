@@ -4,7 +4,7 @@ spring:
   profiles:
     default: dev
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy_csv_ingestion}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -14,14 +14,14 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        default_schema: ${DB_SCHEMA:public}
+        default_schema: ${DB_SCHEMA:csv_ingestion_service}
         format_sql: true
         jdbc:
           time_zone: ${APP_TIMEZONE:UTC}
   flyway:
     enabled: true
-    schemas: ${DB_SCHEMA:public}
-    default-schema: ${DB_SCHEMA:public}
+    schemas: ${DB_SCHEMA:csv_ingestion_service}
+    default-schema: ${DB_SCHEMA:csv_ingestion_service}
     locations: classpath:db/migration
 
 server:
@@ -39,7 +39,7 @@ management:
 
 app:
   database:
-    schema: ${DB_SCHEMA:public}
+    schema: ${DB_SCHEMA:csv_ingestion_service}
 
 logging:
   level:

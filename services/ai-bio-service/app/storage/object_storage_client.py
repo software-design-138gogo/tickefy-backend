@@ -48,5 +48,26 @@ class ObjectStorageClient:
                 details={"objectKey": object_key},
             ) from exc
 
+    async def get_bytes(
+        self,
+        *,
+        object_key: str,
+    ) -> bytes:
+        try:
+            response = await asyncio.to_thread(
+                self._client.get_object,
+                Bucket=self.settings.object_storage_bucket_ai_bio,
+                Key=object_key,
+            )
+            body = response["Body"]
+            return await asyncio.to_thread(body.read)
+        except (BotoCoreError, ClientError) as exc:
+            logger.exception("Object storage download failed")
+            raise DependencyUnavailableException(
+                code=ErrorCode.OBJECT_STORAGE_UNAVAILABLE,
+                message="Object storage is temporarily unavailable.",
+                details={"objectKey": object_key},
+            ) from exc
+
 
 object_storage_client = ObjectStorageClient()

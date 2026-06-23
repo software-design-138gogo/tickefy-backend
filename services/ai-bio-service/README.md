@@ -1,101 +1,159 @@
-# Tickefy AI Bio Service
+# AI Bio Service
 
-Tickefy AI Bio Service for the Tickefy backend system.
+A Python/FastAPI microservice that generates concert introductions from organizer-provided source documents using AI. Part of the Tickefy backend system.
 
-## 1. Responsibilities
+## Overview
 
-Responsible for AI artist bio jobs, PDF/text processing pipeline, generated bio status, and update contract with Event Service.
+`ai-bio-service` accepts source files (PDF, Markdown, TXT, DOCX, PPTX) uploaded by an Organizer or Admin, extracts text from them, builds a bounded context, and calls an AI provider (mock or OpenAI) to generate a concert introduction. The generated result is published as a `ConcertIntroductionGenerated` event via RabbitMQ, which `event-service` consumes and applies as the official public `concertIntroduction`.
 
-Current status:
+### Key characteristics
 
-- Spring Boot service skeleton is ready.
-- Real business logic is not implemented yet.
+- **Idempotent job creation** — each request requires an `Idempotency-Key` header to prevent duplicate jobs from network retries.
+- **Asynchronous processing** — the API returns `202 Accepted` immediately; a background worker handles extraction, generation, and publishing.
+- **Provider-agnostic** — supports a deterministic mock provider for local/dev and OpenAI (`gpt-5.4-mini`) for real generation.
+- **JWT RS256 auth** — verifies access tokens independently (does not trust gateway headers).
 
-## 2. Tech Stack
+### End-to-end flow
 
-- Java 25 LTS
-- Spring Boot 3.x
-- Maven Wrapper
-- PostgreSQL
-- Spring Data JPA / Hibernate
-- Flyway
-- Swagger/OpenAPI
-- Spring Boot Actuator
-- Global exception handler
-- Request ID logging
-- Docker multi-stage build
-- Spotless formatting
+```
+Client → API Gateway → ai-bio-service (create job + upload files)
+  → event-service (validate concert via internal API)
+  → Object Storage (store source files)
+  → Worker (extract text → build context → call AI → validate output)
+  → RabbitMQ (publish ConcertIntroductionGenerated)
+  → event-service consumer (apply introduction to concert)
+```
 
-## 3. Service Metadata
+## Prerequisites
 
-| Item | Value |
-|---|---|
-| Service name | ai-bio-service |
-| Spring application name | ai-bio-service |
-| Default port | 8089 |
-| Database name | tickefy_ai_bio |
-| Java package | com.tickefy.aibio |
-| Docker image | tickefy/ai-bio-service |
+- **Python 3.12+**
+- **PostgreSQL** — schema `ai_bio_schema`
+- **MinIO / S3** — bucket `tickefy-ai-bio`
+- **RabbitMQ** — exchange `tickefy.exchange`
+- **RS256 public key** — for JWT verification (place at `keys/public.pem`)
+- **event-service** running (or a mock) — for concert validation via `GET /internal/concerts/{concertId}/ai-context`
 
-## 4. Local Development
+## Getting started
 
-Linux/macOS:
+### 1. Setup environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Configure
 
 ```bash
 cp .env.example .env
-./mvnw test
-./mvnw clean package
-./mvnw spring-boot:run
+# Edit .env with your local settings (DB, MinIO, RabbitMQ, etc.)
 ```
 
-Windows PowerShell:
+Key environment variables:
 
-```powershell
-Copy-Item .env.example .env
-.\mvnw.cmd test
-.\mvnw.cmd clean package
-.\mvnw.cmd spring-boot:run
-```
+| Variable | Description | Example |
+|---|---|---|
+| `DB_HOST` / `DB_PORT` | PostgreSQL connection | `localhost` / `5432` |
+| `DB_SCHEMA` | Database schema | `ai_bio_schema` |
+| `OBJECT_STORAGE_ENDPOINT` | MinIO/S3 endpoint | `http://localhost:9000` |
+| `RABBITMQ_HOST` | RabbitMQ host | `localhost` |
+| `EVENT_SERVICE_URL` | Event service base URL | `http://localhost:8092` |
+| `JWT_PUBLIC_KEY_PATH` | Path to RS256 public key | `/app/keys/public.pem` |
+| `AI_PROVIDER` | `mock` or `openai` | `mock` |
+| `OPENAI_API_KEY` | Required when `AI_PROVIDER=openai` | *(never commit)* |
+| `WORKER_ENABLED` | Enable background job processing | `true` |
+| `DEV_ENDPOINTS_ENABLED` | Enable dev/debug endpoints | `false` |
 
-## 5. Useful Endpoints
-
-```http
-GET /actuator/health
-GET /health
-GET /swagger-ui/index.html
-GET /v3/api-docs
-```
-
-## 6. Environment Variables
-
-See `.env.example`.
-
-Local PostgreSQL/Redis/RabbitMQ are managed by the external `tickefy-infrastructure` repository. When running services with Maven on the host machine, use localhost-based values from `.env.example`.
-
-Important values:
-
-```env
-SERVICE_NAME=ai-bio-service
-DB_NAME=tickefy
-DB_SCHEMA=ai_bio_service
-```
-
-## 7. Docker
+### 3. Run database migrations
 
 ```bash
-docker build -t tickefy/ai-bio-service .
-docker run --rm -p 8089:8089 --env-file .env tickefy/ai-bio-service
+alembic upgrade head
 ```
 
-## 8. Development Rule
+### 4. Start the service
 
-No spec, no code.
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8090 --reload
+```
 
-Before implementing real service logic, update or confirm the related spec and contract.
+The service listens on port `8080` inside Docker, or `8090` for local debugging by convention.
 
-## 9. TODO
+## Running modes
 
-- Confirm service API contract.
-- Add service-specific database migrations.
-- Add OpenAPI contract for service APIs.
-- Implement service business logic after spec approval.
+| Mode | `WORKER_ENABLED` | `DEV_ENDPOINTS_ENABLED` | `AI_PROVIDER` | Use case |
+|---|:---:|:---:|---|---|
+| Manual debug | `false` | `true` | `mock` or `openai` | Step through pipeline manually via dev endpoints |
+| Normal local Docker | `true` | `false` | `mock` | Standard demo with automatic processing |
+| Real AI demo | `true` | `false` | `openai` | Demo with actual AI generation |
+| Safe idle | `false` | `false` | `mock` | Service up but no processing |
+
+## API summary
+
+### Public APIs (via Gateway at `/api/ai-bio`)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/ai-bio/concerts/{concertId}/jobs` | Create a generation job (multipart, requires `Idempotency-Key`) |
+| `GET` | `/api/ai-bio/jobs/{jobId}` | Get job status and generated result |
+| `GET` | `/api/ai-bio/concerts/{concertId}/jobs` | List jobs for a concert |
+| `POST` | `/api/ai-bio/jobs/{jobId}/retry` | Retry a failed job |
+
+### Dev-only APIs (requires `DEV_ENDPOINTS_ENABLED=true`)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/ai-bio/_dev/jobs/{jobId}/extract` | Manually run extraction |
+| `POST` | `/api/ai-bio/_dev/jobs/{jobId}/generate` | Manually run generation |
+| `POST` | `/api/ai-bio/_dev/outbox/publish` | Manually publish pending outbox events |
+| `POST` | `/api/ai-bio/_dev/jobs/{jobId}/run-pipeline` | Run full pipeline for one job |
+| `POST` | `/api/ai-bio/_dev/jobs/run-next-pending` | Run pipeline for next pending job |
+
+## Health checks
+
+```bash
+curl http://localhost:8090/health
+curl http://localhost:8090/actuator/health
+curl http://localhost:8090/livez
+curl http://localhost:8090/readyz
+```
+
+## OpenAPI docs
+
+```
+http://localhost:8090/swagger-ui/index.html
+http://localhost:8090/v3/api-docs
+```
+
+## Quick test (via Gateway)
+
+```bash
+# 1. Create a job
+CONCERT_ID=<concert-id>
+IDEMPOTENCY_KEY="ai-bio-test-$(date +%s)"
+
+curl -X POST "http://localhost:8080/api/ai-bio/concerts/$CONCERT_ID/jobs" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  -F "language=vi" \
+  -F "targetLength=SHORT" \
+  -F "tone=ENERGETIC" \
+  -F "files=@/tmp/press-kit.txt;type=text/plain"
+
+# 2. Check job status
+JOB_ID=<job-id-from-response>
+
+curl "http://localhost:8080/api/ai-bio/jobs/$JOB_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+## E2E verification
+
+```bash
+CONCERT_ID=<real-concert-id> RUN_MODE=worker ./scripts/verify-ai-bio-e2e.sh
+```
+
+## Further reading
+
+- [Service specification](../../docs/contracts/services/ai-bio-service.md) — full API contract, data model, configuration reference, and error codes.
+- [End-to-end flow](../../docs/contracts/flows/ai-bio-flow.md) — detailed sequence diagrams, state machine, and failure paths.

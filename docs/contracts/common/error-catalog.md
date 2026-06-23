@@ -1,10 +1,10 @@
 ---
 title: Error Catalog
 status: ACCEPTED
-version: 1.0
+version: 1.1
 owner: BE Lead (Hiệp)
 reviewers: [Dương, Hòa, Hoàng]
-lastUpdated: 2026-06-16
+lastUpdated: 2026-06-19
 ---
 
 # Error Catalog — Tickefy (SSOT mã lỗi)
@@ -88,22 +88,32 @@ Dùng `CONCERT_NOT_FOUND` cho concert sai/không tồn tại. Bổ sung khi merg
 ### `ai-bio-service` (Hoàng)
 | Ref | HTTP | Code | Message | Khi xảy ra | Client action |
 |---|---:|---|---|---|---|
-| ERR-AIBIO-001 | 400 | `PDF_FILE_REQUIRED` | Cần ít nhất một file PDF. | Upload không có `files[]` hợp lệ | Chọn lại file |
-| ERR-AIBIO-002 | 415 | `INVALID_PDF_TYPE` | File phải là PDF hợp lệ. | MIME hoặc magic bytes không phải PDF | Chọn file PDF đúng |
-| ERR-AIBIO-003 | 413 | `PDF_TOO_LARGE` | File PDF vượt quá giới hạn dung lượng. | Vượt per-file hoặc total upload limit | Giảm số lượng/kích thước file |
-| ERR-AIBIO-004 | 404 | `CONCERT_NOT_FOUND` | Không tìm thấy concert. | Event Service báo concert không tồn tại | Refresh/chọn concert khác |
-| ERR-AIBIO-005 | 403 | `CONCERT_ACCESS_DENIED` | Không có quyền thao tác với concert này. | Organizer không sở hữu concert | Forbidden |
-| ERR-AIBIO-006 | 503 | `EVENT_SERVICE_UNAVAILABLE` | Event Service tạm thời không khả dụng. | Không validate được concert/ownership | Retry/backoff |
-| ERR-AIBIO-007 | 409 | `AI_BIO_JOB_ALREADY_ACTIVE` | Concert đang có job AI Bio đang xử lý. | Đã có job `PENDING` hoặc `PROCESSING` | Poll job hiện tại |
-| ERR-AIBIO-008 | 409 | `AI_BIO_JOB_NOT_RETRYABLE` | Job này không thể retry. | Retry job `SUCCEEDED` hoặc không retryable | Tạo job mới nếu cần regenerate |
-| ERR-AIBIO-009 | 422 | `NO_USABLE_DOCUMENT_CONTENT` | Không tìm thấy nội dung dùng được trong PDF. | Tất cả PDF rỗng/password-protected/không extract được text | Upload tài liệu khác |
-| ERR-AIBIO-010 | 422 | `PDF_PASSWORD_PROTECTED` | PDF được bảo vệ bằng mật khẩu. | Tài liệu không đọc được do password | Upload file không khóa |
-| ERR-AIBIO-011 | 503 | `OBJECT_STORAGE_UNAVAILABLE` | Kho lưu trữ tạm thời không khả dụng. | Không upload/read được PDF object | Retry/backoff |
-| ERR-AIBIO-012 | 503 | `AI_PROVIDER_TIMEOUT` | AI Provider phản hồi quá lâu. | Provider timeout sau retry policy | Retry sau |
-| ERR-AIBIO-013 | 429 | `AI_PROVIDER_RATE_LIMITED` | AI Provider đang giới hạn tần suất. | Provider trả 429 | Retry theo backoff |
-| ERR-AIBIO-014 | 503 | `AI_PROVIDER_AUTH_FAILED` | Cấu hình AI Provider không hợp lệ. | API key/provider auth sai | Ops kiểm tra cấu hình |
-| ERR-AIBIO-015 | 422 | `AI_OUTPUT_INVALID` | Kết quả AI không hợp lệ. | Output rỗng hoặc không qua validation | Retry/regenerate |
-| ERR-AIBIO-016 | 503 | `AI_JOB_PROCESSING_TIMEOUT` | Job xử lý quá thời gian cho phép. | Worker/attempt vượt maximum duration | Retry hoặc ops kiểm tra |
+| ERR-AIBIO-001 | 400 | `SOURCE_REQUIRED` | Cần ít nhất một nguồn đầu vào hợp lệ. | Không có `files[]` hoặc `sourceUrls[]`. | Chọn file hoặc nhập URL. |
+| ERR-AIBIO-002 | 415 | `UNSUPPORTED_SOURCE_TYPE` | Loại nguồn đầu vào chưa được hỗ trợ. | Extension/MIME không nằm trong allowlist hoặc image/URL khi Phase 2 chưa bật. | Chọn loại file được hỗ trợ. |
+| ERR-AIBIO-003 | 415 | `INVALID_SOURCE_TYPE` | Loại file không khớp nội dung thực tế. | MIME/magic bytes không khớp extension hoặc file giả mạo. | Chọn file hợp lệ. |
+| ERR-AIBIO-004 | 413 | `SOURCE_TOO_LARGE` | Nguồn đầu vào vượt giới hạn dung lượng. | Vượt per-file, total upload hoặc URL download limit. | Giảm kích thước/số lượng nguồn. |
+| ERR-AIBIO-005 | 404 | `CONCERT_NOT_FOUND` | Không tìm thấy concert. | Event Service báo concert không tồn tại. | Refresh/chọn concert khác. |
+| ERR-AIBIO-006 | 403 | `CONCERT_ACCESS_DENIED` | Không có quyền thao tác với concert này. | Organizer không sở hữu concert. | Forbidden. |
+| ERR-AIBIO-007 | 503 | `EVENT_SERVICE_UNAVAILABLE` | Event Service tạm thời không khả dụng. | Không validate được concert/ownership. | Retry/backoff. |
+| ERR-AIBIO-008 | 409 | `AI_BIO_JOB_ALREADY_ACTIVE` | Concert đang có job AI Bio đang xử lý. | Đã có job `PENDING` hoặc `PROCESSING`. | Poll job hiện tại. |
+| ERR-AIBIO-009 | 409 | `AI_BIO_JOB_NOT_RETRYABLE` | Job này không thể retry. | Retry job `SUCCEEDED`, job không retryable hoặc vượt max retry. | Tạo job mới nếu muốn regenerate. |
+| ERR-AIBIO-010 | 422 | `NO_USABLE_SOURCE_CONTENT` | Không tìm thấy nội dung dùng được trong nguồn đầu vào. | Tất cả source rỗng, không đọc được hoặc không extract được text. | Upload nguồn khác. |
+| ERR-AIBIO-011 | 422 | `DOCUMENT_PASSWORD_PROTECTED` | Tài liệu được bảo vệ bằng mật khẩu. | PDF/DOCX/PPTX không đọc được do password/protection. | Upload file không khóa. |
+| ERR-AIBIO-012 | 503 | `OBJECT_STORAGE_UNAVAILABLE` | Kho lưu trữ tạm thời không khả dụng. | Không upload/read được source object. | Retry/backoff. |
+| ERR-AIBIO-013 | 503 | `AI_PROVIDER_TIMEOUT` | AI Provider phản hồi quá lâu. | Provider timeout sau retry policy. | Retry sau. |
+| ERR-AIBIO-014 | 429 | `AI_PROVIDER_RATE_LIMITED` | AI Provider đang giới hạn tần suất. | Provider trả 429. | Retry theo backoff. |
+| ERR-AIBIO-015 | 503 | `AI_PROVIDER_AUTH_FAILED` | Cấu hình AI Provider không hợp lệ. | API key/provider auth sai. | Ops kiểm tra cấu hình. |
+| ERR-AIBIO-016 | 422 | `AI_OUTPUT_INVALID` | Kết quả AI không hợp lệ. | Output empty, quá dài, sai language hoặc vi phạm schema. | Retry/regenerate. |
+| ERR-AIBIO-017 | 400 | `URL_NOT_ALLOWED` | URL không được phép sử dụng. | URL dùng scheme không hợp lệ, private IP, localhost, metadata IP hoặc redirect không an toàn. | Dùng URL công khai hợp lệ. |
+| ERR-AIBIO-018 | 503 | `URL_FETCH_FAILED` | Không lấy được nội dung từ URL. | URL timeout, DNS lỗi, response quá lớn hoặc content-type không hợp lệ. | Upload file thay thế hoặc thử lại. |
+
+Compatibility note:
+
+- `PDF_FILE_REQUIRED` → thay bằng `SOURCE_REQUIRED`.
+- `INVALID_PDF_TYPE` → thay bằng `UNSUPPORTED_SOURCE_TYPE` hoặc `INVALID_SOURCE_TYPE`.
+- `PDF_TOO_LARGE` → thay bằng `SOURCE_TOO_LARGE`.
+- `PDF_PASSWORD_PROTECTED` → thay bằng `DOCUMENT_PASSWORD_PROTECTED`.
+- `NO_USABLE_DOCUMENT_CONTENT` → thay bằng `NO_USABLE_SOURCE_CONTENT`.
 
 ### `ticket-service` / `checkin-service` / snapshot / sync (Hòa)
 

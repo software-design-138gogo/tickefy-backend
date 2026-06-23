@@ -1,57 +1,64 @@
 ---
-title: Flow Specification - AI Bio Concert Introduction
-status: DRAFT
-version: 1.0
+title: Flow - AI Bio Service End-to-End
+status: IMPLEMENTED_LOCAL
+version: 3.0
 owner: Hoàng
-reviewers: [BE Lead, Event Service, Frontend]
-lastUpdated: 2026-06-17
+lastUpdated: 2026-06-23
 ---
 
-# Flow Specification — `AI Bio Concert Introduction`
+# Flow — AI Bio End-to-End
 
-## 1. Goal
+## 1. Purpose
 
-Flow này mô tả cách Organizer/Admin upload một hoặc nhiều PDF để AI Bio Service sinh phần giới thiệu ngắn gọn cho trang chi tiết concert.
+This flow describes how Tickefy generates a public concert introduction from organizer-provided source documents.
 
-Kết quả cuối cùng mong muốn:
+The AI Bio flow covers:
 
-- Request upload được validate an toàn và tạo background job idempotent.
-- PDF được lưu trong private Object Storage, không expose public URL.
-- Worker extract, clean, deduplicate và tổng hợp nội dung PDF thành concert context.
-- AI Provider tạo đúng một `concertIntroduction` hợp lệ.
-- `ai-bio-service` lưu kết quả và publish `ConcertIntroductionGenerated` bằng outbox.
-- `event-service` consume event idempotent, cập nhật introduction của concert và invalidate cache public detail.
-- Lỗi AI/PDF không ảnh hưởng đến luồng xem concert, mua vé hoặc thanh toán.
+```text
+Organizer/Admin
+-> API Gateway
+-> AI Bio Service
+-> Event Service AI context
+-> Object Storage
+-> AI Bio Worker
+-> AI Provider
+-> AI Bio Outbox
+-> RabbitMQ
+-> Event Service Consumer
+-> Public concertIntroduction
+```
 
-## 2. Participants
+The official public `concertIntroduction` is owned by `event-service`. `ai-bio-service` generates the candidate and publishes an event. `event-service` decides whether and how to apply it.
 
-| Participant | Responsibility |
+## 2. Actors and components
+
+| Component | Role |
 |---|---|
-| Organizer/Admin web | Upload PDF, gửi `Idempotency-Key`, poll trạng thái job |
-| API Gateway | Verify JWT cơ bản ở biên hệ thống khi gateway live; route `/api/ai-bio/**`; forward `Authorization`, `X-Request-ID`, `Idempotency-Key` |
-| `ai-bio-service` | Validate upload, quản lý job, xử lý PDF, gọi AI Provider, publish result event |
-| `event-service` | Cung cấp concert AI context và nhận introduction đã generate |
-| Object Storage | Lưu private source PDF bằng generated object key |
-| PostgreSQL | Source of truth cho jobs, documents, attempts, idempotency và outbox của AI Bio |
-| AI Bio worker | Claim job `PENDING`, xử lý các stage và lưu kết quả |
-| AI Provider | Sinh `concertIntroduction` từ cleaned concert context |
-| RabbitMQ | Durable delivery cho `ConcertIntroductionGenerated` |
+| Organizer/Admin Web | Uploads press kit/source files and checks job status. |
+| API Gateway | Public entry point, JWT verification at edge, rate limiting, request forwarding. |
+| Auth Service | Issues RS256 JWTs with `sub`, `roles`, `iss`, `aud`. |
+| AI Bio Service | Owns AI generation job, source validation, extraction, provider call, outbox. |
+| Event Service | Owns official concert data and public `concertIntroduction`. |
+| Object Storage / MinIO | Stores private uploaded source files. |
+| PostgreSQL | Stores AI Bio jobs/extractions/outbox and Event Service concert data. |
+| RabbitMQ | Delivers `ConcertIntroductionGenerated` event. |
+| AI Provider | Mock provider for dev or OpenAI for real generation. |
 
 ## 3. Preconditions
 
-- User đã đăng nhập với role `ORGANIZER` hoặc `ADMIN`.
-- Organizer sở hữu concert, hoặc user là `ADMIN`.
-- API Gateway verify JWT cơ bản nếu request đi qua Gateway; `ai-bio-service` vẫn tự verify lại JWT access token theo Auth Contract và không tin `X-User-*` header để phân quyền.
-- Concert tồn tại trong `event-service` và đang ở trạng thái `DRAFT` hoặc `PUBLISHED`.
-- Gateway route `/api/ai-bio/**` đã cấu hình nếu client đi qua gateway; trong dev có thể gọi trực tiếp `ai-bio-service`.
-- `ai-bio-service` có kết nối PostgreSQL, Object Storage, RabbitMQ và AI Provider.
-- Upload gồm 1-5 file PDF, tối đa 10 MB/file và 25 MB tổng.
-- Client gửi header `Idempotency-Key` ổn định cho request tạo job theo contract riêng của `ai-bio-service`.
-- RabbitMQ exchange `tickefy.events`, routing key `concert.introduction.generated`, queue consumer và DLQ đã configured.
+- Client has a valid access token.
+- Token contains `sub` and roles such as `ORGANIZER` or `ADMIN`.
+- Gateway route `/api/ai-bio/**` points to `http://ai-bio-service:8080`.
+- `ai-bio-service` verifies JWT again with RS256 public key.
+- `event-service` exposes `GET /internal/concerts/{concertId}/ai-context`.
+- Concert exists and is in a status that allows AI Bio generation, currently `DRAFT` or `PUBLISHED`.
+- Organizer owns the concert, or user is `ADMIN`.
+- MinIO/S3 bucket exists.
+- RabbitMQ exchange `tickefy.exchange` exists.
+- Event Service consumer queue is bound to `concert.introduction.generated`.
+- Client sends a stable `Idempotency-Key`.
 
 ## 4. Trigger
-
-Organizer/Admin gọi:
 
 ```http
 POST /api/ai-bio/concerts/{concertId}/jobs
@@ -63,11 +70,14 @@ Content-Type: multipart/form-data
 
 Multipart fields:
 
-- `files[]`: 1-5 PDF source documents.
-- `language`: optional, mặc định theo cấu hình hoặc concert locale.
-- `targetLength`: optional, giới hạn độ dài mong muốn.
+| Field | Required | Notes |
+|---|---:|---|
+| `files` | Yes in Phase 1 | 1–5 files; allowed: PDF, MD, TXT, DOCX, PPTX. |
+| `language` | No | Default `vi`. |
+| `targetLength` | No | Default `SHORT`. |
+| `tone` | No | Optional style such as `ENERGETIC`, `PROFESSIONAL`, `LUXURY`, `FRIENDLY`. |
 
-## 5. Happy path
+## 5. Happy path sequence
 
 ```mermaid
 sequenceDiagram
@@ -77,222 +87,441 @@ sequenceDiagram
     participant AiBio as ai-bio-service
     participant Event as event-service
     participant Store as Object Storage
-    participant DB as AI Bio DB
+    participant DB as PostgreSQL
     participant Worker as AI Bio Worker
-    participant Publisher as Outbox Publisher
     participant AI as AI Provider
     participant MQ as RabbitMQ
+    participant Consumer as Event Service Consumer
 
-    Client->>Gateway: POST /api/ai-bio/concerts/{concertId}/jobs
-    Gateway->>Gateway: Verify JWT signature/exp/issuer/audience
+    Client->>Gateway: POST /api/ai-bio/concerts/{concertId}/jobs multipart
+    Gateway->>Gateway: Verify JWT and apply rate limit
     Gateway->>AiBio: Forward Authorization, X-Request-ID, Idempotency-Key
-    AiBio->>AiBio: Verify JWT, extract sub/roles, validate role
-    AiBio->>DB: Check idempotency record before side effects
-    AiBio->>AiBio: Validate multipart limits, MIME and magic bytes
+    AiBio->>AiBio: Verify JWT RS256 and require Organizer/Admin
+    AiBio->>DB: Check idempotency record
+    AiBio->>AiBio: Validate files count/type/size/magic bytes
     AiBio->>Event: GET /internal/concerts/{concertId}/ai-context with Bearer token
-    Event-->>AiBio: Concert snapshot, owner, status, introduction timestamps
-    AiBio->>AiBio: Authorize owner/admin and allowed status
-    AiBio->>Store: Upload private PDF objects
-    AiBio->>DB: Create job PENDING, source documents, idempotency record
+    Event-->>AiBio: Concert snapshot, organizerId, status, introduction timestamps
+    AiBio->>AiBio: Check owner/admin and allowed concert status
+    AiBio->>Store: Upload source files to private generated object keys
+    AiBio->>DB: Insert job + source_documents + idempotency record
     AiBio-->>Client: 202 Accepted with jobId
 
-    Worker->>DB: Atomic claim PENDING job
-    Worker->>DB: Set PROCESSING and create attempt
-    Worker->>Worker: Extract text, clean, deduplicate, build context
-    Worker->>AI: Generate concertIntroduction
-    AI-->>Worker: Candidate introduction
-    Worker->>Worker: Validate output
-    Worker->>DB: Save introduction, mark SUCCEEDED, create outbox event
-    Publisher->>DB: Poll pending outbox event
-    Publisher->>MQ: Publish ConcertIntroductionGenerated from outbox
-    MQ-->>Event: Deliver ConcertIntroductionGenerated
-    Event->>Event: Dedup messageId/jobId and guard manual newer content
-    Event->>Event: Update concert introduction and invalidate cache
-    Client->>AiBio: GET /api/ai-bio/jobs/{jobId}
-    AiBio-->>Client: Job SUCCEEDED with generated candidate
+    Worker->>DB: Claim PENDING job
+    Worker->>Store: Download source files
+    Worker->>Worker: Extract text from TXT/MD/PDF/DOCX/PPTX
+    Worker->>DB: Save document_extractions and source statuses
+    Worker->>Worker: Build bounded AI context
+    Worker->>AI: Generate concert introduction
+    AI-->>Worker: Introduction text
+    Worker->>Worker: Validate output length/content
+    Worker->>DB: Mark job SUCCEEDED + create outbox event
+    Worker->>MQ: Publish ConcertIntroductionGenerated
+    Worker->>DB: Mark outbox PUBLISHED
+    MQ-->>Consumer: Deliver ConcertIntroductionGenerated
+    Consumer->>DB: Dedup messageId and apply introduction if safe
+    Consumer->>DB: Update event_service.concerts.concert_introduction
+    Client->>Gateway: GET /api/ai-bio/jobs/{jobId}
+    Gateway->>AiBio: Forward request
+    AiBio-->>Client: Job SUCCEEDED with generatedIntroduction
 ```
 
-## 6. Step-by-step
+## 6. Detailed step-by-step
 
-| Step | From | To | Sync/Async | Contract | State change |
-|---:|---|---|---|---|---|
-| 1 | Organizer/Admin web | API Gateway | Sync HTTP | `POST /api/ai-bio/concerts/{concertId}/jobs` multipart | None |
-| 2 | API Gateway | `ai-bio-service` | Sync HTTP | Verify JWT signature/exp/issuer/audience, then forward `Authorization: Bearer`, `X-Request-ID`, `Idempotency-Key`; no trusted `X-User-*` | None |
-| 3 | `ai-bio-service` | `ai-bio-service` | Sync local | Verify JWT by RS256, extract `sub`/roles, require `ORGANIZER` or `ADMIN` | Reject before job if invalid |
-| 4 | `ai-bio-service` | PostgreSQL | Sync DB read | Lookup `createdBy + Idempotency-Key` before downstream call/upload | Replay returns existing job; no new side effect |
-| 5 | `ai-bio-service` | `ai-bio-service` | Sync local | Validate PDF count/type/size/magic bytes | Reject before job if invalid |
-| 6 | `ai-bio-service` | `event-service` | Sync HTTP | `GET /internal/concerts/{concertId}/ai-context`, forward Bearer token and `X-Request-ID` | None |
-| 7 | `ai-bio-service` | `ai-bio-service` | Sync local | Check owner/admin and allowed status `DRAFT`/`PUBLISHED` from AI context | Reject before job if forbidden/conflict |
-| 8 | `ai-bio-service` | Object Storage | Sync infra | Store private PDF objects | Source objects created |
-| 9 | `ai-bio-service` | PostgreSQL | Sync DB transaction | Insert job, source documents, idempotency record | Job `PENDING` |
-| 10 | `ai-bio-service` | Organizer/Admin web | Sync HTTP | Common API envelope, `202 Accepted` | Client receives `jobId` |
-| 11 | AI Bio worker | PostgreSQL | Async worker | Atomic claim `PENDING -> PROCESSING` | Job `PROCESSING`, attempt started |
-| 12 | AI Bio worker | Source documents | Async local | Extract text from PDF | Document extracted text stored or warning recorded |
-| 13 | AI Bio worker | AI Bio worker | Async local | Clean, normalize, deduplicate, build context | Processing stage advances |
-| 14 | AI Bio worker | AI Provider | Sync external | Provider-specific API | Candidate introduction returned |
-| 15 | AI Bio worker | PostgreSQL | Sync DB transaction | Validate output, save result, create outbox record | Job `SUCCEEDED`, outbox `PENDING` |
-| 16 | Outbox publisher | RabbitMQ | Async event | `ConcertIntroductionGenerated`, routing key `concert.introduction.generated` | Outbox marked published after broker confirm |
-| 17 | RabbitMQ | `event-service` | Async event | Common event envelope + AI Bio payload contract | Event Service dedup record written |
-| 18 | `event-service` | Event Service DB/cache | Sync local | Apply introduction if no newer manual edit | Concert introduction updated, cache invalidated |
-| 19 | Organizer/Admin web | `ai-bio-service` | Sync HTTP | `GET /api/ai-bio/jobs/{jobId}` | Client sees latest job status |
+| Step | Actor | Action | Data/state |
+|---:|---|---|---|
+| 1 | Client | Sends multipart create-job request through Gateway. | `Authorization`, `Idempotency-Key`, source files. |
+| 2 | Gateway | Matches `/api/ai-bio/**` route and forwards request. | No path rewrite. |
+| 3 | AI Bio | Verifies JWT using RS256 public key. | Extracts `sub`, `email`, `roles`. |
+| 4 | AI Bio | Requires `ORGANIZER` or `ADMIN`. | Rejects unauthorized/forbidden request. |
+| 5 | AI Bio | Checks `idempotency_records`. | Same key + same request returns stored response. |
+| 6 | AI Bio | Validates source files. | Rejects unsupported, too large, invalid magic bytes. |
+| 7 | AI Bio | Calls Event Service AI context API. | Gets concert name, organizer id, status and timestamps. |
+| 8 | AI Bio | Checks ownership/status. | Owner or Admin; concert `DRAFT`/`PUBLISHED`. |
+| 9 | AI Bio | Uploads files to Object Storage. | Key: `ai-bio/{concertId}/jobs/{jobId}/sources/{sourceId}.{ext}`. |
+| 10 | AI Bio | Inserts job and sources in PostgreSQL. | Job becomes `PENDING/RECEIVED`. |
+| 11 | AI Bio | Returns `202 Accepted`. | Client receives `jobId`. |
+| 12 | Worker | Claims pending job. | Job becomes `PROCESSING/EXTRACTING_TEXT`. |
+| 13 | Worker | Downloads source objects. | Reads bytes from MinIO/S3. |
+| 14 | Worker | Extracts and cleans text. | Saves `document_extractions`. |
+| 15 | Worker | Builds AI context. | Bounded by `AI_MAX_CONTEXT_CHARS`. |
+| 16 | Worker | Calls provider. | `mock` or `openai`. |
+| 17 | Worker | Validates output. | Enforces min/max output chars. |
+| 18 | Worker | Saves result and creates outbox. | Job becomes `SUCCEEDED/COMPLETED`, outbox `PENDING`. |
+| 19 | Publisher | Publishes event to RabbitMQ. | Outbox becomes `PUBLISHED`. |
+| 20 | Event Service | Consumes event. | Dedup by `messageId`. |
+| 21 | Event Service | Applies introduction if safe. | Updates `concert_introduction`. |
+| 22 | Client | Polls job status. | Sees `SUCCEEDED` and generated candidate. |
 
-## 7. Data ownership
+## 7. State machine
 
-| Data | Source of truth |
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING_RECEIVED: create job
+    PENDING_RECEIVED --> PROCESSING_EXTRACTING: worker claims job
+    PROCESSING_EXTRACTING --> PROCESSING_CLEANING: extraction success
+    PROCESSING_CLEANING --> PROCESSING_BUILDING_CONTEXT: cleaned text ready
+    PROCESSING_BUILDING_CONTEXT --> PROCESSING_CALLING_AI: context built
+    PROCESSING_CALLING_AI --> PROCESSING_VALIDATING_OUTPUT: provider returned output
+    PROCESSING_VALIDATING_OUTPUT --> PROCESSING_PUBLISHING_RESULT: output valid
+    PROCESSING_PUBLISHING_RESULT --> SUCCEEDED_COMPLETED: result + outbox saved
+
+    PROCESSING_EXTRACTING --> FAILED: no usable content / storage error
+    PROCESSING_CALLING_AI --> FAILED: provider unavailable / timeout / quota
+    PROCESSING_VALIDATING_OUTPUT --> FAILED: invalid output
+    FAILED --> PENDING_RECEIVED: retry if retryable
+    SUCCEEDED_COMPLETED --> [*]
+```
+
+Main statuses:
+
+| Status | Meaning |
 |---|---|
-| Concert core fields, status, owner, public detail data | `event-service` |
-| `concertIntroduction` served to public concert detail page | `event-service` |
-| AI generation job status, stage, retry count, error code | `ai-bio-service` |
-| Source PDF object key, checksum, extracted text, cleaned text | `ai-bio-service` |
-| Private source PDF binary | Object Storage bucket owned by `ai-bio-service` |
-| AI prompt, provider response and generated candidate before event apply | `ai-bio-service` |
-| Event delivery metadata and publish status | `ai-bio-service` outbox + RabbitMQ |
-| `messageId` dedup for consumed result event | `event-service` |
-| User identity and roles | Auth Service / JWT verified directly by `ai-bio-service` and `event-service` |
+| `PENDING` | Job has been created but not processed yet. |
+| `PROCESSING` | Worker is processing extraction/generation/publishing. |
+| `SUCCEEDED` | Introduction generated and outbox event created. |
+| `FAILED` | Job failed safely with a safe error code. |
 
-## 8. State transitions by service
+Main stages:
 
-| Service | Before | After | Trigger |
-|---|---|---|---|
-| `ai-bio-service` | No job | `PENDING` | Upload validated, PDFs stored, DB transaction committed |
-| `ai-bio-service` | `PENDING` | `PROCESSING` | Worker atomic claim succeeds |
-| `ai-bio-service` | `PROCESSING` | `SUCCEEDED` | Introduction saved and outbox event created in one transaction |
-| `ai-bio-service` | `PROCESSING` | `FAILED` | Non-retryable error or automatic retries exhausted |
-| `ai-bio-service` | `FAILED` | `PENDING` | Organizer/Admin manual retry accepted |
-| `ai-bio-service` | `SUCCEEDED` | `SUCCEEDED` | Retry request rejected as not retryable |
-| `event-service` | No AI introduction or older AI introduction | AI introduction applied | `ConcertIntroductionGenerated` accepted |
-| `event-service` | Manual introduction newer than job `requestedAt` | Unchanged | Result event acknowledged but not applied |
-| RabbitMQ/outbox | Outbox `PENDING` | Published/confirmed | Broker accepts `ConcertIntroductionGenerated` |
+| Stage | Meaning |
+|---|---|
+| `RECEIVED` | Job created. |
+| `EXTRACTING_TEXT` | Worker is extracting text from sources. |
+| `CLEANING_TEXT` | Text extracted and basic cleaning is complete. |
+| `BUILDING_CONTEXT` | Worker is building the AI prompt context. |
+| `CALLING_AI` | Provider request is in progress. |
+| `VALIDATING_OUTPUT` | Output validation phase. |
+| `PUBLISHING_RESULT` | Event/outbox publish phase. |
+| `COMPLETED` | Job completed. |
 
-## 9. Failure scenarios
+## 8. Idempotency flow
 
-| Case | Failure | Expected behavior | Compensation | Retry |
-|---:|---|---|---|---|
-| 1 | Missing PDF | Reject request, no job created, return `400 PDF_FILE_REQUIRED` | None | Client fixes request |
-| 2 | Invalid MIME or magic bytes | Reject request, no object stored if detected before upload, return `415 INVALID_PDF_TYPE` | Delete uploaded temp/object if any | No automatic retry |
-| 3 | File or total upload too large | Reject request, return `413 PDF_TOO_LARGE` | Cleanup partially uploaded objects | Client reduces files |
-| 4 | Concert not found | Return `404 CONCERT_NOT_FOUND`, no job created | None | No automatic retry |
-| 5 | Organizer does not own concert | Return `403 CONCERT_ACCESS_DENIED`, no job created | None | No automatic retry |
-| 6 | Concert status is `CANCELLED` or `COMPLETED` | Return `409 CONFLICT`, no job created | None | Organizer/Admin cannot generate for closed concert |
-| 7 | Event Service unavailable during validation | Return `503 EVENT_SERVICE_UNAVAILABLE`, no job created | None | Client may retry same `Idempotency-Key` |
-| 8 | Active job already exists for concert | Return `409 AI_BIO_JOB_ALREADY_ACTIVE` with active `jobId` details | None | Poll existing job |
-| 9 | Object Storage unavailable | Retry bounded; if still failing, do not create committed job unless cleanup is explicit | Delete partial objects | Bounded infra retry |
-| 10 | One PDF unreadable but at least one usable PDF remains | Continue job with warnings | Store document warning | No full job retry needed |
-| 11 | All PDFs have no usable text | Mark job `FAILED` with `NO_USABLE_DOCUMENT_CONTENT` | Preserve job and safe error | Manual retry only with same docs if policy allows |
-| 12 | AI Provider timeout or 429/5xx | Automatic retry with exponential backoff and jitter | Attempt history recorded | Up to provider retry policy |
-| 13 | AI Provider auth/config error | Mark job `FAILED`, alert configuration | Safe error only, no raw provider body | No automatic retry |
-| 14 | AI output empty or invalid | Run repair attempt if implemented; otherwise fail job | Store safe validation error | Limited repair/provider retry |
-| 15 | RabbitMQ unavailable after generation | Job remains `SUCCEEDED`; outbox stays `PENDING` | Outbox publisher retries | Bounded/continuous outbox retry with alert |
-| 16 | Duplicate event delivery | `event-service` ACKs duplicate after `messageId`/`jobId` dedup | None | Safe replay |
-| 17 | Manual introduction updated while AI job runs | `event-service` does not overwrite newer manual content | Event ACKed, result may be stored as historical/candidate | No retry |
-| 18 | Worker crashes mid-processing | Watchdog or claim timeout reschedules according to policy | Attempt marked failed/timed out | Retry if retryable and under limit |
+```mermaid
+flowchart TD
+    A[Create job request] --> B{Idempotency-Key exists for user?}
+    B -- No --> C[Validate request and create job]
+    B -- Yes --> D{Request hash same?}
+    D -- Yes --> E[Return stored response with replayDetected=true]
+    D -- No --> F[409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST]
+    C --> G[Store idempotency record]
+    G --> H[Return 202]
+```
 
-## 10. Idempotency
+Rules:
 
-| Operation | Idempotency key | Replay behavior |
+- Scope: `created_by + idempotency_key + action`.
+- Same request returns the same `jobId`.
+- Different request with same key returns conflict.
+- Idempotency prevents duplicate active jobs from network retries.
+
+## 9. Source validation flow
+
+```mermaid
+flowchart TD
+    A[Uploaded files] --> B{Any files?}
+    B -- No --> E1[400 SOURCE_REQUIRED]
+    B -- Yes --> C{Count <= max files?}
+    C -- No --> E2[413 SOURCE_TOO_LARGE]
+    C -- Yes --> D{Each file size valid?}
+    D -- No --> E3[413 SOURCE_TOO_LARGE]
+    D -- Yes --> F{Extension allowed?}
+    F -- No --> E4[415 UNSUPPORTED_SOURCE_TYPE]
+    F -- Yes --> G{Magic bytes / structure valid?}
+    G -- No --> E5[415 INVALID_SOURCE_TYPE]
+    G -- Yes --> H[Upload to private object storage]
+```
+
+Supported Phase 1 formats:
+
+```text
+PDF, Markdown, Text, DOCX, PPTX
+```
+
+Rejected in Phase 1:
+
+```text
+Image, URL, executable, archive, audio, video, unknown binary
+```
+
+## 10. Provider flow
+
+```mermaid
+flowchart TD
+    A[Built context] --> B{AI_PROVIDER}
+    B -- mock --> C[Mock provider]
+    B -- openai --> D[OpenAI provider]
+    D --> E{API key configured?}
+    E -- No --> F[FAILED AI_PROVIDER_UNAVAILABLE]
+    E -- Yes --> G[Call OpenAI Responses API]
+    C --> H[Return introduction]
+    G --> H[Return introduction]
+    H --> I{Output valid?}
+    I -- No --> J[FAILED AI_OUTPUT_INVALID]
+    I -- Yes --> K[Save generated_introduction]
+```
+
+Provider recommendations:
+
+| Mode | Config |
+|---|---|
+| Local/dev default | `AI_PROVIDER=mock` |
+| Real AI demo | `AI_PROVIDER=openai`, `OPENAI_MODEL=gpt-5.4-mini` |
+| Not recommended default | `gpt-5.5` in current setup, because it failed during testing |
+
+## 11. Outbox and RabbitMQ flow
+
+```mermaid
+flowchart TD
+    A[Job result saved] --> B[Create outbox_events row PENDING]
+    B --> C[Outbox publisher reads PENDING]
+    C --> D[Build Event Envelope]
+    D --> E[Publish to tickefy.exchange]
+    E --> F{Publish success?}
+    F -- Yes --> G[Mark outbox PUBLISHED]
+    F -- No --> H[Increase retry_count and store last_error]
+    H --> I{retry_count >= 5?}
+    I -- Yes --> J[Mark outbox FAILED]
+    I -- No --> C
+```
+
+Event envelope:
+
+```json
+{
+  "messageId": "...",
+  "eventType": "ConcertIntroductionGenerated",
+  "eventVersion": "1.0",
+  "source": "ai-bio-service",
+  "occurredAt": "...",
+  "correlationId": "...",
+  "causationId": null,
+  "payload": {
+    "jobId": "...",
+    "concertId": "...",
+    "introduction": "...",
+    "language": "vi",
+    "sourceDocumentIds": ["..."],
+    "sourceTypes": ["TEXT"],
+    "requestedAt": "...",
+    "generatedAt": "..."
+  }
+}
+```
+
+## 12. Event Service consumer flow
+
+```mermaid
+flowchart TD
+    A[RabbitMQ message] --> B{Valid JSON envelope?}
+    B -- No --> DLQ[Reject no requeue / DLQ]
+    B -- Yes --> C{eventType/version/source supported?}
+    C -- No --> DLQ
+    C -- Yes --> D{messageId already processed?}
+    D -- Yes --> ACK[ACK duplicate]
+    D -- No --> E{Concert exists?}
+    E -- No --> DLQ
+    E -- Yes --> F{Manual intro newer than requestedAt?}
+    F -- Yes --> G[Mark processed, skip apply]
+    F -- No --> H[Apply concert_introduction]
+    H --> I[Store source job id, language, updatedAt]
+    I --> J[Invalidate concert cache]
+    J --> K[Insert processed_messages]
+    G --> K
+    K --> ACK
+```
+
+Event Service updates:
+
+| Table/field | Purpose |
+|---|---|
+| `event_service.concerts.concert_introduction` | Official public introduction. |
+| `event_service.concerts.concert_introduction_source_job_id` | Source AI Bio job. |
+| `event_service.concerts.concert_introduction_language` | Language of generated intro. |
+| `event_service.concerts.concert_introduction_updated_at` | Last AI intro update time. |
+| `event_service.concerts.manual_introduction_updated_at` | Manual edit guard. |
+| `event_service.processed_messages` | Dedup by `messageId`. |
+
+## 13. Retry flow
+
+```mermaid
+flowchart TD
+    A[POST /api/ai-bio/jobs/{jobId}/retry] --> B{Job exists?}
+    B -- No --> E1[404 AI_BIO_JOB_NOT_FOUND]
+    B -- Yes --> C{User can access job?}
+    C -- No --> E2[403 CONCERT_ACCESS_DENIED]
+    C -- Yes --> D{status == FAILED?}
+    D -- No --> E3[409 AI_BIO_JOB_NOT_RETRYABLE]
+    D -- Yes --> F{is_retryable true?}
+    F -- No --> E3
+    F -- Yes --> G{retry_count < max_retries?}
+    G -- No --> E3
+    G -- Yes --> H[Reset job to PENDING/RECEIVED]
+```
+
+Retry resets:
+
+- Job status/stage.
+- Safe error fields.
+- `failed_at`, `completed_at`, provider fields.
+- Source extraction statuses back to `STORED`.
+- Old extraction rows.
+- Non-published outbox events for the job.
+
+Retry does not delete uploaded source objects.
+
+## 14. Background worker flow
+
+```mermaid
+flowchart TD
+    A[Worker loop starts] --> B{WORKER_ENABLED?}
+    B -- No --> STOP[No worker]
+    B -- Yes --> C[Poll PENDING job]
+    C --> D{Found job?}
+    D -- No --> S[Sleep]
+    S --> C
+    D -- Yes --> E[Claim with SELECT FOR UPDATE SKIP LOCKED]
+    E --> F[Run pipeline]
+    F --> G{Success?}
+    G -- Yes --> H[Job SUCCEEDED and outbox PUBLISHED]
+    G -- No --> I[Job FAILED with safe error]
+    H --> S
+    I --> S
+```
+
+Recommended local modes:
+
+| Goal | `WORKER_ENABLED` | `DEV_ENDPOINTS_ENABLED` |
+|---|---:|---:|
+| Manual debug | `false` | `true` |
+| Production-like local demo | `true` | `false` |
+| Safe idle Docker | `false` | `false` |
+
+## 15. Main failure paths
+
+| Failure | Stage | Result |
 |---|---|---|
-| Create AI Bio job | `createdBy + Idempotency-Key` header | Lookup before Event Service call and Object Storage upload; return existing job with `replayDetected=true`; do not upload/store/create second job |
-| Active job guard | `concertId` partial unique index for `PENDING`/`PROCESSING` | Reject second active job with `AI_BIO_JOB_ALREADY_ACTIVE` |
-| Worker claim | Atomic DB update by `jobId` and current status `PENDING` | Only one worker can process a job |
-| Manual retry | `createdBy + Idempotency-Key` on retry endpoint | Replay returns same retry result and does not increment `retryCount` again |
-| Outbox publish | Stable outbox event `messageId` | Republish same message safely until broker confirm |
-| Event Service consume | `messageId`, guarded by `jobId` and `requestedAt` | Duplicate message is ACKed without duplicate update |
-| AI generation result apply | `jobId` + `concertId` | Older or duplicate AI result cannot overwrite newer manual introduction |
+| Missing token | Gateway/AI Bio auth | `401 UNAUTHORIZED` |
+| Invalid/expired token | Gateway/AI Bio auth | `401 INVALID_TOKEN` |
+| Role not allowed | AI Bio guard | `403 FORBIDDEN` |
+| User not concert owner | AI Bio/Event Service | `403 CONCERT_ACCESS_DENIED` |
+| Concert missing | Event Service AI context | `404 CONCERT_NOT_FOUND` |
+| Event Service down | Create job | `503 EVENT_SERVICE_UNAVAILABLE` |
+| Unsupported file | Source validation | `415 UNSUPPORTED_SOURCE_TYPE` |
+| Invalid file content | Source validation/extraction | `415 INVALID_SOURCE_TYPE` or failed source |
+| Source too large | Source validation | `413 SOURCE_TOO_LARGE` |
+| No usable extracted text | Worker | Job `FAILED`, `NO_USABLE_SOURCE_CONTENT` |
+| AI API key missing | Provider | Job `FAILED`, `AI_PROVIDER_UNAVAILABLE` |
+| OpenAI quota/rate limit/model unavailable | Provider | Job `FAILED`, retryable |
+| RabbitMQ down after generation | Outbox publish | Job can be `SUCCEEDED`, outbox remains pending/failed for retry |
+| Event consumer receives duplicate message | Event Service consumer | ACK duplicate, no duplicate apply |
+| Manual intro newer than AI request | Event Service consumer | ACK and skip apply |
 
-## 11. Timeout and retry
+## 16. Test flow through Gateway
 
-| Call/event | Timeout | Retry | Backoff | Final action |
-|---|---:|---:|---|---|
-| `GET /internal/concerts/{concertId}/ai-context` | 2,000 ms | 2 for network/5xx | Exponential backoff | Return `503 EVENT_SERVICE_UNAVAILABLE`; do not create job |
-| Object Storage upload/read | 5,000 ms/operation | Bounded infra retry | Exponential backoff | Fail request/job safely and cleanup partial objects where possible |
-| AI Provider connect | 3,000 ms | Included in provider attempts | Exponential backoff + jitter | Mark job `FAILED` if attempts exhausted |
-| AI Provider read | 30,000 ms | Up to 3 attempts for timeout/429/502/503/504 | Exponential backoff + jitter, respect `Retry-After` | Mark job `FAILED` with provider-safe error |
-| RabbitMQ outbox publish | Publisher config | Repeat until published or operational alert | Bounded interval/polling retry | Keep outbox `PENDING`, alert on oldest pending age |
-| Event Service consumer processing | Consumer config | Broker redelivery until max attempts | Queue retry policy | DLQ if poison message |
-| Worker processing duration | Configured max duration | Retry/reschedule if safe | Watchdog policy | Mark timed out or reschedule without parallel processing |
+### Create job
 
-## 12. Observability
+```bash
+CONCERT_ID=<real-event-service-concert-id>
+IDEMPOTENCY_KEY="ai-bio-test-$(date +%s)"
 
-- `requestId`: lấy từ `X-Request-ID`; nếu thiếu thì service tự sinh; echo ở response header/body.
-- `correlationId`: dùng `requestId` hoặc propagated correlation ID cho internal call và event.
-- `messageId`: UUID của `ConcertIntroductionGenerated`, giữ nguyên khi outbox republish.
-- Required logs: `requestId`, `correlationId`, `messageId`, `jobId`, `concertId`, `documentId`, `userId`, `status`, `processingStage`, `provider`, `model`, `durationMs`, `retryCount`, `errorCode`.
-- Required metrics:
-  - `ai_bio_jobs_total{status}`
-  - `ai_bio_job_duration_seconds`
-  - `ai_bio_stage_duration_seconds{stage}`
-  - `ai_bio_pdf_extraction_failures_total{code}`
-  - `ai_bio_provider_requests_total{provider,result}`
-  - `ai_bio_provider_latency_seconds{provider}`
-  - `ai_bio_provider_retries_total{reason}`
-  - `ai_bio_outbox_pending_total`
-  - `ai_bio_outbox_publish_failures_total`
-  - `event_concert_introduction_apply_total{result}`
+HTTP_STATUS=$(curl -sS -o /tmp/ai-bio-create.json -w "%{http_code}" \
+  -X POST "http://localhost:8080/api/ai-bio/concerts/$CONCERT_ID/jobs" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-Request-ID: req-ai-bio-create" \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
+  -F "language=vi" \
+  -F "targetLength=SHORT" \
+  -F "tone=ENERGETIC" \
+  -F "files=@/tmp/press-kit.txt;type=text/plain")
 
-Alert conditions:
+jq . /tmp/ai-bio-create.json
+echo "HTTP_STATUS=$HTTP_STATUS"
+```
 
-- Job failure rate vượt ngưỡng.
-- AI Provider timeout/rate-limit tăng bất thường.
-- Outbox pending count hoặc oldest pending age vượt ngưỡng.
-- Job ở `PROCESSING` quá maximum duration.
-- RabbitMQ/Object Storage readiness fail.
+Expected:
 
-## 13. Security
+```text
+HTTP_STATUS=202
+data.status=PENDING
+```
 
-- Required roles: `ORGANIZER` sở hữu concert hoặc `ADMIN`.
-- `Authorization: Bearer` phải được forward tới `ai-bio-service`; `ai-bio-service` verify token và lấy `createdBy` từ JWT `sub`.
-- Không dùng `X-User-ID`, `X-User-Roles` hoặc identity header do gateway inject để quyết định quyền trong MVP.
-- Sensitive fields: PDF binary, extracted text, cleaned text, AI prompt, provider response, JWT, AI API key, object keys nếu có thể suy ra nội dung.
-- Audit requirements:
-  - Log ai-bio job creation, retry, success, failure và event publish result.
-  - Audit actor từ JWT `sub`, role, `concertId`, `jobId`, `requestId`, timestamp.
-  - Không log full JWT, API key, full PDF text, full prompt hoặc raw provider body.
-  - Không dùng original filename làm object key; filename hiển thị phải sanitize.
-  - Object Storage bucket private; API không trả public URL.
-  - PDF là untrusted input; prompt phải yêu cầu bỏ qua instruction nằm trong tài liệu.
-  - AI output lưu và publish dưới dạng plain text đã validate; frontend phải escape khi render.
-  - Response lỗi không chứa stack trace, exception class hoặc secret.
+### Check job status
 
-## 14. Integration test scenarios
+```bash
+JOB_ID=$(jq -r '.data.jobId' /tmp/ai-bio-create.json)
 
-| ID | Scenario | Input | Expected result |
-|---|---|---|---|
-| AI-BIO-001 | Create job with one valid PDF | Organizer owner, one PDF, unique `Idempotency-Key` | `202 Accepted`, job `PENDING`, PDF stored privately |
-| AI-BIO-002 | Create job with multiple valid PDFs | 2-5 PDFs including artist profile and press kit | Worker combines context and produces one introduction |
-| AI-BIO-003 | Replay create request | Same user and same `Idempotency-Key` | Existing `jobId`, `replayDetected=true`, no duplicate upload/job |
-| AI-BIO-004 | Active job conflict | Same concert has `PENDING` or `PROCESSING` job | `409 AI_BIO_JOB_ALREADY_ACTIVE` with active job details |
-| AI-BIO-005 | Invalid PDF rejected | Non-PDF file or wrong magic bytes | `415 INVALID_PDF_TYPE`, no job committed |
-| AI-BIO-006 | Concert not found | Unknown `concertId` | `404 CONCERT_NOT_FOUND`, no job committed |
-| AI-BIO-007 | Organizer forbidden | Organizer does not own concert | `403 CONCERT_ACCESS_DENIED` |
-| AI-BIO-008 | Closed concert status | Concert status `CANCELLED` or `COMPLETED` from AI context | `409 CONFLICT`, no job committed |
-| AI-BIO-009 | Event Service down on create | Internal context API timeout/5xx | `503 EVENT_SERVICE_UNAVAILABLE`, same key can retry |
-| AI-BIO-010 | Partial unreadable PDFs | One PDF unreadable, another usable | Job `SUCCEEDED` with warning for unreadable document |
-| AI-BIO-011 | No usable content | All PDFs empty/password-protected/no extractable text | Job `FAILED` with safe error code |
-| AI-BIO-012 | AI provider transient error | Provider returns timeout/429 before success | Automatic retry, final job `SUCCEEDED` if later attempt succeeds |
-| AI-BIO-013 | AI provider permanent auth error | Invalid provider API key | Job `FAILED`, no raw provider body in logs/response |
-| AI-BIO-014 | RabbitMQ unavailable after generation | Broker down during outbox publish | Job `SUCCEEDED`, outbox remains `PENDING`, alert/metric emitted |
-| AI-BIO-015 | Duplicate result event | Same `messageId` delivered twice | Event Service applies once and ACKs duplicate |
-| AI-BIO-016 | Manual introduction newer than AI request | Organizer edits intro after job request time | Event Service does not overwrite manual content |
-| AI-BIO-017 | Retry failed job | Job `FAILED`, retryable, under max retry count | Retry endpoint returns `202`, job returns to `PENDING`, `retryCount` increments once |
-| AI-BIO-018 | Concurrent workers | Two workers claim same `PENDING` job | Exactly one worker transitions job to `PROCESSING` |
+HTTP_STATUS=$(curl -sS -o /tmp/ai-bio-status.json -w "%{http_code}" \
+  "http://localhost:8080/api/ai-bio/jobs/$JOB_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN")
 
-## 15. Acceptance criteria
+jq . /tmp/ai-bio-status.json
+echo "HTTP_STATUS=$HTTP_STATUS"
+```
 
-- [ ] Happy path runs end-to-end.
-- [ ] Expected failure cases are handled.
-- [ ] Duplicate request/message is safe.
-- [ ] Logs can be traced by correlation ID.
-- [ ] All contracts are frozen.
-- [ ] `POST /api/ai-bio/concerts/{concertId}/jobs` returns `202 Accepted` with common API envelope.
-- [ ] Upload accepts 1-5 PDFs and enforces file count, MIME, magic bytes, per-file size and total size.
-- [ ] `ai-bio-service` validates concert existence and ownership through Event Service before creating a job.
-- [ ] PDFs are stored in private Object Storage with generated object keys.
-- [ ] Job processing moves through `PENDING -> PROCESSING -> SUCCEEDED` or `FAILED`.
-- [ ] AI output is validated before it is saved or published.
-- [ ] Success transaction saves introduction and creates outbox event atomically.
-- [ ] `ConcertIntroductionGenerated` is published with stable `messageId` and `correlationId`.
-- [ ] Event Service consumes result idempotently and does not overwrite newer manual introduction.
-- [ ] Public concert detail reads introduction from Event Service, not AI Bio Service.
-- [ ] Provider timeout/rate-limit retry follows bounded exponential backoff with jitter.
-- [ ] Failed job retry respects `maxRetries` and idempotency.
-- [ ] No response or normal log exposes secrets, full PDF text, full prompt, raw provider body or stack trace.
+Expected after worker:
+
+```text
+HTTP_STATUS=200
+data.status=SUCCEEDED
+data.processingStage=COMPLETED
+data.generatedIntroduction is not null
+```
+
+## 17. Final verification script
+
+Recommended final test:
+
+```bash
+CONCERT_ID=<real-event-service-concert-id> \
+RUN_MODE=worker \
+./scripts/verify-ai-bio-e2e.sh
+```
+
+Expected:
+
+```text
+AI Bio E2E verification passed.
+JOB_ID=...
+CONCERT_ID=...
+IDEMPOTENCY_KEY=...
+```
+
+This script verifies:
+
+- Gateway route.
+- JWT authentication.
+- Event Service AI context.
+- AI Bio job creation.
+- Source upload.
+- Worker processing.
+- AI provider generation.
+- Outbox event publish.
+- RabbitMQ delivery.
+- Event Service consumer apply.
+- Event Service DB update.
+
+## 18. Handoff notes for team
+
+### Frontend needs to know
+
+- Use `POST /api/ai-bio/concerts/{concertId}/jobs` with multipart form data.
+- Always send `Idempotency-Key` for create job.
+- Poll `GET /api/ai-bio/jobs/{jobId}` until `SUCCEEDED` or `FAILED`.
+- Show safe error from `errorCode/errorMessage` or job `errorCode/errorMessage`.
+- Public concert page should read final introduction from Event Service, not AI Bio.
+
+### Event Service needs to know
+
+- It owns official `concertIntroduction`.
+- It must keep AI context API stable for AI Bio.
+- Consumer must be idempotent by `messageId`.
+- Manual newer introduction must not be overwritten.
+- Public concert detail DTO should expose `concertIntroduction`.
+
+### Backend/DevOps needs to know
+
+- `DEV_ENDPOINTS_ENABLED=false` for normal Docker/demo.
+- `WORKER_ENABLED=true` for automatic processing.
+- `AI_PROVIDER=mock` for safe demo without external API.
+- `AI_PROVIDER=openai` requires `OPENAI_API_KEY` from environment only.
+- `OPENAI_MODEL=gpt-5.4-mini` is the tested working model in current setup.

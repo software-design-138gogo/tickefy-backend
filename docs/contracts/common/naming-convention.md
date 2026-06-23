@@ -1,10 +1,10 @@
 ---
 title: Naming Convention
 status: DRAFT
-version: 1.0
+version: 1.1
 owner: BE Lead
 reviewers:
-lastUpdated: 2026-06-16
+lastUpdated: 2026-06-19
 ---
 
 # Naming Convention
@@ -319,10 +319,44 @@ imageUrl
 errorReportUrl
 pdfObjectKey
 csvObjectKey
+sourceObjectKey
 fileName
 ```
 
 Không dùng `fileUrl` nếu giá trị thực tế chỉ là object key.
+
+### 5.5. AI Bio source fields
+
+Source type enum values:
+
+```text
+PDF
+MARKDOWN
+TEXT
+DOCX
+PPTX
+IMAGE
+URL
+```
+
+Canonical field names:
+
+| Concept | Field |
+|---|---|
+| AI Bio job | `jobId` |
+| Source document | `sourceDocumentId` |
+| Source type | `sourceType` |
+| Source URL | `sourceUrl` |
+| Object storage key | `sourceObjectKey` |
+| Extracted text | `extractedText` |
+| Cleaned text | `cleanedText` |
+| Generated introduction | `introduction` or `concertIntroduction` depending on Event context |
+
+Rules:
+
+- Do not use `eventId` for concert; use `concertId`.
+- Do not expose source object keys publicly unless needed for admin debugging and masked/authorized.
+- Do not expose extracted full text in public API; admin job detail may return summary/warnings only by default.
 
 ---
 
@@ -795,7 +829,7 @@ IssueTickets
 Integration event exchange:
 
 ```text
-tickefy.events
+tickefy.exchange
 ```
 
 Exchange type:
@@ -835,29 +869,29 @@ vip-guest-import.completed
 Queue sử dụng:
 
 ```text
-{consumer-service-prefix}.{event-name}
+{consumer-service}.{event-name}.queue
 ```
 
 Ví dụ:
 
 ```text
-order.payment-succeeded
-order.payment-failed
-inventory.order-paid
-inventory.order-payment-failed
-inventory.concert-published
-inventory.concert-cancelled
-inventory.order-expired
-inventory.order-cancelled
-order.concert-cancelled
-ticket.order-paid
-ticket.order-refunded
-ticket.concert-cancelled
-notification.tickets-issued
-notification.order-refunded
-notification.concert-cancelled
-event.concert-introduction-generated
-checkin.vip-guest-import-completed
+order-service.payment-succeeded.queue
+order-service.payment-failed.queue
+inventory-service.order-paid.queue
+inventory-service.order-payment-failed.queue
+inventory-service.concert-published.queue
+inventory-service.concert-cancelled.queue
+inventory-service.order-expired.queue
+inventory-service.order-cancelled.queue
+order-service.concert-cancelled.queue
+ticket-service.order-paid.queue
+ticket-service.order-refunded.queue
+ticket-service.concert-cancelled.queue
+notification-service.tickets-issued.queue
+notification-service.order-refunded.queue
+notification-service.concert-cancelled.queue
+event-service.concert-introduction-generated.queue
+checkin-service.vip-guest-import-completed.queue
 ```
 
 Phần prefix của queue là consumer, không phải producer.

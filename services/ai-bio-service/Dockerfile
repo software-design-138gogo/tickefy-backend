@@ -1,28 +1,24 @@
-# syntax=docker/dockerfile:1.7
+FROM python:3.12-slim
 
-FROM maven:3.9.9-eclipse-temurin-25 AS build
 WORKDIR /app
 
-COPY .mvn .mvn
-COPY mvnw mvnw
-COPY mvnw.cmd mvnw.cmd
-COPY pom.xml pom.xml
-RUN chmod +x mvnw && ./mvnw -q -DskipTests dependency:go-offline
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
-COPY src src
-RUN ./mvnw -q clean package -DskipTests
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       curl \
+       build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-FROM eclipse-temurin:25-jre
-WORKDIR /app
+COPY requirements.txt .
 
-RUN addgroup --system spring && adduser --system --ingroup spring spring
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-COPY --from=build /app/target/*.jar app.jar
+COPY app ./app
 
-ENV SPRING_PROFILES_ACTIVE=prod
-ENV TZ=UTC
-ENV JAVA_TOOL_OPTIONS="-Duser.timezone=UTC"
-EXPOSE 8089
+EXPOSE 8080
 
-USER spring
-ENTRYPOINT ["java", "-jar", "app.jar"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

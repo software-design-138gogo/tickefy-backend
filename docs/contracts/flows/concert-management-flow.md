@@ -1,10 +1,10 @@
 ---
 title: Flow Specification - Concert Management
 status: DRAFT
-version: 1.0
+version: 1.1
 owner: <flow owner>
 reviewers: []
-lastUpdated: 2026-06-18
+lastUpdated: 2026-06-19
 ---
 
 # Flow Specification — `Concert Management`
@@ -20,8 +20,8 @@ Mô tả quy trình Ban tổ chức (Organizer) hoặc Admin tạo mới, cấu 
 | API Gateway | Cổng giao tiếp duy nhất, xác thực JWT (vòng 1) và định tuyến request. |
 | Event Service | Quản lý vòng đời (DRAFT -> PUBLISHED), lưu trữ Metadata (Tên, ngày giờ, địa điểm, sơ đồ ghế), và cấp Pre-signed URL cho upload. |
 | Inventory Service | Khởi tạo và quản lý cấu hình các loại vé (Ticket Types), giá vé, số lượng tồn kho (Stock) và giới hạn mỗi người dùng (Per-user Limit). |
-| AI Bio Service | Nhận file PDF (Artist Press Kit), xử lý bằng AI để sinh ra đoạn văn giới thiệu Concert (`concertIntroduction`). |
-| Object Storage (S3/MinIO) | Lưu trữ file sơ đồ chỗ ngồi (Seatmap SVG) và file PDF. |
+| AI Bio Service | Nhận nhiều nguồn đầu vào (PDF/MD/TXT/DOCX/PPTX; URL/Image ở Phase 2), xử lý bằng AI để sinh ra đoạn văn giới thiệu Concert (`concertIntroduction`). |
+| Object Storage (S3/MinIO) | Lưu trữ file sơ đồ chỗ ngồi (Seatmap SVG) và source file/snapshot của AI Bio. |
 | RabbitMQ (Message Broker) | Chuyển phát các Integration Events như `ConcertIntroductionGenerated` (từ AI Bio) và `ConcertPublished` (từ Event). |
 
 ## 3. Preconditions
@@ -62,7 +62,7 @@ sequenceDiagram
     Gateway->>Event: Update Metadata
     
     %% Bước 3: Tạo AI Bio
-    Client->>Gateway: POST /api/ai-bio/concerts/{id}/jobs (Upload PDF)
+    Client->>Gateway: POST /api/ai-bio/concerts/{id}/jobs (Upload sources)
     Gateway->>AiBio: Tạo Job sinh AI Bio
     AiBio-->>Client: 202 Accepted (Trạng thái Pending)
     Note over AiBio: Xử lý ngầm, gọi AI Provider
@@ -120,7 +120,7 @@ sequenceDiagram
 | Case | Failure | Expected behavior | Compensation | Retry |
 |---:|---|---|---|---|
 | 1 | Lỗi gọi API Upload SVG | Admin không lấy được link Pre-signed. | Trả về thông báo lỗi, cho phép Admin bấm Upload lại. | Admin thử lại thủ công. |
-| 2 | AI Bio chạy thất bại | PDF không hợp lệ hoặc AI Provider Down. | Giữ nguyên trạng thái `FAILED` của Job. Concert vẫn có thể Publish mà không có Bio (hoặc Admin tự nhập tay). | Retry từ màn hình Admin. |
+| 2 | AI Bio chạy thất bại | Source không hợp lệ, không extract được nội dung hoặc AI Provider down. | Giữ nguyên trạng thái `FAILED` của Job. Concert vẫn có thể Publish mà không có Bio (hoặc Admin tự nhập tay). | Retry từ màn hình Admin. |
 | 3 | Publish thất bại do RabbitMQ down | Hành động Publish của Admin đổi State = PUBLISHED, lưu message vào Outbox an toàn. | Background Drainer sẽ quét Outbox và gửi lại event `ConcertPublished` khi MQ hồi phục (Eventual Consistency). | Tự động (Outbox Worker). |
 | 4 | Inventory cấu hình vé lỗi | Admin tạo Ticket Type bị Validation Error (Giá âm, Qty <= 0). | Báo lỗi 400 Bad Request, vé không được tạo. | Admin nhập lại dữ liệu. |
 

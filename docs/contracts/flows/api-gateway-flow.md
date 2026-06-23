@@ -1,10 +1,10 @@
 ---
 title: Flow Specification - API Gateway Request Routing
 status: IMPLEMENTED
-version: 1.1
+version: 1.2
 owner: Hoàng
 reviewers: [BE Lead, Auth Service, Frontend, Mobile]
-lastUpdated: 2026-06-18
+lastUpdated: 2026-06-19
 ---
 
 # Flow Specification — API Gateway Request Routing
@@ -168,7 +168,7 @@ Gateway-generated failures:
 | Missing token on protected route | `401 UNAUTHORIZED` |
 | Invalid/expired/wrong issuer or audience token | `401 INVALID_TOKEN` |
 | Rate limit exceeded | `429 RATE_LIMIT_EXCEEDED` + `Retry-After` |
-| AI Bio upload too large | `413 PDF_TOO_LARGE` |
+| AI Bio upload too large | `413 SOURCE_TOO_LARGE` |
 | CSV upload too large | `413 FILE_TOO_LARGE` |
 | Downstream connection refused/timeout | `503 SERVICE_UNAVAILABLE` |
 

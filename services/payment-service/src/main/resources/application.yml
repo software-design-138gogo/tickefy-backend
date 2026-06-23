@@ -32,6 +32,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      timeout: 2000ms
 
 server:
   port: ${SERVER_PORT:8085}
@@ -54,6 +55,9 @@ app:
     provider: MOCK_SEPAY
     callback:
       secret: ${SEPAY_WEBHOOK_SECRET:}
+      require-signature: ${PAYMENT_CALLBACK_REQUIRE_SIGNATURE:false}
+    idempotency:
+      cache-ttl: ${PAYMENT_IDEMPOTENCY_TTL:PT24H}
   messaging:
     exchange: ${APP_MESSAGING_EXCHANGE:tickefy.exchange}
     outbox-poll-delay: ${OUTBOX_POLL_DELAY:3000}

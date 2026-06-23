@@ -9,7 +9,17 @@ spring:
       ddl-auto: none
   flyway:
     enabled: false
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
 
 app:
   database:
     schema: public
+  payment:
+    reconcile:
+      enabled: false
+  messaging:
+    outbox:
+      enabled: false

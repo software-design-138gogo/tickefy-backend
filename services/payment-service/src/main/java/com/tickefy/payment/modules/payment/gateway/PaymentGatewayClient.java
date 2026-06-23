@@ -3,6 +3,7 @@ package com.tickefy.payment.modules.payment.gateway;
 import com.tickefy.payment.common.exception.ApiException;
 import com.tickefy.payment.common.exception.ErrorCode;
 import com.tickefy.payment.modules.payment.gateway.SePayClient.CreateQrResult;
+import com.tickefy.payment.modules.payment.gateway.SePayClient.QueryStatusResult;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -36,5 +37,15 @@ public class PaymentGatewayClient {
                 ErrorCode.PAYMENT_GATEWAY_UNAVAILABLE,
                 "Payment gateway unavailable",
                 HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    @CircuitBreaker(name = "sepay", fallbackMethod = "queryStatusFallback")
+    public QueryStatusResult queryStatus(String key) {
+        return delegate.queryStatus(key);
+    }
+
+    QueryStatusResult queryStatusFallback(String key, Throwable t) {
+        log.warn("SePay CB queryStatus fallback key={} cause={}", key, t.toString());
+        throw new PaymentGatewayException("queryStatus CB fallback: " + t.getMessage());
     }
 }

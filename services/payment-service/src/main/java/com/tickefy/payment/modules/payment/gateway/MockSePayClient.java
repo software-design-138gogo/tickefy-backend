@@ -14,6 +14,9 @@ public class MockSePayClient implements SePayClient {
     @Value("${app.sepay.mock.fail-mode:NONE}")
     private String failMode;
 
+    @Value("${app.sepay.mock.query-result:NONE}")
+    private String queryResult;
+
     @Override
     public CreateQrResult createQr(UUID paymentId, long amount, String currency, UUID orderId) {
         if ("FAIL".equalsIgnoreCase(failMode)) {
@@ -43,9 +46,22 @@ public class MockSePayClient implements SePayClient {
 
     @Override
     public QueryStatusResult queryStatus(String gatewayTransactionId) {
+        String resolvedStatus;
+        if ("SUCCESS".equalsIgnoreCase(queryResult)) {
+            resolvedStatus = "SUCCESS";
+        } else if ("FAILED".equalsIgnoreCase(queryResult)) {
+            resolvedStatus = "FAILED";
+        } else {
+            resolvedStatus = "PENDING";
+        }
+        String resolvedGatewayTxnId = (gatewayTransactionId != null)
+                ? gatewayTransactionId
+                : "MOCK-TXN-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         log.debug(
-                "MockSePay.queryStatus gatewayTransactionId={} -> PENDING (stub)",
-                gatewayTransactionId);
-        return new QueryStatusResult(gatewayTransactionId, "PENDING");
+                "MockSePay.queryStatus gatewayTransactionId={} query-result={} -> status={}",
+                gatewayTransactionId,
+                queryResult,
+                resolvedStatus);
+        return new QueryStatusResult(resolvedGatewayTxnId, resolvedStatus);
     }
 }

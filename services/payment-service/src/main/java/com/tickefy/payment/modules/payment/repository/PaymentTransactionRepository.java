@@ -1,9 +1,11 @@
 package com.tickefy.payment.modules.payment.repository;
 
 import com.tickefy.payment.modules.payment.entity.PaymentTransaction;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -17,4 +19,6 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     Optional<PaymentTransaction> findByGatewayOrderId(String gatewayOrderId);
 
     List<PaymentTransaction> findByOrderId(UUID orderId);
+
+    List<PaymentTransaction> findByStatusAndCreatedAtBefore(String status, Instant before, Pageable pageable);
 }

@@ -73,12 +73,20 @@ app:
       require-signature: ${PAYMENT_CALLBACK_REQUIRE_SIGNATURE:false}
     idempotency:
       cache-ttl: ${PAYMENT_IDEMPOTENCY_TTL:PT24H}
+    reconcile:
+      enabled: ${PAYMENT_RECONCILE_ENABLED:true}
+      delay: ${PAYMENT_RECONCILE_DELAY:PT5M}
+      stale-after: ${PAYMENT_RECONCILE_STALE_AFTER:PT10M}
+      batch-size: ${PAYMENT_RECONCILE_BATCH:50}
   messaging:
     exchange: ${APP_MESSAGING_EXCHANGE:tickefy.exchange}
     outbox-poll-delay: ${OUTBOX_POLL_DELAY:3000}
+    outbox:
+      enabled: true
   sepay:
     mock:
       fail-mode: ${SEPAY_MOCK_FAIL_MODE:NONE}
+      query-result: ${SEPAY_MOCK_QUERY_RESULT:NONE}
   dev:
     payment-sim:
       enabled: ${DEV_PAYMENT_SIM_ENABLED:false}

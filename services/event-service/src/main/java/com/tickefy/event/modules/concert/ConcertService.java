@@ -34,6 +34,7 @@ public class ConcertService {
     private final OutboxEventRepository outboxEventRepository;
     private final ProcessedMessageRepository processedMessageRepository;
     private final ObjectMapper objectMapper;
+    private final ConcertCacheService concertCacheService;
 
     public ConcertService(
             ConcertRepository concertRepository,
@@ -41,13 +42,15 @@ public class ConcertService {
             ArtistRepository artistRepository,
             OutboxEventRepository outboxEventRepository,
             ProcessedMessageRepository processedMessageRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            ConcertCacheService concertCacheService) {
         this.concertRepository = concertRepository;
         this.venueRepository = venueRepository;
         this.artistRepository = artistRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.processedMessageRepository = processedMessageRepository;
         this.objectMapper = objectMapper;
+        this.concertCacheService = concertCacheService;
     }
 
     // --- LIST ---
@@ -67,12 +70,14 @@ public class ConcertService {
     // --- GET DETAIL ---
     @Transactional(readOnly = true)
     public ConcertResponse getConcertById(UUID id) {
-        Concert concert = concertRepository.findByIdWithDetails(id)
-            .orElseThrow(() -> new ApiException(
-                ErrorCode.RESOURCE_NOT_FOUND,
-                "Concert not found: " + id,
-                HttpStatus.NOT_FOUND));
-        return ConcertResponse.from(concert);
+        ConcertResponse cached = concertCacheService.getConcertById(id);
+        if (cached != null) {
+            return cached;
+        }
+        throw new ApiException(
+            ErrorCode.RESOURCE_NOT_FOUND,
+            "Concert not found: " + id,
+            HttpStatus.NOT_FOUND);
     }
 
     // --- CREATE ---
@@ -112,6 +117,8 @@ public class ConcertService {
         }
 
         Concert saved = concertRepository.save(concert);
+        concertCacheService.evict(saved.getId());
+        concertCacheService.evictList();
         return ConcertResponse.from(saved);
     }
 
@@ -145,6 +152,8 @@ public class ConcertService {
         concert.setSaleEndAt(request.getSaleEndAt());
 
         Concert saved = concertRepository.save(concert);
+        concertCacheService.evict(id);
+        concertCacheService.evictList();
         return ConcertResponse.from(saved);
     }
 
@@ -174,6 +183,8 @@ public class ConcertService {
             throw new RuntimeException("Failed to serialize outbox event", e);
         }
         
+        concertCacheService.evict(id);
+        concertCacheService.evictList();
         return ConcertResponse.from(saved);
     }
 
@@ -204,6 +215,8 @@ public class ConcertService {
             throw new RuntimeException("Failed to serialize outbox event", e);
         }
         
+        concertCacheService.evict(id);
+        concertCacheService.evictList();
         return ConcertResponse.from(saved);
     }
 

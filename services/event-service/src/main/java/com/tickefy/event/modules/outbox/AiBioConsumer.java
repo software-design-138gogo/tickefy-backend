@@ -17,10 +17,12 @@ public class AiBioConsumer {
 
     private final ConcertService concertService;
     private final ObjectMapper objectMapper;
+    private final com.tickefy.event.modules.concert.ConcertCacheService concertCacheService;
 
-    public AiBioConsumer(ConcertService concertService, ObjectMapper objectMapper) {
+    public AiBioConsumer(ConcertService concertService, ObjectMapper objectMapper, com.tickefy.event.modules.concert.ConcertCacheService concertCacheService) {
         this.concertService = concertService;
         this.objectMapper = objectMapper;
+        this.concertCacheService = concertCacheService;
     }
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_CONCERT_INTRODUCTION)
@@ -69,6 +71,7 @@ public class AiBioConsumer {
             boolean updated = concertService.updateAiIntroduction(concertId, introduction, messageId, requestedAt);
             if (updated) {
                 log.info("[AiBioConsumer] Successfully updated AI introduction for concert: {}", concertId);
+                concertCacheService.evict(concertId);
             } else {
                 log.info("[AiBioConsumer] Skipped update for concert: {} (Message {} already processed or stale)", concertId, messageId);
             }

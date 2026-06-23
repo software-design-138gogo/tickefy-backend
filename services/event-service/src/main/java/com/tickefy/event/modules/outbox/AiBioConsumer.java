@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
+import java.time.Instant;
 import java.util.UUID;
 
 @Slf4j
@@ -38,6 +39,12 @@ public class AiBioConsumer {
                 return;
             }
 
+            String messageId = rootNode.path("messageId").asText();
+            if (messageId == null || messageId.isBlank()) {
+                log.error("[AiBioConsumer] Missing messageId in event envelope");
+                return;
+            }
+
             JsonNode payload = rootNode.path("payload");
             if (payload.isMissingNode()) {
                 log.error("[AiBioConsumer] Missing payload in event envelope");
@@ -55,9 +62,16 @@ public class AiBioConsumer {
 
             UUID concertId = UUID.fromString(concertIdStr);
             
+            String requestedAtStr = payload.path("requestedAt").asText(null);
+            Instant requestedAt = requestedAtStr != null ? Instant.parse(requestedAtStr) : null;
+
             // Call ConcertService to update
-            concertService.updateAiIntroduction(concertId, introduction);
-            log.info("[AiBioConsumer] Successfully updated AI introduction for concert: {}", concertId);
+            boolean updated = concertService.updateAiIntroduction(concertId, introduction, messageId, requestedAt);
+            if (updated) {
+                log.info("[AiBioConsumer] Successfully updated AI introduction for concert: {}", concertId);
+            } else {
+                log.info("[AiBioConsumer] Skipped update for concert: {} (Message {} already processed or stale)", concertId, messageId);
+            }
             
         } catch (Exception e) {
             log.error("[AiBioConsumer] Failed to process AiBioGeneratedEvent. Message: {}", messageStr, e);

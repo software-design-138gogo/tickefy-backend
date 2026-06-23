@@ -13,10 +13,10 @@ public class StubPaymentClient implements PaymentClient {
     private static final Logger log = LoggerFactory.getLogger(StubPaymentClient.class);
 
     @Override
-    public PaymentResult createTransaction(UUID orderId, long amount) {
-        String transactionId = UUID.randomUUID().toString();
-        String paymentUrl = "https://pay.stub.local/" + transactionId;
-        log.debug("StubPaymentClient: orderId={} amount={} txId={}", orderId, amount, transactionId);
-        return new PaymentResult(transactionId, paymentUrl, "INITIATED");
+    public PaymentResult createTransaction(CreatePaymentCommand cmd, String bearerToken) {
+        String txId = UUID.randomUUID().toString();
+        String paymentUrl = "https://pay.stub.local/" + txId;
+        log.debug("StubPaymentClient: orderId={} amount={} txId={}", cmd.orderId(), cmd.amount(), txId);
+        return new PaymentResult(txId, paymentUrl, "INITIATED");
     }
 }

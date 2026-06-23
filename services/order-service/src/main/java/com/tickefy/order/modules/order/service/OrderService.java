@@ -5,8 +5,10 @@ import com.tickefy.order.common.exception.ErrorCode;
 import com.tickefy.order.modules.order.client.InventoryBusinessException;
 import com.tickefy.order.modules.order.client.InventoryClient;
 import com.tickefy.order.modules.order.client.InventoryUnavailableException;
+import com.tickefy.order.modules.order.client.CreatePaymentCommand;
 import com.tickefy.order.modules.order.client.PaymentClient;
 import com.tickefy.order.modules.order.client.PaymentResult;
+import com.tickefy.order.modules.order.client.PaymentUnavailableException;
 import com.tickefy.order.modules.order.client.ReservationResult;
 import com.tickefy.order.modules.order.client.ReserveClientRequest;
 import com.tickefy.order.modules.order.dto.CreateOrderRequest;
@@ -129,7 +131,19 @@ public class OrderService {
 
         // Step 2: create payment if still RESERVED
         if (currentStatus == OrderStatus.RESERVED) {
-            PaymentResult payment = paymentClient.createTransaction(order.getId(), order.getTotalAmount());
+            CreatePaymentCommand cmd = new CreatePaymentCommand(
+                    order.getId(),
+                    userId,
+                    order.getTotalAmount(),
+                    "VND",
+                    "order-" + order.getId());
+            PaymentResult payment;
+            try {
+                payment = paymentClient.createTransaction(cmd, bearerToken);
+            } catch (PaymentUnavailableException e) {
+                log.warn("Payment unavailable for orderId={}: {}", order.getId(), e.getMessage());
+                throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, "Payment service unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+            }
             // TX3: RESERVED → PAYMENT_PENDING
             order = orderPersistence.markPaymentPending(order.getId(), payment.transactionId(), payment.paymentUrl());
             log.debug("Order payment pending: orderId={} txId={}", order.getId(), payment.transactionId());

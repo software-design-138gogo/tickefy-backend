@@ -26,6 +26,10 @@ app:
     validate-concert: false
     lua:
       reserve-script: classpath:lua/reserve.lua
+    reaper:
+      enabled: false
+  messaging:
+    listener-auto-startup: false
 
 logging:
   level:

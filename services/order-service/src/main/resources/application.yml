@@ -54,6 +54,7 @@ app:
     reservations-path: /api/inventory/reservations
   payment:
     base-url: ${PAYMENT_SERVICE_URL:http://localhost:8085}
+    internal-path: ${PAYMENT_INTERNAL_PATH:/internal/payments}
     stub: ${PAYMENT_STUB:true}
   order:
     expiry-ttl: ${ORDER_EXPIRY_TTL:PT15M}

@@ -13,8 +13,10 @@ import com.tickefy.order.common.exception.ErrorCode;
 import com.tickefy.order.modules.order.client.InventoryBusinessException;
 import com.tickefy.order.modules.order.client.InventoryClient;
 import com.tickefy.order.modules.order.client.InventoryUnavailableException;
+import com.tickefy.order.modules.order.client.CreatePaymentCommand;
 import com.tickefy.order.modules.order.client.PaymentClient;
 import com.tickefy.order.modules.order.client.PaymentResult;
+import com.tickefy.order.modules.order.client.PaymentUnavailableException;
 import com.tickefy.order.modules.order.client.ReservationResult;
 import com.tickefy.order.modules.order.client.ReserveClientRequest;
 import com.tickefy.order.modules.order.dto.CreateOrderRequest;
@@ -306,7 +308,7 @@ class OrderServiceUnitTest {
                 .thenReturn(reservedEntity);
 
         PaymentResult payment = new PaymentResult("tx-123", "https://pay.stub/tx-123", "INITIATED");
-        when(paymentClient.createTransaction(existingOrderId, 50000L)).thenReturn(payment);
+        when(paymentClient.createTransaction(any(CreatePaymentCommand.class), eq(BEARER))).thenReturn(payment);
 
         OrderEntity pendingEntity = OrderEntity.builder()
                 .id(existingOrderId)
@@ -334,8 +336,8 @@ class OrderServiceUnitTest {
         // markReserved WAS called
         verify(orderPersistence).markReserved(
                 eq(existingOrderId), eq(reservationId), eq(50000L), eq(expiresAt), eq(TICKET_TYPE_ID), eq(2), eq(25000L));
-        // paymentClient WAS called
-        verify(paymentClient).createTransaction(existingOrderId, 50000L);
+        // paymentClient WAS called with new signature
+        verify(paymentClient).createTransaction(any(CreatePaymentCommand.class), eq(BEARER));
         // markPaymentPending WAS called
         verify(orderPersistence).markPaymentPending(existingOrderId, "tx-123", "https://pay.stub/tx-123");
 
@@ -366,7 +368,7 @@ class OrderServiceUnitTest {
         when(orderRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.of(existingReserved));
 
         PaymentResult payment = new PaymentResult("tx-456", "https://pay.stub/tx-456", "INITIATED");
-        when(paymentClient.createTransaction(existingOrderId, 50000L)).thenReturn(payment);
+        when(paymentClient.createTransaction(any(CreatePaymentCommand.class), eq(BEARER))).thenReturn(payment);
 
         OrderEntity pendingEntity = OrderEntity.builder()
                 .id(existingOrderId)
@@ -387,8 +389,8 @@ class OrderServiceUnitTest {
         // reserve MUST NOT be called — already RESERVED
         verify(inventoryClient, never()).reserve(any(), any());
         verify(orderPersistence, never()).insertCreated(any(), any(), any(), any());
-        // payment MUST be called
-        verify(paymentClient).createTransaction(existingOrderId, 50000L);
+        // payment MUST be called with new signature
+        verify(paymentClient).createTransaction(any(CreatePaymentCommand.class), eq(BEARER));
         verify(orderPersistence).markPaymentPending(existingOrderId, "tx-456", "https://pay.stub/tx-456");
 
         assertThat(result.status()).isEqualTo(OrderStatus.PAYMENT_PENDING.name());

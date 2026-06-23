@@ -9,6 +9,8 @@ import com.tickefy.event.modules.venue.VenueRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickefy.event.modules.outbox.OutboxEvent;
 import com.tickefy.event.modules.outbox.OutboxEventRepository;
+import com.tickefy.event.modules.outbox.ProcessedMessage;
+import com.tickefy.event.modules.outbox.ProcessedMessageRepository;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +32,7 @@ public class ConcertService {
     private final VenueRepository venueRepository;
     private final ArtistRepository artistRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final ProcessedMessageRepository processedMessageRepository;
     private final ObjectMapper objectMapper;
 
     public ConcertService(
@@ -37,11 +40,13 @@ public class ConcertService {
             VenueRepository venueRepository,
             ArtistRepository artistRepository,
             OutboxEventRepository outboxEventRepository,
+            ProcessedMessageRepository processedMessageRepository,
             ObjectMapper objectMapper) {
         this.concertRepository = concertRepository;
         this.venueRepository = venueRepository;
         this.artistRepository = artistRepository;
         this.outboxEventRepository = outboxEventRepository;
+        this.processedMessageRepository = processedMessageRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -203,10 +208,31 @@ public class ConcertService {
     }
 
     // --- UPDATE AI INTRODUCTION ---
-    public void updateAiIntroduction(UUID id, String aiIntroduction) {
+    public boolean updateAiIntroduction(UUID id, String aiIntroduction, String messageId, Instant requestedAt) {
+        if (processedMessageRepository.existsById(messageId)) {
+            return false; // Idempotent
+        }
+
         Concert concert = findById(id);
+
+        // Staleness guard: if manual update is newer than the AI request, skip
+        if (concert.getAiIntroductionUpdatedAt() != null && requestedAt != null) {
+            if (concert.getAiIntroductionUpdatedAt().isAfter(requestedAt)) {
+                processedMessageRepository.save(new ProcessedMessage(messageId, "ConcertIntroductionGenerated", Instant.now()));
+                return false;
+            }
+        }
+
         concert.setAiIntroduction(aiIntroduction);
+        
+        // Use requestedAt as the source of truth for when this update was generated, 
+        // to prevent processing delays from artificially bumping the timestamp.
+        concert.setAiIntroductionUpdatedAt(requestedAt != null ? requestedAt : Instant.now());
+        
         concertRepository.save(concert);
+
+        processedMessageRepository.save(new ProcessedMessage(messageId, "ConcertIntroductionGenerated", Instant.now()));
+        return true;
     }
 
     // --- HELPER ---

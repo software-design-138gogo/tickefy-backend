@@ -66,6 +66,11 @@ app:
     validate-concert: ${VALIDATE_CONCERT:false}
     lua:
       reserve-script: classpath:lua/reserve.lua
+    reaper:
+      enabled: ${RESERVATION_REAPER_ENABLED:true}
+      delay: ${RESERVATION_REAPER_DELAY:PT30S}
+      grace: ${RESERVATION_REAPER_GRACE:PT5M}
+      batch-size: ${RESERVATION_REAPER_BATCH:100}
   messaging:
     exchange: ${MESSAGING_EXCHANGE:tickefy.exchange}
     dlx: ${MESSAGING_DLX:tickefy.dlx}

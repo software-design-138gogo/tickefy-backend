@@ -18,12 +18,13 @@ class Settings(BaseSettings):
     db_schema: str = "ai_bio_schema"
 
     # RabbitMQ
-    rabbitmq_host: str = "rabbitmq"
+    rabbitmq_host: str = "localhost"
     rabbitmq_port: int = 5672
     rabbitmq_username: str = "tickefy"
     rabbitmq_password: str = "tickefy"
     rabbitmq_exchange: str = "tickefy.exchange"
     rabbitmq_dlx: str = "tickefy.dlx"
+    rabbitmq_publish_batch_size: int = 20
 
     # Event Service
     event_service_url: str = "http://localhost:8082"

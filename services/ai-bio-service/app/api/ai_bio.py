@@ -20,6 +20,7 @@ from app.integrations.event_service_client import event_service_client
 from app.services.job_creation_service import job_creation_service
 from app.services.source_storage_service import source_storage_service
 from app.services.generation_service import generation_service
+from app.services.outbox_publisher_service import outbox_publisher_service
 from app.db.session import get_db
 from app.services.extraction_worker_service import extraction_worker_service
 
@@ -216,6 +217,23 @@ async def generate_job_introduction_demo(
     result = await generation_service.generate_introduction(
         db=db,
         job_id=job_id,
+    )
+
+    return success_response(
+        data=result.model_dump(mode="json"),
+        request_id=request.state.request_id,
+    )
+
+@router.post("/_dev/outbox/publish")
+async def publish_outbox_events_demo(
+    request: Request,
+    limit: int | None = Query(default=None, ge=1, le=100),
+    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    db: Session = Depends(get_db),
+):
+    result = await outbox_publisher_service.publish_pending_events(
+        db=db,
+        limit=limit,
     )
 
     return success_response(

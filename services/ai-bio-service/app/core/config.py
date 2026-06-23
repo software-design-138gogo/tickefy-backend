@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     # Event Service
     event_service_url: str = "http://localhost:8082"
+    event_service_connect_timeout_seconds: float = 2.0
+    event_service_read_timeout_seconds: float = 3.0
+    event_service_max_attempts: int = 2
 
     # Upload limits
     max_source_files: int = 5

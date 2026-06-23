@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Query, Request
+from uuid import UUID
 
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import (
@@ -13,6 +14,7 @@ from app.core.exceptions import (
 from app.schemas.common import success_response
 from app.security.dependencies import RequireAuthenticated, RequireOrganizerOrAdmin
 from app.security.principal import CurrentUser
+from app.integrations.event_service_client import event_service_client
 
 router = APIRouter(prefix="/api/ai-bio", tags=["ai-bio"])
 
@@ -110,5 +112,22 @@ async def organizer_check(
             "userId": str(current_user.user_id),
             "roles": sorted(current_user.roles),
         },
+        request_id=request.state.request_id,
+    )
+
+@router.get("/_dev/concerts/{concert_id}/ai-context")
+async def get_ai_context_demo(
+    concert_id: UUID,
+    request: Request,
+    current_user: CurrentUser = RequireOrganizerOrAdmin,
+):
+    context = await event_service_client.get_ai_context(
+        concert_id=concert_id,
+        bearer_token=current_user.token,
+        request_id=request.state.request_id,
+    )
+
+    return success_response(
+        data=context.model_dump(mode="json", by_alias=True),
         request_id=request.state.request_id,
     )

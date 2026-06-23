@@ -1,17 +1,13 @@
-import logging
-
 from fastapi import FastAPI
 
 from app.api.ai_bio import router as ai_bio_router
 from app.api.health import router as health_router
 from app.core.config import get_settings
 from app.core.exception_handlers import register_exception_handlers
+from app.core.logging import configure_logging
 from app.core.request_id import RequestIdMiddleware
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s requestId=%(request_id)s %(message)s",
-)
+configure_logging()
 
 settings = get_settings()
 

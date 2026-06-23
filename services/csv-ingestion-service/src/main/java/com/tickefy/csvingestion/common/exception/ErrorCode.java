@@ -3,6 +3,7 @@ package com.tickefy.csvingestion.common.exception;
 public enum ErrorCode {
     VALIDATION_ERROR,
     UNAUTHORIZED,
+    INVALID_TOKEN,
     FORBIDDEN,
     RESOURCE_NOT_FOUND,
     CONFLICT,

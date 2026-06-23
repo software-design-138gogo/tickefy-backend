@@ -28,6 +28,10 @@ app:
     stub: true
   database:
     schema: public
+  messaging:
+    listener-auto-startup: false
+    outbox:
+      enabled: false
 
 logging:
   level:

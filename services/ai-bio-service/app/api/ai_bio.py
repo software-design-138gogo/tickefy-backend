@@ -11,6 +11,8 @@ from app.core.exceptions import (
     unsupported_source_type,
 )
 from app.schemas.common import success_response
+from app.security.dependencies import RequireAuthenticated, RequireOrganizerOrAdmin
+from app.security.principal import CurrentUser
 
 router = APIRouter(prefix="/api/ai-bio", tags=["ai-bio"])
 
@@ -79,4 +81,34 @@ async def error_demo(code: str):
             "concert-not-found",
             "event-unavailable",
         ]},
+    )
+
+
+@router.get("/_me")
+async def me(
+    request: Request,
+    current_user: CurrentUser = RequireAuthenticated,
+):
+    return success_response(
+        data={
+            "userId": str(current_user.user_id),
+            "email": current_user.email,
+            "roles": sorted(current_user.roles),
+        },
+        request_id=request.state.request_id,
+    )
+
+
+@router.get("/_organizer-check")
+async def organizer_check(
+    request: Request,
+    current_user: CurrentUser = RequireOrganizerOrAdmin,
+):
+    return success_response(
+        data={
+            "allowed": True,
+            "userId": str(current_user.user_id),
+            "roles": sorted(current_user.roles),
+        },
+        request_id=request.state.request_id,
     )

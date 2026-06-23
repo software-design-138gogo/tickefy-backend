@@ -13,3 +13,5 @@ build/
 .coverage
 htmlcov/
 .git/
+keys/
+*.pem

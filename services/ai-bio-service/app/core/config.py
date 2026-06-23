@@ -35,8 +35,10 @@ class Settings(BaseSettings):
 
     # JWT
     jwt_issuer: str = "tickefy-auth-service"
-    jwt_audience: str = "tickefy-api"
-    jwt_public_key_path: str = "/keys/public.pem"
+    jwt_audience: str | None = "tickefy-api"
+    jwt_public_key_path: str = "keys/public.pem"
+    jwt_algorithm: str = "RS256"
+    jwt_leeway_seconds: int = 30
     
     # Object Storage / MinIO
     object_storage_endpoint: str = "http://localhost:9000"

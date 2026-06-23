@@ -43,6 +43,7 @@ class PipelineWorkerService:
             "RECEIVED",
             "STORING_SOURCES",
             "EXTRACTING_TEXT",
+            "CLEANING_TEXT",
         }:
             extraction = await extraction_worker_service.extract_job_sources(
                 db=db,

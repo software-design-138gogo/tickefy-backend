@@ -72,6 +72,19 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+    
+    # Runtime controls
+    app_env: str = "local"
+    dev_endpoints_enabled: bool = True
+
+    # Background worker
+    worker_enabled: bool = False
+    worker_poll_interval_seconds: float = 5.0
+    worker_batch_size: int = 1
+    worker_max_empty_polls_before_log: int = 12
+
+    # Retry policy
+    job_retry_max_retries: int = 3
 
     @property
     def database_url(self) -> str:

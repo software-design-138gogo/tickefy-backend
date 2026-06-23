@@ -24,35 +24,10 @@ from app.services.outbox_publisher_service import outbox_publisher_service
 from app.services.pipeline_worker_service import pipeline_worker_service
 from app.db.session import get_db
 from app.services.extraction_worker_service import extraction_worker_service
+from app.security.dev_guard import RequireDevEndpoint
+from app.services.job_retry_service import job_retry_service
 
 router = APIRouter(prefix="/api/ai-bio", tags=["ai-bio"])
-
-
-@router.get("/_info")
-async def service_info(request: Request):
-    return success_response(
-        data={
-            "service": "ai-bio-service",
-            "status": "SKELETON_READY",
-            "runtime": "python-fastapi",
-        },
-        request_id=request.state.request_id,
-    )
-
-
-@router.get("/_dev/validation")
-async def validation_demo(
-    request: Request,
-    page: int = Query(0, ge=0),
-    size: int = Query(20, ge=1, le=100),
-):
-    return success_response(
-        data={
-            "page": page,
-            "size": size,
-        },
-        request_id=request.state.request_id,
-    )
 
 @router.post("/concerts/{concert_id}/jobs")
 async def create_ai_bio_job(
@@ -87,6 +62,79 @@ async def create_ai_bio_job(
         headers={"X-Request-ID": request.state.request_id},
     )
 
+@router.post("/jobs/{job_id}/retry")
+async def retry_ai_bio_job(
+    job_id: UUID,
+    request: Request,
+    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    db: Session = Depends(get_db),
+):
+    result = job_retry_service.retry_job(
+        db=db,
+        job_id=job_id,
+        current_user=current_user,
+    )
+
+    return success_response(
+        data=result.model_dump(mode="json"),
+        request_id=request.state.request_id,
+    )
+    
+
+@router.get("/_me")
+async def me(
+    request: Request,
+    current_user: CurrentUser = RequireAuthenticated,
+):
+    return success_response(
+        data={
+            "userId": str(current_user.user_id),
+            "email": current_user.email,
+            "roles": sorted(current_user.roles),
+        },
+        request_id=request.state.request_id,
+    )
+
+
+@router.get("/_organizer-check")
+async def organizer_check(
+    request: Request,
+    current_user: CurrentUser = RequireOrganizerOrAdmin,
+):
+    return success_response(
+        data={
+            "allowed": True,
+            "userId": str(current_user.user_id),
+            "roles": sorted(current_user.roles),
+        },
+        request_id=request.state.request_id,
+    )
+
+@router.get("/_info")
+async def service_info(request: Request):
+    return success_response(
+        data={
+            "service": "ai-bio-service",
+            "status": "SKELETON_READY",
+            "runtime": "python-fastapi",
+        },
+        request_id=request.state.request_id,
+    )
+
+
+@router.get("/_dev/validation")
+async def validation_demo(
+    request: Request,
+    page: int = Query(0, ge=0),
+    size: int = Query(20, ge=1, le=100),
+):
+    return success_response(
+        data={
+            "page": page,
+            "size": size,
+        },
+        request_id=request.state.request_id,
+    )
 
 @router.get("/_dev/error/{code}")
 async def error_demo(code: str):
@@ -127,41 +175,11 @@ async def error_demo(code: str):
         ]},
     )
 
-
-@router.get("/_me")
-async def me(
-    request: Request,
-    current_user: CurrentUser = RequireAuthenticated,
-):
-    return success_response(
-        data={
-            "userId": str(current_user.user_id),
-            "email": current_user.email,
-            "roles": sorted(current_user.roles),
-        },
-        request_id=request.state.request_id,
-    )
-
-
-@router.get("/_organizer-check")
-async def organizer_check(
-    request: Request,
-    current_user: CurrentUser = RequireOrganizerOrAdmin,
-):
-    return success_response(
-        data={
-            "allowed": True,
-            "userId": str(current_user.user_id),
-            "roles": sorted(current_user.roles),
-        },
-        request_id=request.state.request_id,
-    )
-
 @router.get("/_dev/concerts/{concert_id}/ai-context")
 async def get_ai_context_demo(
     concert_id: UUID,
     request: Request,
-    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    current_user: CurrentUser = RequireDevEndpoint,
 ):
     context = await event_service_client.get_ai_context(
         concert_id=concert_id,
@@ -195,7 +213,7 @@ async def validate_and_store_sources_demo(
 async def extract_job_sources_demo(
     job_id: UUID,
     request: Request,
-    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    current_user: CurrentUser = RequireDevEndpoint,
     db: Session = Depends(get_db),
 ):
     result = await extraction_worker_service.extract_job_sources(
@@ -212,7 +230,7 @@ async def extract_job_sources_demo(
 async def generate_job_introduction_demo(
     job_id: UUID,
     request: Request,
-    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    current_user: CurrentUser = RequireDevEndpoint,
     db: Session = Depends(get_db),
 ):
     result = await generation_service.generate_introduction(
@@ -229,7 +247,7 @@ async def generate_job_introduction_demo(
 async def publish_outbox_events_demo(
     request: Request,
     limit: int | None = Query(default=None, ge=1, le=100),
-    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    current_user: CurrentUser = RequireDevEndpoint,
     db: Session = Depends(get_db),
 ):
     result = await outbox_publisher_service.publish_pending_events(
@@ -246,7 +264,7 @@ async def publish_outbox_events_demo(
 async def run_job_pipeline_demo(
     job_id: UUID,
     request: Request,
-    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    current_user: CurrentUser = RequireDevEndpoint,
     db: Session = Depends(get_db),
 ):
     result = await pipeline_worker_service.run_job_pipeline(
@@ -263,7 +281,7 @@ async def run_job_pipeline_demo(
 @router.post("/_dev/jobs/run-next-pending")
 async def run_next_pending_job_demo(
     request: Request,
-    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    current_user: CurrentUser = RequireDevEndpoint,
     db: Session = Depends(get_db),
 ):
     result = await pipeline_worker_service.run_next_pending_job(

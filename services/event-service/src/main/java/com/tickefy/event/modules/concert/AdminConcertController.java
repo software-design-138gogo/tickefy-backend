@@ -58,11 +58,13 @@ public class AdminConcertController {
 
     @GetMapping("/upload-url")
     public ApiResponse<Map<String, String>> getUploadUrl(
-            @RequestParam String objectKey,
+            @RequestParam UUID concertId,
+            @RequestParam String fileName,
             @RequestParam(defaultValue = "image/svg+xml") String contentType,
             HttpServletRequest request) {
         String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
+        String objectKey = "seat-maps/" + concertId + "/" + fileName;
         String url = storageService.generatePresignedUploadUrl(objectKey, contentType);
-        return ApiResponse.success(Map.of("uploadUrl", url), requestId);
+        return ApiResponse.success(Map.of("uploadUrl", url, "objectKey", objectKey), requestId);
     }
 }

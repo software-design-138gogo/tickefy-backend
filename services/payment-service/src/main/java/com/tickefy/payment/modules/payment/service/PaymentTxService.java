@@ -19,6 +19,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -176,6 +177,134 @@ public class PaymentTxService {
                 paymentId,
                 tx.getOrderId(),
                 outbox.getId());
+    }
+
+    /**
+     * Reconciliation resolve: PENDING → SUCCESS.
+     * Guard: nếu status != PENDING (callback đã resolve trước) → log skip + return (không 422).
+     * Toàn bộ load+guard+set+outbox trong 1 @Transactional.
+     */
+    @Transactional
+    public void resolveSuccess(UUID paymentId, String gatewayTransactionId) {
+        PaymentTransaction tx =
+                txRepo.findById(paymentId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                ErrorCode.INTERNAL_SERVER_ERROR,
+                                                "resolveSuccess: payment not found paymentId=" + paymentId,
+                                                HttpStatus.INTERNAL_SERVER_ERROR));
+
+        if (!"PENDING".equals(tx.getStatus())) {
+            log.info(
+                    "recon skip resolveSuccess status!=PENDING tx={} status={}",
+                    tx.getId(),
+                    tx.getStatus());
+            return;
+        }
+
+        stateMachine.assertTransition(PaymentStatus.PENDING, PaymentStatus.SUCCESS);
+
+        tx.setStatus(PaymentStatus.SUCCESS.name());
+        if (gatewayTransactionId != null && tx.getGatewayTransactionId() == null) {
+            tx.setGatewayTransactionId(gatewayTransactionId);
+        }
+
+        try {
+            txRepo.save(tx);
+        } catch (DataIntegrityViolationException e) {
+            // uq_payment_gateway_txn: callback chen trước → no-op (Lớp B)
+            org.hibernate.exception.ConstraintViolationException cve = unwrapConstraintViolation(e);
+            boolean isDupGatewayTxn = (cve != null)
+                    ? "uq_payment_gateway_txn".equals(cve.getConstraintName())
+                    : (e.getMessage() != null && e.getMessage().contains("uq_payment_gateway_txn"));
+            if (isDupGatewayTxn) {
+                log.info(
+                        "resolveSuccess dedup uq_payment_gateway_txn tx={} gatewayTransactionId={} — no-op",
+                        paymentId,
+                        gatewayTransactionId);
+                return;
+            }
+            throw e;
+        }
+
+        String innerPayload = buildInnerPayload(tx, PaymentStatus.SUCCESS, null);
+        OutboxEntity outbox =
+                OutboxEntity.builder()
+                        .id(UUID.randomUUID())
+                        .aggregateId(tx.getId())
+                        .eventType("PaymentSucceeded")
+                        .payload(innerPayload)
+                        .status("PENDING")
+                        .createdAt(Instant.now())
+                        .build();
+        outboxRepo.save(outbox);
+
+        log.info(
+                "resolveSuccess tx={} orderId={} -> SUCCESS outbox={}",
+                tx.getId(),
+                tx.getOrderId(),
+                outbox.getId());
+    }
+
+    /**
+     * Reconciliation resolve: PENDING → FAILED.
+     * Guard: nếu status != PENDING → log skip + return.
+     */
+    @Transactional
+    public void resolveFailed(UUID paymentId, String reason) {
+        PaymentTransaction tx =
+                txRepo.findById(paymentId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                ErrorCode.INTERNAL_SERVER_ERROR,
+                                                "resolveFailed: payment not found paymentId=" + paymentId,
+                                                HttpStatus.INTERNAL_SERVER_ERROR));
+
+        if (!"PENDING".equals(tx.getStatus())) {
+            log.info(
+                    "recon skip resolveFailed status!=PENDING tx={} status={}",
+                    tx.getId(),
+                    tx.getStatus());
+            return;
+        }
+
+        stateMachine.assertTransition(PaymentStatus.PENDING, PaymentStatus.FAILED);
+
+        tx.setStatus(PaymentStatus.FAILED.name());
+        txRepo.save(tx);
+
+        String innerPayload = buildInnerPayload(tx, PaymentStatus.FAILED, reason);
+        OutboxEntity outbox =
+                OutboxEntity.builder()
+                        .id(UUID.randomUUID())
+                        .aggregateId(tx.getId())
+                        .eventType("PaymentFailed")
+                        .payload(innerPayload)
+                        .status("PENDING")
+                        .createdAt(Instant.now())
+                        .build();
+        outboxRepo.save(outbox);
+
+        log.info(
+                "resolveFailed tx={} orderId={} -> FAILED reason={} outbox={}",
+                tx.getId(),
+                tx.getOrderId(),
+                reason,
+                outbox.getId());
+    }
+
+    private org.hibernate.exception.ConstraintViolationException unwrapConstraintViolation(
+            DataIntegrityViolationException e) {
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            if (cause instanceof org.hibernate.exception.ConstraintViolationException cve) {
+                return cve;
+            }
+            cause = cause.getCause();
+        }
+        return null;
     }
 
     String buildInnerPayload(PaymentTransaction tx, PaymentStatus status, String reason) {

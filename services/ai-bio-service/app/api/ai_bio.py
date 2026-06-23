@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, File, UploadFile
 from uuid import UUID
 
 from app.core.error_codes import ErrorCode
@@ -15,6 +15,7 @@ from app.schemas.common import success_response
 from app.security.dependencies import RequireAuthenticated, RequireOrganizerOrAdmin
 from app.security.principal import CurrentUser
 from app.integrations.event_service_client import event_service_client
+from app.services.source_storage_service import source_storage_service
 
 router = APIRouter(prefix="/api/ai-bio", tags=["ai-bio"])
 
@@ -129,5 +130,22 @@ async def get_ai_context_demo(
 
     return success_response(
         data=context.model_dump(mode="json", by_alias=True),
+        request_id=request.state.request_id,
+    )
+
+@router.post("/_dev/concerts/{concert_id}/sources")
+async def validate_and_store_sources_demo(
+    concert_id: UUID,
+    request: Request,
+    files: list[UploadFile] = File(default=[]),
+    current_user: CurrentUser = RequireOrganizerOrAdmin,
+):
+    result = await source_storage_service.validate_and_store_files(
+        concert_id=concert_id,
+        files=files,
+    )
+
+    return success_response(
+        data=result.model_dump(mode="json"),
         request_id=request.state.request_id,
     )

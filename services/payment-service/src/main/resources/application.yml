@@ -41,11 +41,26 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,circuitbreakers,circuitbreakerevents
   endpoint:
     health:
       probes:
         enabled: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      sepay:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - com.tickefy.payment.modules.payment.gateway.PaymentGatewayException
 
 app:
   database:
@@ -61,6 +76,9 @@ app:
   messaging:
     exchange: ${APP_MESSAGING_EXCHANGE:tickefy.exchange}
     outbox-poll-delay: ${OUTBOX_POLL_DELAY:3000}
+  sepay:
+    mock:
+      fail-mode: ${SEPAY_MOCK_FAIL_MODE:NONE}
   dev:
     payment-sim:
       enabled: ${DEV_PAYMENT_SIM_ENABLED:false}

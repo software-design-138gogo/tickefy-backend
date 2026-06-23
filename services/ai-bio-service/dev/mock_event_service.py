@@ -1,3 +1,5 @@
+import os
+
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -5,6 +7,8 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
 app = FastAPI(title="Mock Event Service for AI Bio")
+
+DEFAULT_ORGANIZER_ID = "33333333-3333-3333-3333-333333333333"
 
 
 def now_iso() -> str:
@@ -38,6 +42,10 @@ def error_response(status: int, code: str, message: str, request_id: str) -> JSO
         },
         headers={"X-Request-ID": request_id},
     )
+
+
+def mock_organizer_id() -> str:
+    return os.getenv("MOCK_ORGANIZER_ID", "").strip() or DEFAULT_ORGANIZER_ID
 
 
 @app.get("/internal/concerts/{concert_id}/ai-context")
@@ -76,7 +84,7 @@ async def get_ai_context(
         data={
             "concertId": str(concert_id),
             "concertName": "Mock Concert",
-            "organizerId": "33333333-3333-3333-3333-333333333333",
+            "organizerId": mock_organizer_id(),
             "status": "DRAFT",
             "currentIntroductionUpdatedAt": None,
             "manualIntroductionUpdatedAt": None,

@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Query, Request, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
+from fastapi.responses import JSONResponse
 from uuid import UUID
+from sqlalchemy.orm import Session
 
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import (
@@ -15,7 +17,9 @@ from app.schemas.common import success_response
 from app.security.dependencies import RequireAuthenticated, RequireOrganizerOrAdmin
 from app.security.principal import CurrentUser
 from app.integrations.event_service_client import event_service_client
+from app.services.job_creation_service import job_creation_service
 from app.services.source_storage_service import source_storage_service
+from app.db.session import get_db
 
 router = APIRouter(prefix="/api/ai-bio", tags=["ai-bio"])
 
@@ -44,6 +48,39 @@ async def validation_demo(
             "size": size,
         },
         request_id=request.state.request_id,
+    )
+
+@router.post("/concerts/{concert_id}/jobs")
+async def create_ai_bio_job(
+    concert_id: UUID,
+    request: Request,
+    files: list[UploadFile] | None = File(default=None),
+    language: str = Form(default="vi"),
+    target_length: str = Form(default="SHORT", alias="targetLength"),
+    tone: str | None = Form(default=None),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    current_user: CurrentUser = RequireOrganizerOrAdmin,
+    db: Session = Depends(get_db),
+):
+    result, http_status = await job_creation_service.create_job(
+        db=db,
+        concert_id=concert_id,
+        files=files,
+        language=language,
+        target_length=target_length,
+        tone=tone,
+        idempotency_key=idempotency_key,
+        current_user=current_user,
+        request_id=request.state.request_id,
+    )
+
+    return JSONResponse(
+        status_code=http_status,
+        content=success_response(
+            data=result.model_dump(mode="json"),
+            request_id=request.state.request_id,
+        ),
+        headers={"X-Request-ID": request.state.request_id},
     )
 
 

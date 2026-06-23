@@ -196,3 +196,16 @@ def ai_bio_job_already_active(concert_id: str | None = None) -> ConflictExceptio
         message="The concert already has an active AI Bio job.",
         details=details,
     )
+
+def idempotency_key_required() -> BadRequestException:
+    return BadRequestException(
+        code=ErrorCode.IDEMPOTENCY_KEY_REQUIRED,
+        message="Idempotency-Key header is required.",
+    )
+
+
+def idempotency_key_reused_with_different_request() -> ConflictException:
+    return ConflictException(
+        code=ErrorCode.IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST,
+        message="Idempotency key was reused with a different request.",
+    )

@@ -1,19 +1,20 @@
 import re
-from dataclasses import dataclass
 
+from app.ai.ai_provider import AiGenerationResult
 from app.core.config import get_settings
-
-
-@dataclass(frozen=True)
-class AiGenerationResult:
-    introduction: str
-    provider_name: str
-    provider_model: str
 
 
 class MockAiProvider:
     def __init__(self) -> None:
         self.settings = get_settings()
+
+    @property
+    def provider_name(self) -> str:
+        return "mock"
+
+    @property
+    def provider_model(self) -> str:
+        return self.settings.ai_model
 
     async def generate_concert_introduction(
         self,
@@ -43,8 +44,8 @@ class MockAiProvider:
 
         return AiGenerationResult(
             introduction=introduction,
-            provider_name="mock",
-            provider_model=self.settings.ai_model,
+            provider_name=self.provider_name,
+            provider_model=self.provider_model,
         )
 
     def _generate_vietnamese(

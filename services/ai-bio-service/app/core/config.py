@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     ai_max_context_chars: int = 12000
     ai_min_output_chars: int = 80
     ai_max_output_chars: int = 1200
+    
+    # OpenAI provider
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-5.5"
+    openai_timeout_seconds: float = 30.0
+    openai_max_retries: int = 1
+    openai_max_output_tokens: int = 500
 
     model_config = SettingsConfigDict(
         env_file=".env",

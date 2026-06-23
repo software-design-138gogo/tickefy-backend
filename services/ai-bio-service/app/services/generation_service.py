@@ -5,10 +5,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.context_builder import SourceContextItem, context_builder
-from app.ai.mock_ai_provider import mock_ai_provider
+from app.ai.provider_factory import ai_provider_factory
 from app.core.config import get_settings
 from app.core.error_codes import ErrorCode
-from app.core.exceptions import ConflictException, NotFoundException
+from app.core.exceptions import AppException, ConflictException, NotFoundException
 from app.db.models import (
     ConcertIntroductionJob,
     DocumentExtraction,
@@ -86,7 +86,7 @@ class GenerationService:
             status="PROCESSING",
             provider_name=self.settings.ai_provider,
             provider_model=self.settings.ai_model,
-            prompt_version="mock-v1",
+            prompt_version="concert-introduction-v1",
             started_at=self._utc_now(),
             extra_metadata={
                 "contextChars": built_context.total_chars,
@@ -102,13 +102,56 @@ class GenerationService:
         job.updated_at = self._utc_now()
         db.commit()
 
-        ai_result = await mock_ai_provider.generate_concert_introduction(
-            concert_name=job.concert_name_snapshot,
-            context_text=built_context.context_text,
-            language=job.language,
-            target_length=job.target_length,
-            tone=job.tone,
-        )
+        ai_provider = ai_provider_factory.get_provider()
+
+        attempt.provider_name = ai_provider.provider_name
+        attempt.provider_model = ai_provider.provider_model
+        db.commit()
+
+        try:
+            ai_result = await ai_provider.generate_concert_introduction(
+                concert_name=job.concert_name_snapshot,
+                context_text=built_context.context_text,
+                language=job.language,
+                target_length=job.target_length,
+                tone=job.tone,
+            )
+        except AppException as exc:
+            now = self._utc_now()
+
+            job.status = "FAILED"
+            job.processing_stage = "CALLING_AI"
+            job.error_code = exc.code
+            job.error_message = exc.message
+            job.is_retryable = True
+            job.failed_at = now
+            job.updated_at = now
+
+            attempt.status = "FAILED"
+            attempt.completed_at = now
+            attempt.duration_ms = self._duration_ms(attempt.started_at, now)
+
+            db.commit()
+
+            raise exc
+        except Exception as exc:
+            now = self._utc_now()
+
+            job.status = "FAILED"
+            job.processing_stage = "CALLING_AI"
+            job.error_code = ErrorCode.AI_PROVIDER_UNAVAILABLE
+            job.error_message = "AI provider request failed."
+            job.is_retryable = True
+            job.failed_at = now
+            job.updated_at = now
+
+            attempt.status = "FAILED"
+            attempt.completed_at = now
+            attempt.duration_ms = self._duration_ms(attempt.started_at, now)
+
+            db.commit()
+
+            raise exc
 
         self._validate_output(ai_result.introduction)
 

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.error_codes import ErrorCode
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import ConflictException, NotFoundException
 from app.db.models import ConcertIntroductionJob
 from app.schemas.pipeline import PipelineRunResponse
 from app.services.extraction_worker_service import extraction_worker_service
@@ -20,6 +20,20 @@ class PipelineWorkerService:
         job_id: UUID,
     ) -> PipelineRunResponse:
         job = self._get_job(db=db, job_id=job_id)
+        
+        if job.status == "FAILED":
+          raise ConflictException(
+              code=ErrorCode.CONFLICT,
+              message="AI Bio job already failed. Create a new job or use a retry flow.",
+              details={
+                  "jobId": str(job.id),
+                  "status": job.status,
+                  "processingStage": job.processing_stage,
+                  "errorCode": job.error_code,
+                  "errorMessage": job.error_message,
+                  "isRetryable": job.is_retryable,
+              },
+          )
 
         extraction = None
         generation = None

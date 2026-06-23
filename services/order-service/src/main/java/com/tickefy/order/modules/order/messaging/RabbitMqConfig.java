@@ -111,11 +111,14 @@ public class RabbitMqConfig {
 
     @Bean
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
-            ConnectionFactory connectionFactory, MessageConverter jsonMessageConverter) {
+            ConnectionFactory connectionFactory,
+            MessageConverter jsonMessageConverter,
+            @Value("${app.messaging.listener-auto-startup:true}") boolean listenerAutoStartup) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(jsonMessageConverter);
         factory.setDefaultRequeueRejected(false); // poison -> DLQ, not infinite requeue
+        factory.setAutoStartup(listenerAutoStartup);
         return factory;
     }
 }

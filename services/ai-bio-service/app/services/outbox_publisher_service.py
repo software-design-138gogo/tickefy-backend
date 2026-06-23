@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,12 +20,14 @@ class OutboxPublisherService:
         *,
         db: Session,
         limit: int | None = None,
+        aggregate_id: UUID | None = None,
     ) -> PublishOutboxResponse:
         batch_limit = limit or self.settings.rabbitmq_publish_batch_size
 
         events = self._load_pending_events(
             db=db,
             limit=batch_limit,
+            aggregate_id=aggregate_id,
         )
 
         published_items: list[PublishedOutboxItem] = []
@@ -82,13 +85,19 @@ class OutboxPublisherService:
         *,
         db: Session,
         limit: int,
+        aggregate_id: UUID | None = None,
     ) -> list[OutboxEvent]:
+        conditions = [
+            OutboxEvent.status == "PENDING",
+            OutboxEvent.available_at <= self._utc_now(),
+        ]
+
+        if aggregate_id is not None:
+            conditions.append(OutboxEvent.aggregate_id == aggregate_id)
+
         statement = (
             select(OutboxEvent)
-            .where(
-                OutboxEvent.status == "PENDING",
-                OutboxEvent.available_at <= self._utc_now(),
-            )
+            .where(*conditions)
             .order_by(OutboxEvent.created_at.asc())
             .limit(limit)
         )

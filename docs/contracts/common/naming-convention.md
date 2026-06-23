@@ -133,7 +133,7 @@ Các contract mới trong ticket/check-in domain phải dùng tên sau:
 | Role nhân viên soát vé | `CHECKIN_STAFF` | `STAFF` |
 | Service sở hữu ticket state | `ticket-service` | `e-ticket-service` trong contract canonical |
 | Service điều phối scan/sync | `checkin-service` | `check-in-service`, `checkInService` |
-| URL resource check-in | `/api/checkins` hoặc `/api/checkins/...` | `/api/check-in`, `/api/checkIn` |
+| URL resource check-in | `/api/checkin` hoặc `/api/checkin/...` | `/api/checkins`, `/api/check-in`, `/api/checkIn` |
 | QR token public/log-safe | `qrTokenMasked` | raw `qrToken` trong public response/log |
 | Offline sync batch | `syncBatchId` | `batchId` mơ hồ |
 | Offline scan item | `offlineScanId` | `scanId` nếu payload có nhiều loại scan |
@@ -613,7 +613,10 @@ Ví dụ:
 /api/orders
 /api/payments
 /api/tickets
-/api/checkins
+/api/checkin
+/api/checkin/scan
+/api/checkin/offline-snapshots
+/api/checkin/offline-sync-batches
 /api/notifications
 /api/ai-bio/jobs
 /api/admin/csv-import

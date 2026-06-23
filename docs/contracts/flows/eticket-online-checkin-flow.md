@@ -49,7 +49,7 @@ sequenceDiagram
     participant CheckinDB as Checkin DB
     participant TicketDB as Ticket DB
 
-    Mobile->>Checkin: POST /api/checkins/scan
+    Mobile->>Checkin: POST /api/checkin/scan
     Checkin->>Checkin: verify JWT role CHECKIN_STAFF
     Checkin->>Checkin: validate concert and gate assignment
     Checkin->>CheckinDB: create or find audit by scanRequestId

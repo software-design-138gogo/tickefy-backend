@@ -4,7 +4,7 @@ status: DRAFT
 version: 1.0
 owner: Hòa
 reviewers: [BE Lead, Mobile]
-lastUpdated: 2026-06-16
+lastUpdated: 2026-06-23
 ---
 
 # Service Specification — `checkin-service`
@@ -17,9 +17,9 @@ lastUpdated: 2026-06-16
 | Implementation folder | `services/checkin-service` |
 | Owner | Hòa |
 | Repository | `tickefy-backend` |
-| Internal port | 8087 (host) → 8080 (container) |
-| Public base path | `/api/checkins` |
-| Internal base path | `/internal/checkins` |
+| Internal port | 8088 (host) → 8080 (container) |
+| Public base path | `/api/checkin` |
+| Internal base path | `/internal/checkin` |
 | Health check | `/actuator/health` |
 | Swagger/OpenAPI | `/swagger-ui/index.html` when enabled |
 | Database schema | `checkin_schema` target; verify implementation schema before freeze |
@@ -104,10 +104,10 @@ lastUpdated: 2026-06-16
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| POST | `/api/checkins/scan` | `CHECKIN_STAFF` | Online scan and immediate server decision |
-| GET | `/api/checkins/concerts/{concertId}/stats` | `CHECKIN_STAFF` / `ORGANIZER` | Check-in summary for a concert |
+| POST | `/api/checkin/scan` | `CHECKIN_STAFF` | Online scan and immediate server decision |
+| GET | `/api/checkin/concerts/{concertId}/stats` | `CHECKIN_STAFF` / `ORGANIZER` | Check-in summary for a concert |
 
-Request `POST /api/checkins/scan`:
+Request `POST /api/checkin/scan`:
 
 ```json
 {
@@ -126,8 +126,8 @@ Response uses `../common/checkin-result-catalog.md`.
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| POST | `/api/checkins/offline-snapshots` | `CHECKIN_STAFF` | Create/download snapshot metadata/payload |
-| GET | `/api/checkins/offline-snapshots/{snapshotId}` | `CHECKIN_STAFF` | Fetch existing snapshot if not expired |
+| POST | `/api/checkin/offline-snapshots` | `CHECKIN_STAFF` | Create/download snapshot metadata/payload |
+| GET | `/api/checkin/offline-snapshots/{snapshotId}` | `CHECKIN_STAFF` | Fetch existing snapshot if not expired |
 
 Snapshot response contains safe fields only:
 
@@ -147,8 +147,8 @@ Snapshot response contains safe fields only:
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| POST | `/api/checkins/offline-sync-batches` | `CHECKIN_STAFF` | Upload offline scan batch for reconciliation |
-| GET | `/api/checkins/offline-sync-batches/{syncBatchId}` | `CHECKIN_STAFF` | Read batch result/replay outcome |
+| POST | `/api/checkin/offline-sync-batches` | `CHECKIN_STAFF` | Upload offline scan batch for reconciliation |
+| GET | `/api/checkin/offline-sync-batches/{syncBatchId}` | `CHECKIN_STAFF` | Read batch result/replay outcome |
 
 Request:
 
@@ -309,7 +309,7 @@ Metrics:
 
 | Variable | Required | Example | Description |
 |---|---|---|---|
-| `SERVER_PORT` | Yes | `8087` | Service port |
+| `SERVER_PORT` | Yes | `8088` | Service port |
 | `DB_URL` / `DB_HOST` | Yes | `jdbc:postgresql://localhost:5432/tickefy` | PostgreSQL connection |
 | `DB_SCHEMA` | Yes | `checkin_schema` | Owned schema |
 | `JWT_PUBLIC_KEY_PATH` | Yes in prod | `/run/secrets/jwt-public.pem` | Verify bearer token |

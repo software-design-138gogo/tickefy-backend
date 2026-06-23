@@ -49,7 +49,7 @@ sequenceDiagram
     participant Ticket as ticket-service
     participant Store as Object Storage
 
-    Mobile->>Checkin: POST /api/checkins/offline-snapshots
+    Mobile->>Checkin: POST /api/checkin/offline-snapshots
     Checkin->>Checkin: verify CHECKIN_STAFF and assignment
     Checkin->>Ticket: GET /internal/tickets/snapshot?concertId=...
     Ticket-->>Checkin: eligible tickets with safe QR lookup fields
@@ -117,7 +117,7 @@ sequenceDiagram
     participant Ticket as ticket-service
     participant CheckinDB as Checkin DB
 
-    Mobile->>Checkin: POST /api/checkins/offline-sync-batches
+    Mobile->>Checkin: POST /api/checkin/offline-sync-batches
     Checkin->>Checkin: verify CHECKIN_STAFF and validate batch
     Checkin->>CheckinDB: create or load syncBatchId
     loop each offline item

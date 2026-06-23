@@ -49,7 +49,7 @@ public class RabbitMqConfig {
 
     @Bean
     public Queue orderPaidQueue() {
-        return dlqEnabled(ORDER_PAID_QUEUE, ORDER_PAID_RK);
+        return dlqEnabled(ORDER_PAID_QUEUE);
     }
 
     @Bean
@@ -64,12 +64,12 @@ public class RabbitMqConfig {
 
     @Bean
     public Binding orderPaidDlqBinding(Queue orderPaidDlq, TopicExchange tickefyDlx) {
-        return BindingBuilder.bind(orderPaidDlq).to(tickefyDlx).with(ORDER_PAID_RK + ".dlq");
+        return BindingBuilder.bind(orderPaidDlq).to(tickefyDlx).with(dlRk(ORDER_PAID_QUEUE));
     }
 
     @Bean
     public Queue orderPaymentFailedQueue() {
-        return dlqEnabled(ORDER_PAYMENT_FAILED_QUEUE, ORDER_PAYMENT_FAILED_RK);
+        return dlqEnabled(ORDER_PAYMENT_FAILED_QUEUE);
     }
 
     @Bean
@@ -84,12 +84,12 @@ public class RabbitMqConfig {
 
     @Bean
     public Binding orderPaymentFailedDlqBinding(Queue orderPaymentFailedDlq, TopicExchange tickefyDlx) {
-        return BindingBuilder.bind(orderPaymentFailedDlq).to(tickefyDlx).with(ORDER_PAYMENT_FAILED_RK + ".dlq");
+        return BindingBuilder.bind(orderPaymentFailedDlq).to(tickefyDlx).with(dlRk(ORDER_PAYMENT_FAILED_QUEUE));
     }
 
     @Bean
     public Queue orderExpiredQueue() {
-        return dlqEnabled(ORDER_EXPIRED_QUEUE, ORDER_EXPIRED_RK);
+        return dlqEnabled(ORDER_EXPIRED_QUEUE);
     }
 
     @Bean
@@ -104,13 +104,27 @@ public class RabbitMqConfig {
 
     @Bean
     public Binding orderExpiredDlqBinding(Queue orderExpiredDlq, TopicExchange tickefyDlx) {
-        return BindingBuilder.bind(orderExpiredDlq).to(tickefyDlx).with(ORDER_EXPIRED_RK + ".dlq");
+        return BindingBuilder.bind(orderExpiredDlq).to(tickefyDlx).with(dlRk(ORDER_EXPIRED_QUEUE));
     }
 
-    private Queue dlqEnabled(String name, String rk) {
+    /**
+     * Dead-letter routing key dẫn xuất từ TÊN QUEUE (§6.6: per-queue, KHÔNG per-routing-key).
+     * Bỏ hậu tố ".queue" rồi gắn ".dlq":
+     * "inventory-service.order-paid.queue" => "inventory-service.order-paid.dlq".
+     * Dùng CHUNG cho cả queue-declare lẫn DLQ-binding để DL-rk hai bên khớp tuyệt đối.
+     */
+    private static String dlRk(String queueName) {
+        String base =
+                queueName.endsWith(".queue")
+                        ? queueName.substring(0, queueName.length() - ".queue".length())
+                        : queueName;
+        return base + ".dlq";
+    }
+
+    private Queue dlqEnabled(String name) {
         return QueueBuilder.durable(name)
                 .deadLetterExchange(dlxName)
-                .deadLetterRoutingKey(rk + ".dlq")
+                .deadLetterRoutingKey(dlRk(name))
                 .build();
     }
 

@@ -34,15 +34,15 @@ workspace "Tickefy - C4 Level 2" "Container template showing Tickefy application
             tags "InternalSystem"
 
             group "Client Applications" {
-                customerWeb = container "Customer Web" "Allows audiences to discover concerts, buy tickets, and view QR e-tickets." "React/Next.js" {
+                customerWeb = container "Customer Web" "Allows audiences to discover concerts, buy tickets, and view QR e-tickets." "Next.js" {
                     tags "WebBrowser"
                 }
 
-                adminWeb = container "Admin Web" "Allows organizers and administrators to manage concerts and operational data." "React/Next.js" {
+                adminWeb = container "Admin Web" "Allows organizers and administrators to manage concerts and operational data." "React + Vite" {
                     tags "WebBrowser"
                 }
 
-                checkinMobile = container "Check-in Mobile App" "Allows staff to scan tickets offline or online and synchronize scan batches." "React Native/Flutter" {
+                checkinMobile = container "Check-in Mobile App" "Allows staff to scan tickets offline or online and synchronize scan batches." "React Native (Expo)" {
                     tags "MobileApp"
                 }
             }
@@ -158,7 +158,7 @@ workspace "Tickefy - C4 Level 2" "Container template showing Tickefy application
         tickefy.checkinService -> tickefy.rabbitMq "Publishes check-in events" "AMQP" {
             tags "Asynchronous"
         }
-        tickefy.aiBioService -> tickefy.rabbitMq "Publishes ArtistBioGenerated" "AMQP" {
+        tickefy.aiBioService -> tickefy.rabbitMq "Publishes ConcertIntroductionGenerated" "AMQP" {
             tags "Asynchronous"
         }
         tickefy.csvService -> tickefy.rabbitMq "Publishes VipGuestImportCompleted" "AMQP" {
@@ -180,7 +180,7 @@ workspace "Tickefy - C4 Level 2" "Container template showing Tickefy application
         tickefy.rabbitMq -> tickefy.checkinService "Delivers ticket and VIP-import events" "AMQP" {
             tags "Asynchronous"
         }
-        tickefy.rabbitMq -> tickefy.eventService "Delivers ArtistBioGenerated" "AMQP" {
+        tickefy.rabbitMq -> tickefy.eventService "Delivers ConcertIntroductionGenerated" "AMQP" {
             tags "Asynchronous"
         }
 
@@ -191,7 +191,6 @@ workspace "Tickefy - C4 Level 2" "Container template showing Tickefy application
         tickefy.authService -> tickefy.redis "Stores token blacklist and authorization cache" "Redis protocol"
         tickefy.eventService -> tickefy.redis "Caches concert data" "Redis protocol"
         tickefy.inventoryService -> tickefy.redis "Maintains atomic reservation and stock counters" "Redis/Lua"
-        tickefy.orderService -> tickefy.redis "Stores order idempotency and temporary state" "Redis protocol"
         tickefy.paymentService -> tickefy.redis "Stores payment idempotency and circuit-breaker state" "Redis protocol"
 
         // =============================================================

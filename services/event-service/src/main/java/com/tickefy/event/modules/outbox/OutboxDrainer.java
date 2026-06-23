@@ -1,7 +1,10 @@
 package com.tickefy.event.modules.outbox;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tickefy.event.common.event.EventEnvelope;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.AmqpTemplate;
@@ -17,6 +20,7 @@ public class OutboxDrainer {
 
     private final OutboxEventRepository outboxEventRepository;
     private final AmqpTemplate amqpTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.rabbitmq.exchange:tickefy.events}")
     private String exchange;
@@ -34,10 +38,20 @@ public class OutboxDrainer {
 
         for (OutboxEvent event : pendingEvents) {
             try {
-                // Determine routing key based on event type
-                String routingKey = event.getEventType();
+                // Convert PascalCase to lowercase.dot.separated (e.g. ConcertPublished -> concert.published)
+                String routingKey = event.getEventType().replaceAll("([a-z])([A-Z]+)", "$1.$2").toLowerCase();
                 
-                amqpTemplate.convertAndSend(exchange, routingKey, event.getPayload());
+                EventEnvelope envelope = EventEnvelope.builder()
+                        .messageId(event.getId().toString())
+                        .eventType(event.getEventType())
+                        .eventVersion("1.0")
+                        .source("event-service")
+                        .occurredAt(event.getCreatedAt().toString())
+                        .correlationId(UUID.randomUUID().toString())
+                        .payload(objectMapper.readTree(event.getPayload()))
+                        .build();
+
+                amqpTemplate.convertAndSend(exchange, routingKey, envelope);
 
                 event.setStatus("PUBLISHED");
                 event.setPublishedAt(Instant.now());

@@ -11,13 +11,14 @@ WORKDIR /workspace
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 
-RUN chmod +x mvnw \
-  && ./mvnw -B -ntp -DskipTests dependency:go-offline
+RUN --mount=type=cache,target=/root/.m2 \
+  mvn -B -ntp -DskipTests dependency:go-offline
 
 COPY src/ src/
 
 # Tests are run before image build in CI/local workflow.
-RUN ./mvnw -B -ntp clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2 \
+  mvn -B -ntp clean package -DskipTests
 
 
 # ============================================================

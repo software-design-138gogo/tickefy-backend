@@ -7,10 +7,12 @@ COPY .mvn .mvn
 COPY mvnw mvnw
 COPY mvnw.cmd mvnw.cmd
 COPY pom.xml pom.xml
-RUN mvn -q -DskipTests dependency:go-offline
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -q -DskipTests dependency:go-offline
 
 COPY src src
-RUN mvn -q clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -q clean package -DskipTests
 
 FROM eclipse-temurin:25-jre
 WORKDIR /app

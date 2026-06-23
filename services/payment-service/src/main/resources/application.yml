@@ -4,7 +4,7 @@ spring:
   profiles:
     default: dev
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy_payment}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -14,15 +14,25 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        default_schema: ${DB_SCHEMA:public}
+        default_schema: ${DB_SCHEMA:payment_service}
         format_sql: true
         jdbc:
           time_zone: ${APP_TIMEZONE:UTC}
   flyway:
     enabled: true
-    schemas: ${DB_SCHEMA:public}
-    default-schema: ${DB_SCHEMA:public}
+    schemas: ${DB_SCHEMA:payment_service}
+    default-schema: ${DB_SCHEMA:payment_service}
     locations: classpath:db/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
 
 server:
   port: ${SERVER_PORT:8085}
@@ -39,7 +49,21 @@ management:
 
 app:
   database:
-    schema: ${DB_SCHEMA:public}
+    schema: ${DB_SCHEMA:payment_service}
+  payment:
+    expiry: ${PAYMENT_EXPIRY:PT15M}
+    provider: MOCK_SEPAY
+    callback:
+      secret: ${SEPAY_WEBHOOK_SECRET:}
+      require-signature: ${PAYMENT_CALLBACK_REQUIRE_SIGNATURE:false}
+    idempotency:
+      cache-ttl: ${PAYMENT_IDEMPOTENCY_TTL:PT24H}
+  messaging:
+    exchange: ${APP_MESSAGING_EXCHANGE:tickefy.exchange}
+    outbox-poll-delay: ${OUTBOX_POLL_DELAY:3000}
+  dev:
+    payment-sim:
+      enabled: ${DEV_PAYMENT_SIM_ENABLED:false}
 
 logging:
   level:

@@ -40,6 +40,9 @@ management:
 app:
   database:
     schema: ${DB_SCHEMA:csv_ingestion_service}
+  jwt:
+    issuer: ${JWT_ISSUER:tickefy-auth-service}
+    public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
 
 logging:
   level:

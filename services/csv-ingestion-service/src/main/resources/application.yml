@@ -53,6 +53,15 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 1
         record-exceptions:
           - com.tickefy.csvingestion.modules.csvimport.client.EventUnavailableException
+      inventory-service:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 1
+        record-exceptions:
+          - com.tickefy.csvingestion.modules.csvimport.client.InventoryUnavailableException
 
 app:
   database:
@@ -62,6 +71,8 @@ app:
     public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
   event:
     base-url: ${EVENT_SERVICE_BASE_URL:http://event-service:8080}
+  inventory:
+    base-url: ${INVENTORY_SERVICE_BASE_URL:http://inventory-service:8080}
   object-storage:
     endpoint: ${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}
     access-key: ${OBJECT_STORAGE_ACCESS_KEY:minioadmin}

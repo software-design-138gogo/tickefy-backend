@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Xác nhận thanh toán</title>
+</head>
+<body style="font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <h2 style="color:#1a1a2e;margin-top:0">✅ Thanh toán thành công!</h2>
+    <p>Xin chào,</p>
+    <p>Đơn hàng của bạn đã được thanh toán thành công. Dưới đây là thông tin chi tiết:</p>
+
+    <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr style="background:#f0f0f0">
+            <th style="padding:8px;text-align:left">Loại vé</th>
+            <th style="padding:8px;text-align:center">Số lượng</th>
+            <th style="padding:8px;text-align:right">Đơn giá</th>
+        </tr>
+        <tr th:each="item : ${items}">
+            <td style="padding:8px;border-bottom:1px solid #eee" th:text="${item.ticketTypeName}">Loại vé</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center" th:text="${item.quantity}">0</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right" th:text="${#numbers.formatDecimal(item.unitPrice, 0, 'COMMA', 0, 'POINT')} + ' VND'">0 VND</td>
+        </tr>
+    </table>
+
+    <p style="font-size:18px;font-weight:bold;color:#1a1a2e">
+        Tổng cộng: <span style="color:#e63946" th:text="${#numbers.formatDecimal(totalAmount, 0, 'COMMA', 0, 'POINT')} + ' VND'">0 VND</span>
+    </p>
+
+    <p style="color:#666;font-size:12px">
+        Mã đơn hàng: <span th:text="${orderId}">UUID</span>
+    </p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="color:#999;font-size:11px;text-align:center">
+        © 2026 Tickefy. Email này được gửi tự động, vui lòng không trả lời.
+    </p>
+</div>
+</body>
+</html>

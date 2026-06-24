@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Vé điện tử Tickefy</title>
+</head>
+<body style="font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <h2 style="color:#1a1a2e;margin-top:0">🎫 Vé của bạn đã sẵn sàng!</h2>
+    <p>Xin chào,</p>
+    <p>Chúng tôi vui mừng thông báo rằng <strong th:text="${ticketCount}">0</strong> vé của bạn đã được phát hành thành công.</p>
+
+    <h3 style="color:#1a1a2e">Chi tiết vé:</h3>
+    <table style="width:100%;border-collapse:collapse">
+        <tr style="background:#f0f0f0">
+            <th style="padding:8px;text-align:left">Loại vé</th>
+            <th style="padding:8px;text-align:center">Mã vé</th>
+            <th style="padding:8px;text-align:center">Trạng thái</th>
+        </tr>
+        <tr th:each="ticket : ${tickets}">
+            <td style="padding:8px;border-bottom:1px solid #eee" th:text="${ticket.ticketTypeName}">Loại vé</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center" th:text="${#strings.substring(ticket.ticketId, 0, 8)} + '...'">Mã vé</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center" th:text="${ticket.status}">ISSUED</td>
+        </tr>
+    </table>
+
+    <div style="background:#fff8e1;border-left:4px solid #ffc107;padding:12px 16px;margin:20px 0;border-radius:4px">
+        <p style="margin:0;color:#856404">
+            📱 Vui lòng mang vé điện tử (QR code) khi tham dự sự kiện.
+            Vé có thể được xem trong ứng dụng Tickefy.
+        </p>
+    </div>
+
+    <p style="color:#666;font-size:12px">Mã đơn hàng: <span th:text="${orderId}">UUID</span></p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="color:#999;font-size:11px;text-align:center">
+        © 2026 Tickefy. Email này được gửi tự động, vui lòng không trả lời.
+    </p>
+</div>
+</body>
+</html>

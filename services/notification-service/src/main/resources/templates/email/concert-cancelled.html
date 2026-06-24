@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Thông báo hủy sự kiện</title>
+</head>
+<body style="font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <h2 style="color:#e63946;margin-top:0">⚠️ Thông báo hủy sự kiện</h2>
+    <p>Xin chào,</p>
+    <p>Chúng tôi rất tiếc phải thông báo rằng sự kiện mà bạn đã đăng ký tham gia đã bị hủy.</p>
+
+    <div style="background:#fff3cd;border-left:4px solid #ffc107;padding:12px 16px;margin:20px 0;border-radius:4px">
+        <p style="margin:0;color:#856404">
+            <strong>Mã sự kiện:</strong> <span th:text="${concertId}">UUID</span><br/>
+            <strong>Thời gian hủy:</strong> <span th:text="${cancelledAt}">Thời gian</span><br/>
+            <strong>Lý do:</strong> <span th:text="${reason}">Lý do</span>
+        </p>
+    </div>
+
+    <p>Hệ thống sẽ tiến hành hoàn tiền cho đơn hàng của bạn trong thời gian sớm nhất. Bạn sẽ nhận được email thông báo riêng khi quá trình hoàn tiền hoàn tất.</p>
+    <p>Mong bạn thông cảm cho sự cố ngoài ý muốn này.</p>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="color:#999;font-size:11px;text-align:center">
+        © 2026 Tickefy. Email này được gửi tự động, vui lòng không trả lời.
+    </p>
+</div>
+</body>
+</html>

@@ -50,10 +50,24 @@ cp .env.example .env
 
 Windows PowerShell:
 
+There are 2 ways to run the application locally on Windows PowerShell:
+
+**Option 1: Using the utility script `run-local.ps1` (Recommended)**
+This script automates environment setup and starts the application:
+- Checks if the `.env` file exists. If found, it automatically loads all environment variables from `.env` into the current process (process-scoped environment variables).
+- Runs the Spring Boot application using `.\mvnw spring-boot:run`.
+
+```powershell
+Copy-Item .env.example .env   # Create .env file if it does not exist
+.\run-local.ps1
+```
+
+**Option 2: Running manually**
 ```powershell
 Copy-Item .env.example .env
 .\mvnw.cmd test
 .\mvnw.cmd clean package
+# Note: Ensure that environment variables from .env are set in your PowerShell session before running the command below
 .\mvnw.cmd spring-boot:run
 ```
 

@@ -1,14 +1,18 @@
 package com.tickefy.csvingestion.modules.csvimport.service;
 
+import com.tickefy.csvingestion.common.exception.ApiException;
+import com.tickefy.csvingestion.common.exception.ErrorCode;
 import com.tickefy.csvingestion.modules.csvimport.entity.ImportErrorEntity;
 import com.tickefy.csvingestion.modules.csvimport.entity.ImportJobEntity;
 import com.tickefy.csvingestion.modules.csvimport.entity.VipGuestStagingEntity;
 import com.tickefy.csvingestion.modules.csvimport.repository.ImportErrorRepository;
 import com.tickefy.csvingestion.modules.csvimport.repository.ImportJobRepository;
+import com.tickefy.csvingestion.modules.csvimport.repository.VipGuestRepository;
 import com.tickefy.csvingestion.modules.csvimport.repository.VipGuestStagingRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,14 +26,35 @@ public class CsvImportPersistence {
     private final ImportJobRepository importJobRepository;
     private final VipGuestStagingRepository stagingRepository;
     private final ImportErrorRepository errorRepository;
+    private final VipGuestRepository vipGuestRepository;
 
     public CsvImportPersistence(
             ImportJobRepository importJobRepository,
             VipGuestStagingRepository stagingRepository,
-            ImportErrorRepository errorRepository) {
+            ImportErrorRepository errorRepository,
+            VipGuestRepository vipGuestRepository) {
         this.importJobRepository = importJobRepository;
         this.stagingRepository = stagingRepository;
         this.errorRepository = errorRepository;
+        this.vipGuestRepository = vipGuestRepository;
+    }
+
+    /** Idempotent promote staging -> vip_guests (ON CONFLICT DO NOTHING). Returns new rows count. */
+    @Transactional
+    public int promote(UUID jobId) {
+        return vipGuestRepository.promoteStaging(jobId);
+    }
+
+    /** Atomic terminal transition (only from PROCESSING). Returns true if this caller finalized. */
+    @Transactional
+    public boolean markTerminal(UUID jobId, String status, int successRows, String reportKey) {
+        return importJobRepository.markTerminal(jobId, status, successRows, reportKey, Instant.now()) == 1;
+    }
+
+    /** Atomic failure transition (only from PROCESSING). reason must be PII-free (§15). */
+    @Transactional
+    public boolean markFailed(UUID jobId, String reason) {
+        return importJobRepository.markFailed(jobId, reason, Instant.now()) == 1;
     }
 
     /** Atomic PENDING -> PROCESSING claim (§6.9). Returns true if this caller claimed the job. */
@@ -81,7 +106,11 @@ public class CsvImportPersistence {
     @Transactional
     public void resetForRetry(UUID jobId) {
         stagingRepository.deleteByImportJobId(jobId);
-        ImportJobEntity job = importJobRepository.findById(jobId).orElseThrow();
+        errorRepository.deleteByImportJobId(jobId); // clear stale errors so retry's report is clean
+        ImportJobEntity job = importJobRepository
+                .findById(jobId)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.IMPORT_JOB_NOT_FOUND, "Import job not found", HttpStatus.NOT_FOUND));
         job.setStatus("PENDING");
         job.setFailureReason(null);
         importJobRepository.save(job);

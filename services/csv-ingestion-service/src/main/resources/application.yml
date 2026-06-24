@@ -75,6 +75,7 @@ app:
     base-url: ${INVENTORY_SERVICE_BASE_URL:http://inventory-service:8080}
   csv:
     batch-size: ${CSV_BATCH_SIZE:1000}
+    error-threshold: ${CSV_ERROR_THRESHOLD:0.5}
     worker:
       auto-trigger: ${CSV_WORKER_AUTO_TRIGGER:true}
   object-storage:

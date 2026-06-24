@@ -41,6 +41,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -72,6 +73,7 @@ import org.testcontainers.utility.DockerImageName;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @Testcontainers
+@TestPropertySource(properties = "app.messaging.outbox.enabled=false")
 class UploadEndpointIntegrationTest {
 
     // -----------------------------------------------------------------------

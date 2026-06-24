@@ -13,7 +13,7 @@ public class WebConfig {
     public FilterRegistrationBean<RequestIdFilter> requestIdFilterRegistration() {
         FilterRegistrationBean<RequestIdFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new RequestIdFilter());
-        registration.setOrder(1);
+        registration.setOrder(-200);
         registration.addUrlPatterns("/*");
         return registration;
     }
@@ -22,7 +22,7 @@ public class WebConfig {
     public FilterRegistrationBean<RequestLoggingFilter> requestLoggingFilterRegistration() {
         FilterRegistrationBean<RequestLoggingFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new RequestLoggingFilter());
-        registration.setOrder(2);
+        registration.setOrder(-190);
         registration.addUrlPatterns("/*");
         return registration;
     }

@@ -331,7 +331,7 @@ http://inventory-service:8080      ✅  (KHÔNG http://localhost:8083)
   "payload": { /* nội dung riêng từng event */ }
 }
 ```
-(Thêm `source`/`correlationId`/`causationId` khi cần tracing — chưa bắt buộc cho đồ án.)
+`source` và `correlationId` là bắt buộc; `causationId` là optional theo `event-envelope.md`.
 
 > ✅ **Toàn hệ dùng ENVELOPE** (migrate xong, verified qty=1/qty=3). `order.*` (order.paid/payment.failed/expired) publish envelope `{messageId,eventType,eventVersion:"1.0",occurredAt,payload:{...}}`; consumer (inventory/e-ticket) đọc `payload.*`. `payment.*` có `eventVersion="1.0"`. **⚠️ Lệch tên có chủ đích:** `order.*` dùng `occurredAt`, `payment.*` giữ field `timestamp` (tránh breaking contract Payment/Dương) — follow-up thống nhất khi Payment thật land. `eventVersion` BẮT BUỘC, giờ mọi event đều có.
 

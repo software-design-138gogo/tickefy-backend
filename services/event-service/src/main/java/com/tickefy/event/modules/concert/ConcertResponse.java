@@ -11,7 +11,7 @@ public class ConcertResponse {
     private UUID id;
     private String title;
     private String description;
-    private String aiIntroduction;
+    private String concertIntroduction;
     private ConcertStatus status;
     private Instant eventDate;
     private Instant saleStartAt;
@@ -29,7 +29,7 @@ public class ConcertResponse {
         r.id = concert.getId();
         r.title = concert.getTitle();
         r.description = concert.getDescription();
-        r.aiIntroduction = concert.getAiIntroduction();
+        r.concertIntroduction = concert.getConcertIntroduction();
         r.status = concert.getStatus();
         r.eventDate = concert.getEventDate();
         r.saleStartAt = concert.getSaleStartAt();
@@ -131,7 +131,7 @@ public class ConcertResponse {
     public UUID getId() { return id; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }
-    public String getAiIntroduction() { return aiIntroduction; }
+    public String getConcertIntroduction() { return concertIntroduction; }
     public ConcertStatus getStatus() { return status; }
     public Instant getEventDate() { return eventDate; }
     public Instant getSaleStartAt() { return saleStartAt; }

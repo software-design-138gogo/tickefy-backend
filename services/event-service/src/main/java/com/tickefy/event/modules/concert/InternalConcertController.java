@@ -18,11 +18,18 @@ public class InternalConcertController {
     private final ConcertService concertService;
 
     @GetMapping("/{id}")
-    public ApiResponse<ConcertResponse> getConcertForInternal(
+    public ApiResponse<InternalConcertSummaryResponse> getConcertForInternal(
             @PathVariable UUID id,
             HttpServletRequest request) {
         String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
-        // Can be customized if internal needs different fields
-        return ApiResponse.success(concertService.getConcertById(id), requestId);
+        return ApiResponse.success(concertService.getInternalConcert(id), requestId);
+    }
+
+    @GetMapping("/{id}/ai-context")
+    public ApiResponse<AiConcertContextResponse> getAiContext(
+            @PathVariable UUID id,
+            HttpServletRequest request) {
+        String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
+        return ApiResponse.success(concertService.getAiContext(id), requestId);
     }
 }

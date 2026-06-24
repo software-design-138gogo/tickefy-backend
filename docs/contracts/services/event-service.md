@@ -1,10 +1,10 @@
 ---
 title: Service Specification - event-service
-status: PROPOSED
-version: 1.1
+status: IMPLEMENTED_LOCAL
+version: 1.2
 owner: Dương
 reviewers: [Hiệp, Hoàng, Hòa]
-lastUpdated: 2026-06-19
+lastUpdated: 2026-06-24
 ---
 
 # Service Specification — `event-service`
@@ -49,7 +49,7 @@ lastUpdated: 2026-06-19
 
 | Table | Purpose |
 |---|---|
-| `concerts` | Dữ liệu gốc về sự kiện (Title, thời gian diễn ra, trạng thái, owner, `concert_introduction`). |
+| `concerts` | Dữ liệu gốc về sự kiện, owner, `concert_introduction`, source job/language và manual-update timestamp. |
 | `artists` | Thông tin nghệ sĩ (tên, mô tả/tiểu sử do Organizer/Admin quản lý nếu có). |
 | `venues` | Địa điểm tổ chức (Sân vận động, sức chứa). |
 | `concert_zones` | Khu vực hiển thị trên sơ đồ/venue layout. Không phải ticket type bán vé và không quyết định giá/tồn kho. |
@@ -67,6 +67,8 @@ lastUpdated: 2026-06-19
 
 - Không có cross-service foreign key.
 - Service khác không query trực tiếp schema này (PostgreSQL của Event Service là đóng kín).
+- `concert_introduction_source_job_id` là audit reference, không phải foreign key.
+- Manual introduction mới hơn `ConcertIntroductionGenerated.payload.requestedAt` không được bị AI overwrite.
 
 ## 4. Dependencies
 
@@ -149,6 +151,16 @@ lastUpdated: 2026-06-19
 |---|---|---|---|---|
 | `ConcertIntroductionGenerated` | `ai-bio-service` | `event-service.concert-introduction-generated.queue` | Cập nhật `concert_introduction` của concert nếu không bị manual update mới hơn. | `messageId`, `jobId`, `concertId` |
 
+RabbitMQ binding:
+
+```text
+Exchange: tickefy.exchange
+Routing key: concert.introduction.generated
+Queue: event-service.concert-introduction-generated.queue
+DLX: tickefy.dlx
+DLQ: event-service.concert-introduction-generated.queue.dlq
+```
+
 ## 9. State machines
 
 ```mermaid
@@ -200,10 +212,12 @@ stateDiagram-v2
 
 | Variable | Required | Example | Description |
 |---|---|---|---|
-| `POSTGRES_URL` | Yes | `jdbc:postgresql://db:5432/event` | DB Connection |
-| `REDIS_URL` | Yes | `redis://redis:6379` | Cache connection |
-| `S3_BUCKET_NAME` | Yes | `tickefy-media` | Bucket cấp Pre-signed URL |
-| `AWS_ACCESS_KEY` | Yes | `...` | MinIO/S3 Creds cho SDK |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `DB_SCHEMA` | Yes | `postgres`, `5432`, `tickefy`, ..., `event_service` | Database connection/schema. |
+| `REDIS_HOST`, `REDIS_PORT` | Yes | `redis`, `6379` | Cache and distributed lock. |
+| `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` | Yes | `rabbitmq`, `5672`, ... | Broker connection. |
+| `RABBITMQ_EXCHANGE`, `RABBITMQ_DLX` | Yes | `tickefy.exchange`, `tickefy.dlx` | Contract exchanges. |
+| `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_PUBLIC_KEY_PATH` | Yes | `tickefy-auth-service`, `tickefy-api`, `/keys/public.pem` | RS256 bearer verification. |
+| `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET` | Yes | MinIO values | Presigned seat-map upload. |
 
 ## 14. Observability
 - Logs: Gom log ELK. Focus vào các action thay đổi trạng thái (Publish/Cancel).
@@ -224,16 +238,15 @@ stateDiagram-v2
 | Unsupported event version | Reject/DLQ và alert owner. | contract error log |
 
 ## 16. Integration acceptance criteria
-- [ ] Swagger Docs đầy đủ.
-- [ ] Tạo được Concert + Chuyển trạng thái sang PUBLISHED thành công.
-- [ ] `GET /internal/concerts/{concertId}` trả đúng owner/status cho `csv-ingestion-service` và `inventory-service`.
-- [ ] Outbox table ghi nhận bản ghi khi Publish, và Worker quét thành công.
-- [ ] Gọi API nhận được Pre-signed URL hợp lệ, FE PUT thẳng lên S3 thành công.
-- [ ] Cache Hit/Miss hoạt động đúng với Mutex Lock.
-- [ ] `GET /internal/concerts/{concertId}/ai-context` trả đúng owner/status cho `ai-bio-service`.
-- [ ] Consume `ConcertIntroductionGenerated` idempotent theo `messageId`.
-- [ ] AI introduction không ghi đè manual introduction mới hơn `requestedAt`.
-- [ ] Apply AI introduction invalidate `cache:concerts:{concertId}`.
+- [x] `GET /internal/concerts/{concertId}` trả contract summary.
+- [x] `GET /internal/concerts/{concertId}/ai-context` trả owner/status/introduction timestamps.
+- [x] Event Service verify RS256 bearer token and derives organizer identity from JWT `sub`.
+- [x] Consume `ConcertIntroductionGenerated` from the contract exchange/queue.
+- [x] Validate `eventType`, `eventVersion`, `source` and required payload fields.
+- [x] Deduplicate by `messageId` and source `jobId`.
+- [x] Do not overwrite a newer manual introduction.
+- [x] Apply introduction metadata and invalidate concert detail cache.
+- [ ] Add broker-backed end-to-end test to CI.
 
 ## 17. Open questions
 - Frontend Web (Hiệp) xác nhận sẽ handle luồng upload 3 bước (Xin URL -> PUT S3 -> Submit Backend) cho admin chưa?

@@ -35,7 +35,7 @@ X-Request-ID: <optional-client-request-id>
 - Protected request đi qua API Gateway phải được Gateway verify JWT để reject sớm, nhưng Gateway không phải lớp bảo mật duy nhất. Protected service vẫn phải tự verify RS256 bằng public key và tự kiểm role/ownership nghiệp vụ.
 - Gateway phải forward nguyên `Authorization: Bearer <access-token>` cho downstream service. Service không được xem `X-User-*` header là nguồn xác thực/phân quyền duy nhất.
 - Client có thể gửi `X-Request-ID`; backend echo lại ở response header + body; thiếu thì backend tự sinh.
-- **Idempotency key — hiện đặt trong BODY:** command tạo tài nguyên nhạy (order) gửi field `idempotencyKey` trong request body (`CreateOrderRequest.idempotencyKey`), backend lưu key UNIQUE → gửi lại cùng key trả kết quả cũ (xem §10 replay). (🔭 target khi refactor: chuyển sang HTTP header `Idempotency-Key` — chưa làm.)
+- **Idempotency key:** contract mới dùng HTTP header `Idempotency-Key` (ví dụ `ai-bio-service`). Một số endpoint cũ như create-order vẫn giữ field body `idempotencyKey` cho tương thích; service contract cụ thể là SSOT cho vị trí key. Backend lưu key theo scope UNIQUE và replay cùng request phải trả kết quả cũ (xem §10).
 
 ## 4. Success envelope
 ```json
@@ -160,7 +160,7 @@ Response `data`:
 > ⚠️ **Code cần đồng bộ:** controller hiện trả Spring `Page<T>` trực tiếp (`UserController.listUsers`, `OrderController.getMyOrders`) → JSON serialize thành `{content, totalElements, totalPages, number, size, ...}`, KHÁC shape `{items, total, ...}` ở trên. Doc giữ shape `{items,...}` là target — backend cần wrap `Page`→`PagedResponse` (Spring `PageImpl` JSON còn unstable). (Sửa code ngoài phạm vi task doc này.)
 
 ## 11. Idempotency & replay
-- Command nhạy (tạo order) gửi key idempotent (hiện ở body `idempotencyKey` — xem §3); backend lưu key UNIQUE. **(✅ mechanism đã code:** `OrderEntity.idempotencyKey` UNIQUE + resume theo status.)
+- Command nhạy gửi key idempotent theo service contract: ưu tiên header `Idempotency-Key`; endpoint cũ có thể giữ body `idempotencyKey` để tương thích. Backend lưu key UNIQUE theo scope.
 - 🔭 **PLANNED (response shape chưa code):** gửi lại cùng key sau khi thao tác trước đã thành công → **không phải lỗi**: trả lại kết quả cũ, **HTTP 200** + `data.replayDetected=true`. Hiện code resume trả order cũ nhưng CHƯA gắn cờ `replayDetected`/chuẩn-hoá 200. Giữ là target.
 ```json
 { "success": true, "data": { "orderId": "...", "status": "RESERVED", "replayDetected": true },

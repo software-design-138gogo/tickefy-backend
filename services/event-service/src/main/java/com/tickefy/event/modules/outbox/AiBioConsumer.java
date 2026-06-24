@@ -6,8 +6,10 @@ import com.tickefy.event.config.RabbitMQConfig;
 import com.tickefy.event.modules.concert.ConcertService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -25,50 +27,46 @@ public class AiBioConsumer {
         this.concertCacheService = concertCacheService;
     }
 
-    @RabbitListener(queues = RabbitMQConfig.QUEUE_CONCERT_INTRODUCTION)
+    @RabbitListener(queues = "${app.rabbitmq.concert-introduction-queue}")
     public void consumeAiBioGeneratedEvent(Message amqpMessage) {
-        String messageStr = new String(amqpMessage.getBody());
-        log.info("[AiBioConsumer] Received message from {}: {}", RabbitMQConfig.QUEUE_CONCERT_INTRODUCTION, messageStr);
+        String messageStr = new String(amqpMessage.getBody(), StandardCharsets.UTF_8);
         
         try {
-            // Parse EventEnvelope
             JsonNode rootNode = objectMapper.readTree(messageStr);
-            
-            // Check eventType to be safe
-            String eventType = rootNode.path("eventType").asText();
-            if (!"ConcertIntroductionGenerated".equals(eventType)) {
-                log.warn("[AiBioConsumer] Received unexpected eventType: {}", eventType);
-                return;
-            }
-
-            String messageId = rootNode.path("messageId").asText();
-            if (messageId == null || messageId.isBlank()) {
-                log.error("[AiBioConsumer] Missing messageId in event envelope");
-                return;
-            }
+            String messageId = requiredText(rootNode, "messageId");
+            requireValue(rootNode, "eventType", "ConcertIntroductionGenerated");
+            requireValue(rootNode, "eventVersion", "1.0");
+            requireValue(rootNode, "source", "ai-bio-service");
+            requiredText(rootNode, "occurredAt");
+            requiredText(rootNode, "correlationId");
 
             JsonNode payload = rootNode.path("payload");
-            if (payload.isMissingNode()) {
-                log.error("[AiBioConsumer] Missing payload in event envelope");
-                return;
+            if (!payload.isObject()) {
+                throw invalidMessage("payload must be an object");
             }
 
-            // Extract concertId and introduction
-            String concertIdStr = payload.path("concertId").asText();
-            String introduction = payload.path("introduction").asText();
+            UUID concertId = parseUuid(requiredText(payload, "concertId"), "concertId");
+            UUID jobId = parseUuid(requiredText(payload, "jobId"), "jobId");
+            String introduction = requiredText(payload, "introduction");
+            String language = requiredText(payload, "language");
+            Instant requestedAt = parseInstant(requiredText(payload, "requestedAt"), "requestedAt");
+            Instant generatedAt = parseInstant(requiredText(payload, "generatedAt"), "generatedAt");
 
-            if (concertIdStr == null || concertIdStr.isBlank() || introduction == null || introduction.isBlank()) {
-                log.error("[AiBioConsumer] Missing required fields (concertId or introduction) in payload: {}", payload);
-                return;
-            }
+            log.info(
+                    "[AiBioConsumer] Received messageId={} concertId={} jobId={}",
+                    messageId,
+                    concertId,
+                    jobId);
 
-            UUID concertId = UUID.fromString(concertIdStr);
-            
-            String requestedAtStr = payload.path("requestedAt").asText(null);
-            Instant requestedAt = requestedAtStr != null ? Instant.parse(requestedAtStr) : null;
-
-            // Call ConcertService to update
-            boolean updated = concertService.updateAiIntroduction(concertId, introduction, messageId, requestedAt);
+            boolean updated =
+                    concertService.updateAiIntroduction(
+                            concertId,
+                            introduction,
+                            messageId,
+                            jobId,
+                            language,
+                            requestedAt,
+                            generatedAt);
             if (updated) {
                 log.info("[AiBioConsumer] Successfully updated AI introduction for concert: {}", concertId);
                 concertCacheService.evict(concertId);
@@ -76,9 +74,48 @@ public class AiBioConsumer {
                 log.info("[AiBioConsumer] Skipped update for concert: {} (Message {} already processed or stale)", concertId, messageId);
             }
             
-        } catch (Exception e) {
-            log.error("[AiBioConsumer] Failed to process AiBioGeneratedEvent. Message: {}", messageStr, e);
-            throw new RuntimeException("Failed to process AiBioGeneratedEvent", e); // Will be retried and sent to DLQ if max-attempts reached
+        } catch (AmqpRejectAndDontRequeueException exception) {
+            log.error("[AiBioConsumer] Rejected invalid ConcertIntroductionGenerated: {}", exception.getMessage());
+            throw exception;
+        } catch (Exception exception) {
+            log.error("[AiBioConsumer] Failed to process ConcertIntroductionGenerated", exception);
+            throw new RuntimeException("Failed to process ConcertIntroductionGenerated", exception);
         }
+    }
+
+    private String requiredText(JsonNode node, String field) {
+        String value = node.path(field).asText(null);
+        if (value == null || value.isBlank()) {
+            throw invalidMessage("missing required field: " + field);
+        }
+        return value;
+    }
+
+    private void requireValue(JsonNode node, String field, String expected) {
+        String actual = requiredText(node, field);
+        if (!expected.equals(actual)) {
+            throw invalidMessage(
+                    "unsupported " + field + ": " + actual + ", expected: " + expected);
+        }
+    }
+
+    private UUID parseUuid(String value, String field) {
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            throw invalidMessage("invalid UUID field: " + field);
+        }
+    }
+
+    private Instant parseInstant(String value, String field) {
+        try {
+            return Instant.parse(value);
+        } catch (RuntimeException exception) {
+            throw invalidMessage("invalid timestamp field: " + field);
+        }
+    }
+
+    private AmqpRejectAndDontRequeueException invalidMessage(String reason) {
+        return new AmqpRejectAndDontRequeueException(reason);
     }
 }

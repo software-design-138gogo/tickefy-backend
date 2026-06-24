@@ -50,7 +50,7 @@ lastUpdated: 2026-06-23
 | Background worker | Done | Can process pending jobs automatically when enabled. |
 | Retry flow | Done | Retryable failed jobs can be reset to `PENDING`. |
 | Public job APIs | Done | Get job status and list jobs by concert. |
-| Event Service consumer | Done | Applies generated introduction into Event Service DB. |
+| Event Service consumer | Done | Validates the common envelope and applies generated introduction idempotently. |
 | Final E2E script | Done | Script verifies Gateway → AI Bio → Event Service → RabbitMQ → DB. |
 
 ## 3. Responsibilities
@@ -628,7 +628,8 @@ The script verifies:
 
 | Item | Status | Owner |
 |---|---|---|
-| Public Event Service DTO exposes `concertIntroduction` | Check/update if not exposed | Event Service |
+| Public Event Service DTO exposes `concertIntroduction` | Done | Event Service |
+| Broker-backed integration test in CI | Pending | AI Bio/Event Service |
 | Frontend upload UI | Pending | Frontend |
 | Frontend job status polling | Pending | Frontend |
 | Phase 2 URL/image sources | Future | AI Bio |

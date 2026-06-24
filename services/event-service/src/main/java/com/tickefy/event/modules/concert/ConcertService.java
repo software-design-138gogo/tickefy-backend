@@ -14,6 +14,7 @@ import com.tickefy.event.modules.outbox.ProcessedMessageRepository;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.time.Instant;
@@ -91,6 +92,12 @@ public class ConcertService {
         Concert concert = new Concert();
         concert.setTitle(request.getTitle());
         concert.setDescription(request.getDescription());
+        if (request.getConcertIntroduction() != null) {
+            concert.setConcertIntroduction(request.getConcertIntroduction());
+            Instant now = Instant.now();
+            concert.setConcertIntroductionUpdatedAt(now);
+            concert.setManualIntroductionUpdatedAt(now);
+        }
         concert.setVenue(venue);
         concert.setEventDate(request.getEventDate());
         concert.setSaleStartAt(request.getSaleStartAt());
@@ -123,12 +130,14 @@ public class ConcertService {
     }
 
     // --- UPDATE ---
-    public ConcertResponse updateConcert(UUID id, ConcertRequest request) {
+    public ConcertResponse updateConcert(
+            UUID id, ConcertRequest request, UUID actorId, boolean admin) {
         Concert concert = concertRepository.findByIdWithDetails(id)
             .orElseThrow(() -> new ApiException(
                 ErrorCode.RESOURCE_NOT_FOUND,
                 "Concert not found: " + id,
                 HttpStatus.NOT_FOUND));
+        requireManageAccess(concert, actorId, admin);
 
         if (concert.getStatus() == ConcertStatus.CANCELLED
                 || concert.getStatus() == ConcertStatus.COMPLETED) {
@@ -146,6 +155,15 @@ public class ConcertService {
 
         concert.setTitle(request.getTitle());
         concert.setDescription(request.getDescription());
+        if (request.getConcertIntroduction() != null
+                && !Objects.equals(
+                        request.getConcertIntroduction(), concert.getConcertIntroduction())) {
+            concert.setConcertIntroduction(request.getConcertIntroduction());
+            concert.setConcertIntroductionSourceJobId(null);
+            concert.setConcertIntroductionLanguage(null);
+            concert.setConcertIntroductionUpdatedAt(Instant.now());
+            concert.setManualIntroductionUpdatedAt(Instant.now());
+        }
         concert.setVenue(venue);
         concert.setEventDate(request.getEventDate());
         concert.setSaleStartAt(request.getSaleStartAt());
@@ -158,8 +176,9 @@ public class ConcertService {
     }
 
     // --- PUBLISH ---
-    public ConcertResponse publishConcert(UUID id) {
+    public ConcertResponse publishConcert(UUID id, UUID actorId, boolean admin) {
         Concert concert = findById(id);
+        requireManageAccess(concert, actorId, admin);
         if (concert.getStatus() != ConcertStatus.DRAFT) {
             throw new ApiException(
                 ErrorCode.CONFLICT,
@@ -189,8 +208,10 @@ public class ConcertService {
     }
 
     // --- CANCEL ---
-    public ConcertResponse cancelConcert(UUID id, String reason) {
+    public ConcertResponse cancelConcert(
+            UUID id, String reason, UUID actorId, boolean admin) {
         Concert concert = findById(id);
+        requireManageAccess(concert, actorId, admin);
         if (concert.getStatus() == ConcertStatus.CANCELLED
                 || concert.getStatus() == ConcertStatus.COMPLETED) {
             throw new ApiException(
@@ -221,30 +242,68 @@ public class ConcertService {
     }
 
     // --- UPDATE AI INTRODUCTION ---
-    public boolean updateAiIntroduction(UUID id, String aiIntroduction, String messageId, Instant requestedAt) {
+    public InternalConcertSummaryResponse getInternalConcert(UUID id) {
+        return InternalConcertSummaryResponse.from(findById(id));
+    }
+
+    public AiConcertContextResponse getAiContext(UUID id) {
+        return AiConcertContextResponse.from(findById(id));
+    }
+
+    public void requireManageAccess(UUID id, UUID actorId, boolean admin) {
+        requireManageAccess(findById(id), actorId, admin);
+    }
+
+    public boolean updateAiIntroduction(
+            UUID id,
+            String introduction,
+            String messageId,
+            UUID jobId,
+            String language,
+            Instant requestedAt,
+            Instant generatedAt) {
         if (processedMessageRepository.existsById(messageId)) {
-            return false; // Idempotent
+            return false;
         }
 
-        Concert concert = findById(id);
+        Concert concert =
+                concertRepository.findByIdForUpdate(id)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                ErrorCode.CONCERT_NOT_FOUND,
+                                                "Concert not found: " + id,
+                                                HttpStatus.NOT_FOUND));
 
-        // Staleness guard: if manual update is newer than the AI request, skip
-        if (concert.getAiIntroductionUpdatedAt() != null && requestedAt != null) {
-            if (concert.getAiIntroductionUpdatedAt().isAfter(requestedAt)) {
-                processedMessageRepository.save(new ProcessedMessage(messageId, "ConcertIntroductionGenerated", Instant.now()));
-                return false;
-            }
+        if (processedMessageRepository.existsById(messageId)) {
+            return false;
         }
 
-        concert.setAiIntroduction(aiIntroduction);
-        
-        // Use requestedAt as the source of truth for when this update was generated, 
-        // to prevent processing delays from artificially bumping the timestamp.
-        concert.setAiIntroductionUpdatedAt(requestedAt != null ? requestedAt : Instant.now());
-        
+        if (jobId.equals(concert.getConcertIntroductionSourceJobId())) {
+            processedMessageRepository.save(
+                    new ProcessedMessage(
+                            messageId, "ConcertIntroductionGenerated", Instant.now()));
+            return false;
+        }
+
+        if (concert.getManualIntroductionUpdatedAt() != null
+                && concert.getManualIntroductionUpdatedAt().isAfter(requestedAt)) {
+            processedMessageRepository.save(
+                    new ProcessedMessage(
+                            messageId, "ConcertIntroductionGenerated", Instant.now()));
+            return false;
+        }
+
+        concert.setConcertIntroduction(introduction);
+        concert.setConcertIntroductionSourceJobId(jobId);
+        concert.setConcertIntroductionLanguage(language);
+        concert.setConcertIntroductionUpdatedAt(
+                generatedAt != null ? generatedAt : Instant.now());
         concertRepository.save(concert);
 
-        processedMessageRepository.save(new ProcessedMessage(messageId, "ConcertIntroductionGenerated", Instant.now()));
+        processedMessageRepository.save(
+                new ProcessedMessage(
+                        messageId, "ConcertIntroductionGenerated", Instant.now()));
         return true;
     }
 
@@ -255,5 +314,18 @@ public class ConcertService {
                 ErrorCode.RESOURCE_NOT_FOUND,
                 "Concert not found: " + id,
                 HttpStatus.NOT_FOUND));
+    }
+
+    private void requireManageAccess(Concert concert, UUID actorId, boolean admin) {
+        if (admin) {
+            return;
+        }
+        if (actorId == null || !actorId.equals(concert.getCreatedBy())) {
+            throw new ApiException(
+                    ErrorCode.CONCERT_ACCESS_DENIED,
+                    "You do not have permission to manage this concert.",
+                    HttpStatus.FORBIDDEN,
+                    Map.of("concertId", concert.getId().toString()));
+        }
     }
 }

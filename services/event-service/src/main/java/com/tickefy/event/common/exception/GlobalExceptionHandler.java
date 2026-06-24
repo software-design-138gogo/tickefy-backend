@@ -90,7 +90,12 @@ public class GlobalExceptionHandler {
     private ResponseEntity<ApiResponse<Void>> buildErrorResponse(
             HttpStatus status, ErrorCode errorCode, String message, Object details) {
         String requestId = MDC.get(HeaderConstants.REQUEST_ID);
-        ErrorResponse errorResponse = new ErrorResponse(errorCode.name(), message, details);
+        ErrorResponse errorResponse =
+                new ErrorResponse(
+                        status.value(),
+                        errorCode.name(),
+                        message,
+                        details != null ? details : Map.of());
         ApiResponse<Void> body = ApiResponse.error(errorResponse, requestId);
         return ResponseEntity.status(status).body(body);
     }

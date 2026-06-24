@@ -2,7 +2,7 @@
 
 > **Owner:** Dương  
 > **Port:** 8082  
-> **API Gateway path:** `/api/concerts/**` → `/concerts/**`
+> **API Gateway paths:** `/api/concerts/**` → `/concerts/**`, `/api/admin/**` → `/admin/**`
 
 ## Trách nhiệm
 
@@ -14,11 +14,12 @@ Quản lý thông tin concert, artist, venue. Cung cấp API cho BTC tạo/sửa
 |--------|------|-------|------|
 | GET | `/concerts` | Danh sách concert (pageable, filter by status) | Public |
 | GET | `/concerts/{id}` | Chi tiết concert (venue, artists, ticketTypes) | Public |
-| POST | `/concerts` | Tạo concert mới | BTC (X-User-Id header) |
-| PUT | `/concerts/{id}` | Cập nhật thông tin concert | BTC |
-| POST | `/concerts/{id}/publish` | Chuyển trạng thái → PUBLISHED | BTC |
-| POST | `/concerts/{id}/cancel` | Chuyển trạng thái → CANCELLED | BTC |
-| GET | `/health` | Health check | Public |
+| POST | `/admin/concerts` | Tạo concert mới | `ORGANIZER`, `ADMIN`; identity từ JWT `sub` |
+| PUT | `/admin/concerts/{id}` | Cập nhật concert của organizer | `ORGANIZER`, `ADMIN` |
+| POST | `/admin/concerts/{id}/publish` | Chuyển trạng thái → PUBLISHED | `ORGANIZER`, `ADMIN` |
+| POST | `/admin/concerts/{id}/cancel` | Chuyển trạng thái → CANCELLED | `ORGANIZER`, `ADMIN` |
+| GET | `/internal/concerts/{id}/ai-context` | AI context cho AI Bio | Bearer JWT |
+| GET | `/actuator/health` | Health check | Public |
 
 ## Status Lifecycle
 
@@ -30,13 +31,16 @@ DRAFT → PUBLISHED → COMPLETED
 
 ## Events (RabbitMQ)
 
-- **Publish:** `ConcertPublished`, `ConcertCancelled` *(TODO Phase 2)*
-- **Consume:** `ArtistBioGenerated` *(TODO Phase 2)*
+- **Exchange:** `tickefy.exchange`
+- **Publish:** `ConcertPublished`, `ConcertCancelled`
+- **Consume:** `ConcertIntroductionGenerated`
+- **Queue:** `event-service.concert-introduction-generated.queue`
 
 ## Database
 
-- **DB name:** `tickefy_event`
-- **Tables:** `venues`, `artists`, `concerts`, `concert_artists`, `concert_zones`
+- **DB name:** `tickefy`
+- **Schema:** `event_service`
+- **Tables:** `venues`, `artists`, `concerts`, `concert_artists`, `concert_zones`, `outbox_events`, `processed_messages`
 - **Migration tool:** Flyway (`db/migration/`)
 
 ## Khởi động local

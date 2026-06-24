@@ -43,6 +43,11 @@ management:
         enabled: true
 
 app:
+  security:
+    jwt:
+      issuer: ${JWT_ISSUER:tickefy-auth-service}
+      audience: ${JWT_AUDIENCE:tickefy-api}
+      public-key-path: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
   database:
     schema: ${DB_SCHEMA:public}
   s3:
@@ -52,7 +57,10 @@ app:
     region: ${S3_REGION:us-east-1}
     bucket: ${S3_BUCKET:tickefy-assets}
   rabbitmq:
-    exchange: ${RABBITMQ_EXCHANGE:tickefy.events}
+    exchange: ${RABBITMQ_EXCHANGE:tickefy.exchange}
+    dlx: ${RABBITMQ_DLX:tickefy.dlx}
+    concert-introduction-queue: ${CONCERT_INTRODUCTION_QUEUE:event-service.concert-introduction-generated.queue}
+    concert-introduction-dlq: ${CONCERT_INTRODUCTION_DLQ:event-service.concert-introduction-generated.queue.dlq}
   outbox:
     fixed-delay: 5000
 

@@ -14,6 +14,8 @@ public class ConcertRequest {
 
     private String description;
 
+    private String concertIntroduction;
+
     @NotNull(message = "Venue ID is required")
     private UUID venueId;
 
@@ -55,6 +57,8 @@ public class ConcertRequest {
     public void setTitle(String title) { this.title = title; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public String getConcertIntroduction() { return concertIntroduction; }
+    public void setConcertIntroduction(String concertIntroduction) { this.concertIntroduction = concertIntroduction; }
     public UUID getVenueId() { return venueId; }
     public void setVenueId(UUID venueId) { this.venueId = venueId; }
     public Instant getEventDate() { return eventDate; }

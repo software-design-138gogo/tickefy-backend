@@ -12,6 +12,7 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -42,11 +43,7 @@ public class RabbitMQConfig {
         };
     }
 
-    public static final String EXCHANGE_EVENTS = "tickefy.events";
-    public static final String EXCHANGE_DLX = "tickefy.dlx";
-    
-    public static final String QUEUE_CONCERT_INTRODUCTION = "event.concert-introduction-generated";
-    public static final String DLQ_CONCERT_INTRODUCTION = "event.concert-introduction-generated.dlq";
+    public static final String ROUTING_KEY_CONCERT_INTRODUCTION = "concert.introduction.generated";
 
     @Bean
     public MessageConverter jsonMessageConverter() {
@@ -54,36 +51,47 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    public TopicExchange eventsExchange() {
-        return new TopicExchange(EXCHANGE_EVENTS, true, false);
+    public TopicExchange eventsExchange(
+            @Value("${app.rabbitmq.exchange}") String exchange) {
+        return new TopicExchange(exchange, true, false);
     }
 
     @Bean
-    public TopicExchange dlxExchange() {
-        return new TopicExchange(EXCHANGE_DLX, true, false);
+    public TopicExchange dlxExchange(
+            @Value("${app.rabbitmq.dlx}") String dlx) {
+        return new TopicExchange(dlx, true, false);
     }
 
     @Bean
-    public Queue concertIntroductionQueue() {
-        return QueueBuilder.durable(QUEUE_CONCERT_INTRODUCTION)
-                .withArgument("x-dead-letter-exchange", EXCHANGE_DLX)
-                .withArgument("x-dead-letter-routing-key", DLQ_CONCERT_INTRODUCTION)
+    public Queue concertIntroductionQueue(
+            @Value("${app.rabbitmq.concert-introduction-queue}") String queue,
+            @Value("${app.rabbitmq.dlx}") String dlx,
+            @Value("${app.rabbitmq.concert-introduction-dlq}") String dlq) {
+        return QueueBuilder.durable(queue)
+                .withArgument("x-dead-letter-exchange", dlx)
+                .withArgument("x-dead-letter-routing-key", dlq)
                 .build();
     }
 
     @Bean
-    public Queue concertIntroductionDlq() {
-        return QueueBuilder.durable(DLQ_CONCERT_INTRODUCTION).build();
+    public Queue concertIntroductionDlq(
+            @Value("${app.rabbitmq.concert-introduction-dlq}") String dlq) {
+        return QueueBuilder.durable(dlq).build();
     }
 
     @Bean
     public Binding concertIntroductionBinding(Queue concertIntroductionQueue, TopicExchange eventsExchange) {
-        return BindingBuilder.bind(concertIntroductionQueue).to(eventsExchange).with("concert.introduction.generated");
+        return BindingBuilder.bind(concertIntroductionQueue)
+                .to(eventsExchange)
+                .with(ROUTING_KEY_CONCERT_INTRODUCTION);
     }
 
     @Bean
-    public Binding concertIntroductionDlqBinding(Queue concertIntroductionDlq, TopicExchange dlxExchange) {
-        return BindingBuilder.bind(concertIntroductionDlq).to(dlxExchange).with(DLQ_CONCERT_INTRODUCTION);
+    public Binding concertIntroductionDlqBinding(
+            Queue concertIntroductionDlq,
+            TopicExchange dlxExchange,
+            @Value("${app.rabbitmq.concert-introduction-dlq}") String dlq) {
+        return BindingBuilder.bind(concertIntroductionDlq).to(dlxExchange).with(dlq);
     }
 
     // ==========================================

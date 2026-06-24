@@ -22,7 +22,7 @@ public class OutboxDrainer {
     private final AmqpTemplate amqpTemplate;
     private final ObjectMapper objectMapper;
 
-    @Value("${app.rabbitmq.exchange:tickefy.events}")
+    @Value("${app.rabbitmq.exchange:tickefy.exchange}")
     private String exchange;
 
     @Scheduled(fixedDelayString = "${app.outbox.fixed-delay:5000}")

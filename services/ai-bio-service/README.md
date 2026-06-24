@@ -71,6 +71,8 @@ Key environment variables:
 alembic upgrade head
 ```
 
+The Docker image runs `alembic upgrade head` automatically before starting Uvicorn.
+
 ### 4. Start the service
 
 ```bash

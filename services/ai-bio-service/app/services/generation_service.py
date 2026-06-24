@@ -174,7 +174,7 @@ class GenerationService:
             event_type="ConcertIntroductionGenerated",
             event_version="1.0",
             source_service="ai-bio-service",
-            exchange_name="tickefy.exchange",
+            exchange_name=self.settings.rabbitmq_exchange,
             routing_key="concert.introduction.generated",
             correlation_id=job.correlation_id,
             causation_id=None,

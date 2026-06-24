@@ -22,11 +22,20 @@ public class Concert {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "ai_introduction", columnDefinition = "TEXT")
-    private String aiIntroduction;
+    @Column(name = "concert_introduction", columnDefinition = "TEXT")
+    private String concertIntroduction;
 
-    @Column(name = "ai_introduction_updated_at")
-    private Instant aiIntroductionUpdatedAt;
+    @Column(name = "concert_introduction_source_job_id")
+    private UUID concertIntroductionSourceJobId;
+
+    @Column(name = "concert_introduction_language", length = 10)
+    private String concertIntroductionLanguage;
+
+    @Column(name = "concert_introduction_updated_at")
+    private Instant concertIntroductionUpdatedAt;
+
+    @Column(name = "manual_introduction_updated_at")
+    private Instant manualIntroductionUpdatedAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "venue_id")
@@ -80,8 +89,11 @@ public class Concert {
     public UUID getId() { return id; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }
-    public String getAiIntroduction() { return aiIntroduction; }
-    public Instant getAiIntroductionUpdatedAt() { return aiIntroductionUpdatedAt; }
+    public String getConcertIntroduction() { return concertIntroduction; }
+    public UUID getConcertIntroductionSourceJobId() { return concertIntroductionSourceJobId; }
+    public String getConcertIntroductionLanguage() { return concertIntroductionLanguage; }
+    public Instant getConcertIntroductionUpdatedAt() { return concertIntroductionUpdatedAt; }
+    public Instant getManualIntroductionUpdatedAt() { return manualIntroductionUpdatedAt; }
     public Venue getVenue() { return venue; }
     public ConcertStatus getStatus() { return status; }
     public Instant getSaleStartAt() { return saleStartAt; }
@@ -96,8 +108,11 @@ public class Concert {
     // Setters
     public void setTitle(String title) { this.title = title; }
     public void setDescription(String description) { this.description = description; }
-    public void setAiIntroduction(String aiIntroduction) { this.aiIntroduction = aiIntroduction; }
-    public void setAiIntroductionUpdatedAt(Instant aiIntroductionUpdatedAt) { this.aiIntroductionUpdatedAt = aiIntroductionUpdatedAt; }
+    public void setConcertIntroduction(String concertIntroduction) { this.concertIntroduction = concertIntroduction; }
+    public void setConcertIntroductionSourceJobId(UUID concertIntroductionSourceJobId) { this.concertIntroductionSourceJobId = concertIntroductionSourceJobId; }
+    public void setConcertIntroductionLanguage(String concertIntroductionLanguage) { this.concertIntroductionLanguage = concertIntroductionLanguage; }
+    public void setConcertIntroductionUpdatedAt(Instant concertIntroductionUpdatedAt) { this.concertIntroductionUpdatedAt = concertIntroductionUpdatedAt; }
+    public void setManualIntroductionUpdatedAt(Instant manualIntroductionUpdatedAt) { this.manualIntroductionUpdatedAt = manualIntroductionUpdatedAt; }
     public void setVenue(Venue venue) { this.venue = venue; }
     public void setStatus(ConcertStatus status) { this.status = status; }
     public void setSaleStartAt(Instant saleStartAt) { this.saleStartAt = saleStartAt; }

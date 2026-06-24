@@ -10,8 +10,13 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.tickefy.csvingestion.modules.csvimport.entity.ImportJobEntity;
 import com.tickefy.csvingestion.modules.csvimport.entity.VipGuestEntity;
+import com.tickefy.csvingestion.modules.csvimport.event.CsvEvents;
+import com.tickefy.csvingestion.modules.csvimport.event.EventEnvelope;
+import com.tickefy.csvingestion.modules.csvimport.event.VipGuestImportCompletedPayload;
+import com.tickefy.csvingestion.modules.csvimport.event.VipGuestImportFailedPayload;
 import com.tickefy.csvingestion.modules.csvimport.repository.ImportErrorRepository;
 import com.tickefy.csvingestion.modules.csvimport.repository.ImportJobRepository;
+import com.tickefy.csvingestion.modules.csvimport.repository.OutboxRepository;
 import com.tickefy.csvingestion.modules.csvimport.repository.VipGuestRepository;
 import com.tickefy.csvingestion.modules.csvimport.repository.VipGuestStagingRepository;
 import com.tickefy.csvingestion.modules.csvimport.service.CsvImportPersistence;
@@ -28,11 +33,15 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.concurrent.Executor;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -206,6 +215,9 @@ class CsvImportFinalizeIntegrationTest {
     VipGuestRepository vipGuestRepository;
 
     @Autowired
+    OutboxRepository outboxRepository;
+
+    @Autowired
     ObjectStorageClient objectStorage;
 
     // -----------------------------------------------------------------------
@@ -215,11 +227,28 @@ class CsvImportFinalizeIntegrationTest {
     @BeforeEach
     void cleanDb() {
         // FK order: errors + staging → jobs → vip_guests (no FK from vip_guests to jobs)
+        // outbox has no FK to import_jobs so it can be deleted independently
+        outboxRepository.deleteAll();
         errorRepository.deleteAll();
         stagingRepository.deleteAll();
         importJobRepository.deleteAll();
         vipGuestRepository.deleteAll();
         wireMock.resetAll();
+    }
+
+    @Autowired
+    @Qualifier("csvWorkerExecutor")
+    Executor workerExecutor;
+
+    /** Drain in-flight @Async workers before the context/DB pool tears down (no leak past test). */
+    @AfterEach
+    void drainWorker() {
+        if (workerExecutor instanceof ThreadPoolTaskExecutor tpe) {
+            await().atMost(Duration.ofSeconds(15))
+                    .pollInterval(Duration.ofMillis(50))
+                    .until(() -> tpe.getThreadPoolExecutor().getActiveCount() == 0
+                            && tpe.getThreadPoolExecutor().getQueue().isEmpty());
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -533,7 +562,11 @@ class CsvImportFinalizeIntegrationTest {
 
         // Part 2: calling markTerminal again (state-guard: job already terminal → no-op)
         // We verify via persistence bean directly (AC9 overlaps here)
-        boolean applied = persistence.markTerminal(job.getId(), "COMPLETED", 99, null);
+        var dummyEvent = EventEnvelope.of(
+                CsvEvents.EventType.VIP_GUEST_IMPORT_COMPLETED,
+                new VipGuestImportCompletedPayload(
+                        job.getId(), CONCERT_ID, "COMPLETED", 3, 99, 0, 0));
+        boolean applied = persistence.markTerminal(job.getId(), "COMPLETED", 99, null, dummyEvent);
         assertThat(applied).as("AC6: second markTerminal is no-op (not in PROCESSING)").isFalse();
 
         // vip_guests count must not change
@@ -701,7 +734,11 @@ class CsvImportFinalizeIntegrationTest {
         assertThat(result.getSuccessRows()).isEqualTo(1);
 
         // Call markTerminal again with different values — must be no-op (WHERE status='PROCESSING' fails)
-        boolean applied = persistence.markTerminal(job.getId(), "FAILED", 99, "fake-report.csv");
+        var dummyEvent = EventEnvelope.of(
+                CsvEvents.EventType.VIP_GUEST_IMPORT_FAILED,
+                new VipGuestImportFailedPayload(
+                        job.getId(), CONCERT_ID, "ERROR_THRESHOLD_EXCEEDED"));
+        boolean applied = persistence.markTerminal(job.getId(), "FAILED", 99, "fake-report.csv", dummyEvent);
         assertThat(applied).as("AC9: markTerminal on COMPLETED job returns false (no-op)").isFalse();
 
         // Status and successRows must NOT be changed

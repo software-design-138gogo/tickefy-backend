@@ -4,6 +4,10 @@ import com.tickefy.csvingestion.common.exception.ApiException;
 import com.tickefy.csvingestion.modules.csvimport.entity.ImportErrorEntity;
 import com.tickefy.csvingestion.modules.csvimport.entity.ImportJobEntity;
 import com.tickefy.csvingestion.modules.csvimport.entity.VipGuestStagingEntity;
+import com.tickefy.csvingestion.modules.csvimport.event.CsvEvents;
+import com.tickefy.csvingestion.modules.csvimport.event.EventEnvelope;
+import com.tickefy.csvingestion.modules.csvimport.event.VipGuestImportCompletedPayload;
+import com.tickefy.csvingestion.modules.csvimport.event.VipGuestImportFailedPayload;
 import com.tickefy.csvingestion.modules.csvimport.repository.ImportErrorRepository;
 import com.tickefy.csvingestion.modules.csvimport.repository.ImportJobRepository;
 import com.tickefy.csvingestion.modules.csvimport.resolver.TicketTypeMap;
@@ -86,10 +90,15 @@ public class CsvImportWorker {
         try {
             ImportJobEntity job = jobRepository.findById(jobId).orElseThrow();
             Counters counters = ingest(jobId, job);
-            finalizeJob(jobId, counters);
+            finalizeJob(jobId, job.getConcertId(), counters);
         } catch (Exception e) {
             // §15: PII-free reason (exception type / error code), never the message/stacktrace.
-            persistence.markFailed(jobId, safeReason(e));
+            String reason = safeReason(e);
+            UUID concertId = jobRepository.findById(jobId).map(ImportJobEntity::getConcertId).orElse(null);
+            var event = EventEnvelope.of(
+                    CsvEvents.EventType.VIP_GUEST_IMPORT_FAILED,
+                    new VipGuestImportFailedPayload(jobId, concertId, reason));
+            persistence.markFailed(jobId, reason, event);
             log.error("Ingest failed jobId={} cause={}", jobId, e.getClass().getName());
         }
     }
@@ -170,8 +179,8 @@ public class CsvImportWorker {
         return c;
     }
 
-    /** Threshold -> promote (idempotent) -> error-report -> terminal status (state-guard §6.9). */
-    private void finalizeJob(UUID jobId, Counters c) {
+    /** Threshold -> promote (idempotent) -> error-report -> terminal status + outbox (state-guard §6.9). */
+    private void finalizeJob(UUID jobId, UUID concertId, Counters c) {
         int errorCount = c.failed + c.duplicate;
         String reportKey = errorCount > 0 ? uploadErrorReport(jobId) : null;
 
@@ -189,7 +198,20 @@ public class CsvImportWorker {
             }
         }
 
-        boolean applied = persistence.markTerminal(jobId, status, success, reportKey);
+        // Event type follows terminal status (§14.9: FAILED -> VipGuestImportFailed).
+        EventEnvelope<?> event;
+        if ("FAILED".equals(status)) {
+            event = EventEnvelope.of(
+                    CsvEvents.EventType.VIP_GUEST_IMPORT_FAILED,
+                    new VipGuestImportFailedPayload(jobId, concertId, "ERROR_THRESHOLD_EXCEEDED"));
+        } else {
+            event = EventEnvelope.of(
+                    CsvEvents.EventType.VIP_GUEST_IMPORT_COMPLETED,
+                    new VipGuestImportCompletedPayload(
+                            jobId, concertId, status, c.total, success, c.failed, c.duplicate));
+        }
+
+        boolean applied = persistence.markTerminal(jobId, status, success, reportKey, event);
         log.info(
                 "Finalize jobId={} status={} success={} errors={} total={} applied={}",
                 jobId, status, success, errorCount, c.total, applied);

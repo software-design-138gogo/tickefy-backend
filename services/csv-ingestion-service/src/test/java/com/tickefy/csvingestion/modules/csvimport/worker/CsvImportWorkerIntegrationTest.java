@@ -24,11 +24,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -317,6 +321,21 @@ class CsvImportWorkerIntegrationTest {
         wireMock.resetAll();
     }
 
+    @Autowired
+    @Qualifier("csvWorkerExecutor")
+    Executor workerExecutor;
+
+    /** Drain in-flight @Async workers before the context/DB pool tears down (no leak past test). */
+    @AfterEach
+    void drainWorker() {
+        if (workerExecutor instanceof ThreadPoolTaskExecutor tpe) {
+            await().atMost(Duration.ofSeconds(15))
+                    .pollInterval(Duration.ofMillis(50))
+                    .until(() -> tpe.getThreadPoolExecutor().getActiveCount() == 0
+                            && tpe.getThreadPoolExecutor().getQueue().isEmpty());
+        }
+    }
+
     // -----------------------------------------------------------------------
     // AC1: all-valid — 3 rows, status stays PROCESSING, counters correct
     // -----------------------------------------------------------------------
@@ -563,12 +582,13 @@ class CsvImportWorkerIntegrationTest {
 
         ImportJobEntity job = seedPendingJob(CONCERT_ID, objectKey);
 
-        // Await longer for 2000 rows
+        // Await terminal (finishedAt set) — process() ingests AND finalizes, so polling totalRows
+        // alone could read the pre-finalize PROCESSING state.
         worker.process(job.getId());
         await().atMost(Duration.ofSeconds(30))
                 .pollInterval(Duration.ofMillis(200))
                 .until(() -> importJobRepository.findById(job.getId())
-                        .map(j -> j.getTotalRows() == 2000)
+                        .map(j -> j.getTotalRows() == 2000 && j.getFinishedAt() != null)
                         .orElse(false));
 
         ImportJobEntity updated = importJobRepository.findById(job.getId()).orElseThrow();

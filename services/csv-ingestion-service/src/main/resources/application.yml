@@ -31,11 +31,24 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,circuitbreakers,circuitbreakerevents
   endpoint:
     health:
       probes:
         enabled: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      event-service:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 1
+        record-exceptions:
+          - com.tickefy.csvingestion.modules.csvimport.client.EventUnavailableException
 
 app:
   database:
@@ -43,6 +56,14 @@ app:
   jwt:
     issuer: ${JWT_ISSUER:tickefy-auth-service}
     public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
+  event:
+    base-url: ${EVENT_SERVICE_BASE_URL:http://event-service:8080}
+  object-storage:
+    endpoint: ${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}
+    access-key: ${OBJECT_STORAGE_ACCESS_KEY:minioadmin}
+    secret-key: ${OBJECT_STORAGE_SECRET_KEY:minioadmin}
+    region: ${OBJECT_STORAGE_REGION:us-east-1}
+    bucket: ${OBJECT_STORAGE_BUCKET:tickefy-csv}
 
 logging:
   level:

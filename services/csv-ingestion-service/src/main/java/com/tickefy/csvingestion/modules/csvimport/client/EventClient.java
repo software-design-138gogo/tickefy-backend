@@ -6,12 +6,15 @@ import com.tickefy.csvingestion.common.exception.ApiException;
 import com.tickefy.csvingestion.common.exception.ErrorCode;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.net.ConnectException;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -30,10 +33,13 @@ public class EventClient {
 
     public EventClient(@Value("${app.event.base-url}") String baseUrl, ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
-        this.restClient = RestClient.builder()
-                .baseUrl(baseUrl)
-                .requestInitializer(req -> req.getHeaders().set("Connect-Timeout", "2000"))
-                .build();
+        // Real connect + read timeouts (2s) via JDK HttpClient request factory — a custom
+        // "Connect-Timeout" header is NOT interpreted by RestClient. (CLAUDE §8 / mirror checkin.)
+        HttpClient httpClient =
+                HttpClient.newBuilder().connectTimeout(Duration.ofMillis(2000)).build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(Duration.ofMillis(2000));
+        this.restClient = RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
     }
 
     /**

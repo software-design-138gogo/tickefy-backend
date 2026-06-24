@@ -73,6 +73,10 @@ app:
     base-url: ${EVENT_SERVICE_BASE_URL:http://event-service:8080}
   inventory:
     base-url: ${INVENTORY_SERVICE_BASE_URL:http://inventory-service:8080}
+  csv:
+    batch-size: ${CSV_BATCH_SIZE:1000}
+    worker:
+      auto-trigger: ${CSV_WORKER_AUTO_TRIGGER:true}
   object-storage:
     endpoint: ${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}
     access-key: ${OBJECT_STORAGE_ACCESS_KEY:minioadmin}

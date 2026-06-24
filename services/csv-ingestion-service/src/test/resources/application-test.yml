@@ -13,3 +13,6 @@ spring:
 app:
   database:
     schema: public
+  csv:
+    worker:
+      auto-trigger: false

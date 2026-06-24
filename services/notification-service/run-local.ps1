@@ -8,7 +8,8 @@ if (Test-Path $envFile) {
         $name, $value = $_.Split('=', 2)
         [Environment]::SetEnvironmentVariable($name.Trim(), $value.Trim(), "Process")
     }
-} else {
+}
+else {
     Write-Host "Warning: $envFile not found. Running with default OS environment variables." -ForegroundColor Yellow
 }
 

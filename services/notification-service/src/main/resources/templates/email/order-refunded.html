@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hoàn tiền thành công</title>
+</head>
+<body style="font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <h2 style="color:#2a9d8f;margin-top:0">💸 Hoàn tiền thành công</h2>
+    <p>Xin chào,</p>
+    <p>Chúng tôi đã tiến hành hoàn tiền cho đơn hàng của bạn.</p>
+
+    <div style="background:#e8f5e9;border-left:4px solid #4caf50;padding:12px 16px;margin:20px 0;border-radius:4px">
+        <p style="margin:0;color:#2e7d32">
+            <strong>Mã đơn hàng:</strong> <span th:text="${orderId}">UUID</span><br/>
+            <strong>Số tiền hoàn:</strong> <span th:text="${#numbers.formatDecimal(refundAmount, 0, 'COMMA', 0, 'POINT')} + ' ' + ${currency}">0 VND</span><br/>
+            <strong>Thời gian hoàn:</strong> <span th:text="${refundedAt}">Thời gian</span><br/>
+            <strong>Lý do:</strong> <span th:text="${reason}">Lý do</span>
+        </p>
+    </div>
+
+    <p>Số tiền trên sẽ được chuyển về tài khoản thanh toán ban đầu của bạn. Tùy thuộc vào ngân hàng, có thể mất từ 3-7 ngày làm việc để tiền vào tài khoản.</p>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="color:#999;font-size:11px;text-align:center">
+        © 2026 Tickefy. Email này được gửi tự động, vui lòng không trả lời.
+    </p>
+</div>
+</body>
+</html>

@@ -3,6 +3,8 @@ package com.tickefy.csvingestion.modules.csvimport.repository;
 import com.tickefy.csvingestion.modules.csvimport.entity.VipGuestEntity;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +13,12 @@ import org.springframework.data.repository.query.Param;
 public interface VipGuestRepository extends JpaRepository<VipGuestEntity, UUID> {
 
     List<VipGuestEntity> findByConcertId(UUID concertId);
+
+    /** Internal read endpoint (6a): paginated VIP list of a concert. */
+    Page<VipGuestEntity> findByConcertId(UUID concertId, Pageable pageable);
+
+    /** Internal read endpoint (6a): per-email lookup within a concert (email normalized lowercase). */
+    Page<VipGuestEntity> findByConcertIdAndEmail(UUID concertId, String email, Pageable pageable);
 
     boolean existsByConcertIdAndEmail(UUID concertId, String email);
 

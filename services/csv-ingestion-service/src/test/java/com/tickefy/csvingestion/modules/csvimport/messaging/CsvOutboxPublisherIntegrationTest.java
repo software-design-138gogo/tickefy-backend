@@ -51,7 +51,8 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 @TestPropertySource(properties = {
     "app.messaging.outbox.enabled=true",
-    "app.csv.reaper.enabled=false"   // §6.12 gate: reaper @Scheduled OFF — reaper IT calls reapStuck() directly
+    "app.csv.reaper.enabled=false",  // §6.12 gate: reaper @Scheduled OFF — reaper IT calls reapStuck() directly
+    "app.csv.scan.enabled=false"     // §6.12 gate: cron-scan @Scheduled OFF
 })
 class CsvOutboxPublisherIntegrationTest {
 

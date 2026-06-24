@@ -67,7 +67,8 @@ import org.testcontainers.utility.DockerImageName;
 @TestPropertySource(properties = {
     "app.csv.reaper.enabled=true",              // reaper bean present so we can inject it
     "app.csv.reaper.stuck-threshold-min=10",    // explicit threshold: jobs > 10 min old are stuck
-    "app.messaging.outbox.enabled=false"        // outbox-publisher drainer OFF — check rows directly
+    "app.messaging.outbox.enabled=false",       // outbox-publisher drainer OFF — check rows directly
+    "app.csv.scan.enabled=false"                // cron-scan @Scheduled OFF
 })
 class CsvStuckReaperIntegrationTest {
 

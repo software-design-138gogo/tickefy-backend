@@ -60,7 +60,7 @@ import org.testcontainers.utility.DockerImageName;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @Testcontainers
-@TestPropertySource(properties = "app.messaging.outbox.enabled=false")
+@TestPropertySource(properties = {"app.messaging.outbox.enabled=false", "app.csv.reaper.enabled=false"})
 class CsvInternalVipGuestIntegrationTest {
 
     // -----------------------------------------------------------------------

@@ -2,13 +2,18 @@ package com.tickefy.csvingestion.modules.csvimport.repository;
 
 import com.tickefy.csvingestion.modules.csvimport.entity.ImportJobEntity;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ImportJobRepository extends JpaRepository<ImportJobEntity, UUID> {
+
+    /** Stuck-reaper (6b): jobs left PROCESSING past the cutoff (worker crash/hang). startedAt set at claim. */
+    List<ImportJobEntity> findByStatusAndStartedAtBefore(String status, Instant cutoff, Pageable pageable);
 
     /**
      * Atomic state-guard claim (CLAUDE §6.9): PENDING -> PROCESSING, only one worker wins.

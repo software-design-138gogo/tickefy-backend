@@ -88,6 +88,10 @@ app:
     error-threshold: ${CSV_ERROR_THRESHOLD:0.5}
     worker:
       auto-trigger: ${CSV_WORKER_AUTO_TRIGGER:true}
+    reaper:
+      enabled: ${CSV_REAPER_ENABLED:true}
+      stuck-threshold-min: ${CSV_STUCK_THRESHOLD_MIN:10}
+      poll-ms: ${CSV_REAPER_POLL_MS:60000}
   object-storage:
     endpoint: ${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}
     access-key: ${OBJECT_STORAGE_ACCESS_KEY:minioadmin}

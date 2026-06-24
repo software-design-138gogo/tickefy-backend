@@ -49,7 +49,10 @@ import org.testcontainers.utility.DockerImageName;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @Testcontainers
-@TestPropertySource(properties = "app.messaging.outbox.enabled=true")
+@TestPropertySource(properties = {
+    "app.messaging.outbox.enabled=true",
+    "app.csv.reaper.enabled=false"   // §6.12 gate: reaper @Scheduled OFF — reaper IT calls reapStuck() directly
+})
 class CsvOutboxPublisherIntegrationTest {
 
     // -----------------------------------------------------------------------

@@ -76,6 +76,12 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- Messaging (RabbitMQ outbox publisher) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!-- Security -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -162,6 +168,11 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>minio</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>rabbitmq</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

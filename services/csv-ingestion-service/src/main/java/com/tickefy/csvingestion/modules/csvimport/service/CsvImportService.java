@@ -13,10 +13,12 @@ import com.tickefy.csvingestion.modules.csvimport.repository.ImportJobRepository
 import com.tickefy.csvingestion.modules.csvimport.storage.ObjectStorageClient;
 import com.tickefy.csvingestion.modules.csvimport.validation.CsvFileValidator;
 import com.tickefy.csvingestion.modules.csvimport.validation.CsvFileValidator.ValidatedCsv;
+import com.tickefy.csvingestion.modules.csvimport.worker.WorkerTrigger;
 import java.io.ByteArrayInputStream;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -33,6 +35,7 @@ public class CsvImportService {
     private final ImportJobRepository importJobRepository;
     private final ImportErrorRepository importErrorRepository;
     private final CsvImportMapper mapper;
+    private final ObjectProvider<WorkerTrigger> workerTrigger;
 
     public CsvImportService(
             CsvFileValidator fileValidator,
@@ -41,7 +44,8 @@ public class CsvImportService {
             CsvImportPersistence persistence,
             ImportJobRepository importJobRepository,
             ImportErrorRepository importErrorRepository,
-            CsvImportMapper mapper) {
+            CsvImportMapper mapper,
+            ObjectProvider<WorkerTrigger> workerTrigger) {
         this.fileValidator = fileValidator;
         this.eventClient = eventClient;
         this.objectStorage = objectStorage;
@@ -49,6 +53,7 @@ public class CsvImportService {
         this.importJobRepository = importJobRepository;
         this.importErrorRepository = importErrorRepository;
         this.mapper = mapper;
+        this.workerTrigger = workerTrigger;
     }
 
     /**
@@ -78,6 +83,9 @@ public class CsvImportService {
         // 4. Create PENDING job (short TX, after storage succeeded).
         UUID importJobId = persistence.createJob(concertId, uploader, objectKey);
         log.info("Import job created importJobId={} concertId={}", importJobId, concertId);
+
+        // 5. Fire async ingest worker after the job row is committed (gated; absent in tests).
+        workerTrigger.ifAvailable(t -> t.trigger(importJobId));
         return importJobId;
     }
 

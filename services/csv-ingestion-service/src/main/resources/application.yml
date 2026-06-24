@@ -92,6 +92,9 @@ app:
       enabled: ${CSV_REAPER_ENABLED:true}
       stuck-threshold-min: ${CSV_STUCK_THRESHOLD_MIN:10}
       poll-ms: ${CSV_REAPER_POLL_MS:60000}
+    scan:
+      enabled: ${CSV_SCAN_ENABLED:true}
+      cron: ${CSV_IMPORT_CRON:0 0 1 * * *}
   object-storage:
     endpoint: ${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}
     access-key: ${OBJECT_STORAGE_ACCESS_KEY:minioadmin}

@@ -133,12 +133,25 @@ public class CsvImportPersistence {
         importJobRepository.save(job);
     }
 
+    /** Cron-scan dedup: a job already exists for this object key (§6.9). */
+    @Transactional(readOnly = true)
+    public boolean existsByObjectKey(String objectKey) {
+        return importJobRepository.existsByObjectKey(objectKey);
+    }
+
+    /** Upload-sourced job (uploader = organizerId, NOT null). */
     @Transactional
     public UUID createJob(UUID concertId, UUID organizerId, String objectKey) {
+        return createJob(concertId, organizerId, objectKey, "UPLOAD");
+    }
+
+    /** Generic create — source UPLOAD (organizerId required) or CRON (organizerId null, system batch). */
+    @Transactional
+    public UUID createJob(UUID concertId, UUID organizerId, String objectKey, String source) {
         ImportJobEntity job = ImportJobEntity.builder()
                 .concertId(concertId)
                 .organizerId(organizerId)
-                .source("UPLOAD")
+                .source(source)
                 .objectKey(objectKey)
                 .status("PENDING")
                 .build();

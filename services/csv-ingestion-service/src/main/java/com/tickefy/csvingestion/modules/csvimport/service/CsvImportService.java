@@ -113,7 +113,8 @@ public class CsvImportService {
                 .findById(jobId)
                 .orElseThrow(() -> new ApiException(
                         ErrorCode.IMPORT_JOB_NOT_FOUND, "Import job not found", HttpStatus.NOT_FOUND));
-        if (!isAdmin && !job.getOrganizerId().equals(UUID.fromString(sub))) {
+        // CRON jobs have organizer_id=null (system-initiated) — only ADMIN may access; null-safe (no NPE).
+        if (!isAdmin && !UUID.fromString(sub).equals(job.getOrganizerId())) {
             throw new ApiException(
                     ErrorCode.FORBIDDEN, "Access denied to this import job", HttpStatus.FORBIDDEN);
         }

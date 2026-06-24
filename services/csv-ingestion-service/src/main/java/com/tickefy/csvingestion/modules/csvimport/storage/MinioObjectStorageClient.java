@@ -1,11 +1,16 @@
 package com.tickefy.csvingestion.modules.csvimport.storage;
 
 import io.minio.GetObjectArgs;
+import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.Result;
 import io.minio.StatObjectArgs;
 import io.minio.errors.ErrorResponseException;
+import io.minio.messages.Item;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -44,6 +49,21 @@ public class MinioObjectStorageClient implements ObjectStorageClient {
         } catch (Exception e) {
             throw new ObjectStorageException("Failed to get object: " + key, e);
         }
+    }
+
+    @Override
+    public List<String> listObjects(String prefix) {
+        List<String> keys = new ArrayList<>();
+        try {
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder().bucket(bucket).prefix(prefix).recursive(true).build());
+            for (Result<Item> r : results) {
+                keys.add(r.get().objectName());
+            }
+        } catch (Exception e) {
+            throw new ObjectStorageException("Failed to list objects: " + prefix, e);
+        }
+        return keys;
     }
 
     @Override

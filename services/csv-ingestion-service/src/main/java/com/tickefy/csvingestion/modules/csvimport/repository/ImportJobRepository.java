@@ -15,6 +15,9 @@ public interface ImportJobRepository extends JpaRepository<ImportJobEntity, UUID
     /** Stuck-reaper (6b): jobs left PROCESSING past the cutoff (worker crash/hang). startedAt set at claim. */
     List<ImportJobEntity> findByStatusAndStartedAtBefore(String status, Instant cutoff, Pageable pageable);
 
+    /** Cron-scan (T-cron) dedup: a job already exists for this object key — skip re-pickup (§6.9). */
+    boolean existsByObjectKey(String objectKey);
+
     /**
      * Atomic state-guard claim (CLAUDE §6.9): PENDING -> PROCESSING, only one worker wins.
      * Returns affected row count (1 = claimed, 0 = already claimed/terminal/missing).

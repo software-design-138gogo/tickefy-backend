@@ -30,7 +30,8 @@ public class ImportJobEntity {
     @Column(name = "concert_id", nullable = false)
     private UUID concertId;
 
-    @Column(name = "organizer_id", nullable = false)
+    // nullable: CRON-sourced jobs have no uploader (V3 + chk_import_jobs_organizer); UPLOAD still sets it.
+    @Column(name = "organizer_id")
     private UUID organizerId;
 
     @Column(name = "source", nullable = false, length = 16)

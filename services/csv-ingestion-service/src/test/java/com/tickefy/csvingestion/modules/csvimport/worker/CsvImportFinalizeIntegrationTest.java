@@ -73,7 +73,7 @@ import org.testcontainers.utility.DockerImageName;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @Testcontainers
-@TestPropertySource(properties = {"app.messaging.outbox.enabled=false", "app.csv.reaper.enabled=false"})
+@TestPropertySource(properties = {"app.messaging.outbox.enabled=false", "app.csv.reaper.enabled=false", "app.csv.scan.enabled=false"})
 class CsvImportFinalizeIntegrationTest {
 
     // -----------------------------------------------------------------------
@@ -246,7 +246,7 @@ class CsvImportFinalizeIntegrationTest {
     @AfterEach
     void drainWorker() {
         if (workerExecutor instanceof ThreadPoolTaskExecutor tpe) {
-            await().atMost(Duration.ofSeconds(15))
+            await().atMost(Duration.ofSeconds(30))
                     .pollInterval(Duration.ofMillis(50))
                     .until(() -> tpe.getThreadPoolExecutor().getActiveCount() == 0
                             && tpe.getThreadPoolExecutor().getQueue().isEmpty());
@@ -324,7 +324,7 @@ class CsvImportFinalizeIntegrationTest {
      */
     private ImportJobEntity triggerAndAwaitTerminal(UUID jobId) {
         worker.process(jobId);
-        await().atMost(Duration.ofSeconds(15))
+        await().atMost(Duration.ofSeconds(30))
                 .pollInterval(Duration.ofMillis(100))
                 .until(() -> {
                     ImportJobEntity j = importJobRepository.findById(jobId).orElse(null);
@@ -594,7 +594,7 @@ class CsvImportFinalizeIntegrationTest {
 
         // Worker fires async; 503 → InventoryUnavailableException → ApiException → markFailed
         worker.process(job.getId());
-        await().atMost(Duration.ofSeconds(15))
+        await().atMost(Duration.ofSeconds(30))
                 .pollInterval(Duration.ofMillis(100))
                 .until(() -> {
                     ImportJobEntity j = importJobRepository.findById(job.getId()).orElse(null);

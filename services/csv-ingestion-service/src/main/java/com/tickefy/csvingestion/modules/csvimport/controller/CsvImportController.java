@@ -3,6 +3,8 @@ package com.tickefy.csvingestion.modules.csvimport.controller;
 import com.tickefy.csvingestion.common.constants.HeaderConstants;
 import com.tickefy.csvingestion.common.response.ApiResponse;
 import com.tickefy.csvingestion.modules.csvimport.dto.CsvImportAcceptedResponse;
+import com.tickefy.csvingestion.modules.csvimport.dto.CsvImportRetryResponse;
+import com.tickefy.csvingestion.modules.csvimport.dto.CsvImportStatusResponse;
 import com.tickefy.csvingestion.modules.csvimport.service.CsvImportService;
 import java.util.UUID;
 import org.slf4j.MDC;
@@ -13,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -49,5 +53,29 @@ public class CsvImportController {
         UUID importJobId = csvImportService.createImportJob(file, concertId, sub, isAdmin, bearerToken);
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(ApiResponse.success(new CsvImportAcceptedResponse(importJobId), requestId));
+    }
+
+    @GetMapping("/{importJobId}")
+    public ResponseEntity<ApiResponse<CsvImportStatusResponse>> getStatus(
+            @PathVariable UUID importJobId, Authentication auth) {
+        String requestId = MDC.get(HeaderConstants.REQUEST_ID);
+        CsvImportStatusResponse data =
+                csvImportService.getStatus(importJobId, auth.getName(), isAdmin(auth));
+        return ResponseEntity.ok(ApiResponse.success(data, requestId));
+    }
+
+    @PostMapping("/{importJobId}/retry")
+    public ResponseEntity<ApiResponse<CsvImportRetryResponse>> retry(
+            @PathVariable UUID importJobId, Authentication auth) {
+        String requestId = MDC.get(HeaderConstants.REQUEST_ID);
+        CsvImportRetryResponse data =
+                csvImportService.retry(importJobId, auth.getName(), isAdmin(auth));
+        return ResponseEntity.ok(ApiResponse.success(data, requestId));
+    }
+
+    private boolean isAdmin(Authentication auth) {
+        return auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch("ROLE_ADMIN"::equals);
     }
 }

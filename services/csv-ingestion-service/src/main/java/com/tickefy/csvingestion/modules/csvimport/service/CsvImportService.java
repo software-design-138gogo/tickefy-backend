@@ -4,6 +4,12 @@ import com.tickefy.csvingestion.common.exception.ApiException;
 import com.tickefy.csvingestion.common.exception.ErrorCode;
 import com.tickefy.csvingestion.modules.csvimport.client.ConcertSummary;
 import com.tickefy.csvingestion.modules.csvimport.client.EventClient;
+import com.tickefy.csvingestion.modules.csvimport.dto.CsvImportRetryResponse;
+import com.tickefy.csvingestion.modules.csvimport.dto.CsvImportStatusResponse;
+import com.tickefy.csvingestion.modules.csvimport.entity.ImportJobEntity;
+import com.tickefy.csvingestion.modules.csvimport.mapper.CsvImportMapper;
+import com.tickefy.csvingestion.modules.csvimport.repository.ImportErrorRepository;
+import com.tickefy.csvingestion.modules.csvimport.repository.ImportJobRepository;
 import com.tickefy.csvingestion.modules.csvimport.storage.ObjectStorageClient;
 import com.tickefy.csvingestion.modules.csvimport.validation.CsvFileValidator;
 import com.tickefy.csvingestion.modules.csvimport.validation.CsvFileValidator.ValidatedCsv;
@@ -11,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,16 +30,25 @@ public class CsvImportService {
     private final EventClient eventClient;
     private final ObjectStorageClient objectStorage;
     private final CsvImportPersistence persistence;
+    private final ImportJobRepository importJobRepository;
+    private final ImportErrorRepository importErrorRepository;
+    private final CsvImportMapper mapper;
 
     public CsvImportService(
             CsvFileValidator fileValidator,
             EventClient eventClient,
             ObjectStorageClient objectStorage,
-            CsvImportPersistence persistence) {
+            CsvImportPersistence persistence,
+            ImportJobRepository importJobRepository,
+            ImportErrorRepository importErrorRepository,
+            CsvImportMapper mapper) {
         this.fileValidator = fileValidator;
         this.eventClient = eventClient;
         this.objectStorage = objectStorage;
         this.persistence = persistence;
+        this.importJobRepository = importJobRepository;
+        this.importErrorRepository = importErrorRepository;
+        this.mapper = mapper;
     }
 
     /**
@@ -63,5 +79,36 @@ public class CsvImportService {
         UUID importJobId = persistence.createJob(concertId, uploader, objectKey);
         log.info("Import job created importJobId={} concertId={}", importJobId, concertId);
         return importJobId;
+    }
+
+    /** Job status + summary + error rows. 404 if missing, 403 if caller is not owner/admin. */
+    public CsvImportStatusResponse getStatus(UUID jobId, String sub, boolean isAdmin) {
+        ImportJobEntity job = findOwnedJob(jobId, sub, isAdmin);
+        return mapper.toStatusResponse(job, importErrorRepository.findByImportJobId(jobId));
+    }
+
+    /** Retry a FAILED job (state-guard §6.9): clear staging + flip PENDING. 422 if not FAILED. */
+    public CsvImportRetryResponse retry(UUID jobId, String sub, boolean isAdmin) {
+        ImportJobEntity job = findOwnedJob(jobId, sub, isAdmin);
+        if (!"FAILED".equals(job.getStatus())) {
+            throw new ApiException(
+                    ErrorCode.IMPORT_JOB_NOT_RETRYABLE,
+                    "Only FAILED jobs can be retried",
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+        persistence.resetForRetry(jobId);
+        return new CsvImportRetryResponse(jobId, "PENDING");
+    }
+
+    private ImportJobEntity findOwnedJob(UUID jobId, String sub, boolean isAdmin) {
+        ImportJobEntity job = importJobRepository
+                .findById(jobId)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.IMPORT_JOB_NOT_FOUND, "Import job not found", HttpStatus.NOT_FOUND));
+        if (!isAdmin && !job.getOrganizerId().equals(UUID.fromString(sub))) {
+            throw new ApiException(
+                    ErrorCode.FORBIDDEN, "Access denied to this import job", HttpStatus.FORBIDDEN);
+        }
+        return job;
     }
 }

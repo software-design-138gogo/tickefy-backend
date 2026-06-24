@@ -13,6 +13,7 @@ import com.tickefy.csvingestion.modules.csvimport.entity.ImportJobEntity;
 import com.tickefy.csvingestion.modules.csvimport.entity.VipGuestStagingEntity;
 import com.tickefy.csvingestion.modules.csvimport.repository.ImportErrorRepository;
 import com.tickefy.csvingestion.modules.csvimport.repository.ImportJobRepository;
+import com.tickefy.csvingestion.modules.csvimport.repository.VipGuestRepository;
 import com.tickefy.csvingestion.modules.csvimport.repository.VipGuestStagingRepository;
 import com.tickefy.csvingestion.modules.csvimport.storage.ObjectStorageClient;
 import io.minio.BucketExistsArgs;
@@ -199,6 +200,9 @@ class CsvImportWorkerIntegrationTest {
     @Autowired
     ObjectStorageClient objectStorage;
 
+    @Autowired
+    VipGuestRepository vipGuestRepository;
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -278,11 +282,13 @@ class CsvImportWorkerIntegrationTest {
      */
     private void triggerAndWait(UUID jobId, int expectedTotal) {
         worker.process(jobId); // @Async proxy dispatches to csvWorkerExecutor thread
+        // Wait for terminal (finishedAt set) — process() now ingests AND finalizes (T4c), so polling
+        // totalRows alone could read pre-finalize PROCESSING state.
         await().atMost(Duration.ofSeconds(10))
                 .pollInterval(Duration.ofMillis(100))
                 .until(() -> {
                     ImportJobEntity job = importJobRepository.findById(jobId).orElse(null);
-                    return job != null && job.getTotalRows() == expectedTotal;
+                    return job != null && job.getTotalRows() == expectedTotal && job.getFinishedAt() != null;
                 });
     }
 
@@ -304,6 +310,7 @@ class CsvImportWorkerIntegrationTest {
 
     @BeforeEach
     void cleanDb() {
+        vipGuestRepository.deleteAll();
         errorRepository.deleteAll();
         stagingRepository.deleteAll();
         importJobRepository.deleteAll();
@@ -329,7 +336,7 @@ class CsvImportWorkerIntegrationTest {
 
         // DB assertions — reload from repo
         ImportJobEntity updated = importJobRepository.findById(job.getId()).orElseThrow();
-        assertThat(updated.getStatus()).as("AC1: status must remain PROCESSING").isEqualTo("PROCESSING");
+        assertThat(updated.getStatus()).as("AC1: 0 errors -> COMPLETED after finalize").isEqualTo("COMPLETED");
         assertThat(updated.getTotalRows()).as("AC1: total=3").isEqualTo(3);
         assertThat(updated.getSuccessRows()).as("AC1: staged=3").isEqualTo(3);
         assertThat(updated.getFailedRows()).as("AC1: failed=0").isEqualTo(0);
@@ -368,9 +375,10 @@ class CsvImportWorkerIntegrationTest {
         triggerAndWait(job.getId(), 4);
 
         ImportJobEntity updated = importJobRepository.findById(job.getId()).orElseThrow();
-        assertThat(updated.getStatus()).isEqualTo("PROCESSING");
+        // 3 errors / 4 total = 0.75 > 0.5 threshold -> FAILED, no promote (success=0)
+        assertThat(updated.getStatus()).as("AC2: ratio 0.75 > 0.5 -> FAILED").isEqualTo("FAILED");
         assertThat(updated.getTotalRows()).as("AC2: total=4").isEqualTo(4);
-        assertThat(updated.getSuccessRows()).as("AC2: staged=1").isEqualTo(1);
+        assertThat(updated.getSuccessRows()).as("AC2: FAILED -> no promote, success=0").isEqualTo(0);
         assertThat(updated.getFailedRows()).as("AC2: failed=3").isEqualTo(3);
         assertThat(updated.getDuplicateRows()).as("AC2: duplicate=0").isEqualTo(0);
 
@@ -566,7 +574,7 @@ class CsvImportWorkerIntegrationTest {
         ImportJobEntity updated = importJobRepository.findById(job.getId()).orElseThrow();
         assertThat(updated.getSuccessRows()).as("AC7: 2000 rows staged").isEqualTo(2000);
         assertThat(updated.getFailedRows()).as("AC7: 0 errors").isEqualTo(0);
-        assertThat(updated.getStatus()).as("AC7: status PROCESSING").isEqualTo("PROCESSING");
+        assertThat(updated.getStatus()).as("AC7: 0 errors -> COMPLETED").isEqualTo("COMPLETED");
 
         // Count via repo — batch-size=500 means 4 flush cycles (2000/500=4)
         List<VipGuestStagingEntity> staging = stagingRepository.findByImportJobId(job.getId());

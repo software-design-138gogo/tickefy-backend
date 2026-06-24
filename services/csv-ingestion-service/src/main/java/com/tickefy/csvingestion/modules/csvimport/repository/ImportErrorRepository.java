@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ImportErrorRepository extends JpaRepository<ImportErrorEntity, UUID> {
 
     List<ImportErrorEntity> findByImportJobId(UUID importJobId);
+
+    void deleteByImportJobId(UUID importJobId);
 }

@@ -48,6 +48,8 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html")
                         .permitAll()
+                        // Internal service-to-service (VIP PII) — protected by role, NOT gateway-exposed.
+                        .requestMatchers("/internal/**").hasAnyRole("CHECKIN_STAFF", "ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(ex -> ex

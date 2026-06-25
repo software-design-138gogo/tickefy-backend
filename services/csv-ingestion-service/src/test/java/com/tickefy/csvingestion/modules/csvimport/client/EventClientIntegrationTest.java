@@ -120,7 +120,7 @@ class EventClientIntegrationTest {
                                         {
                                           "success": true,
                                           "data": {
-                                            "id": "%s",
+                                            "concertId": "%s",
                                             "organizerId": "%s",
                                             "status": "PUBLISHED"
                                           },

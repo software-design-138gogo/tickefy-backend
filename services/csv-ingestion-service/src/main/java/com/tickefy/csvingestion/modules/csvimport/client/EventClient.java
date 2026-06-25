@@ -99,7 +99,11 @@ public class EventClient {
     private ConcertSummary parse(byte[] body) {
         try {
             JsonNode data = objectMapper.readTree(body).path("data");
-            UUID id = UUID.fromString(data.path("id").asText());
+            String idText = data.path("concertId").asText(null);
+            if (idText == null || idText.isBlank()) {
+                throw new EventUnavailableException("Event response missing concertId");
+            }
+            UUID id = UUID.fromString(idText);
             JsonNode organizerNode = data.path("organizerId");
             UUID organizerId = organizerNode.isMissingNode() || organizerNode.isNull()
                     ? null

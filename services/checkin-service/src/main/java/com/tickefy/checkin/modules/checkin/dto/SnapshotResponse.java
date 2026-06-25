@@ -1,5 +1,6 @@
 package com.tickefy.checkin.modules.checkin.dto;
 
+import com.tickefy.checkin.modules.vip.dto.VipGuestSnapshotDto;
 import java.time.Instant;
 import java.util.List;
 
@@ -12,7 +13,8 @@ public record SnapshotResponse(
         Instant generatedAt,
         Instant expiresAt,
         int totalCount,
-        List<SnapshotTicket> tickets
+        List<SnapshotTicket> tickets,
+        List<VipGuestSnapshotDto> vipGuests
 ) {
     public record SnapshotTicket(
             String ticketId,

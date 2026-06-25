@@ -9,6 +9,9 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+  rabbitmq:
+    host: localhost
+    port: 5672
 
 app:
   database:
@@ -17,3 +20,10 @@ app:
     public-key: classpath:keys/jwt-dev-public.pem
     issuer: tickefy-auth-service
     audience: tickefy-api
+  messaging:
+    listener-auto-startup: false
+
+management:
+  health:
+    rabbit:
+      enabled: false

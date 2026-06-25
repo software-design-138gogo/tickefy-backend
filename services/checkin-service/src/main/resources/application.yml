@@ -54,6 +54,9 @@ app:
     issuer: ${JWT_ISSUER:tickefy-auth-service}
     audience: ${JWT_AUDIENCE:tickefy-api}
     cache-max-size: ${JWT_CACHE_MAX_SIZE:2048}
+  vip:
+    cache:
+      ttl-min: ${VIP_CACHE_TTL_MIN:5}
 
 eticket:
   service:
@@ -62,6 +65,10 @@ eticket:
     connect-timeout-ms: ${ETICKET_HTTP_CONNECT_TIMEOUT_MS:3000}
     read-timeout-ms: ${ETICKET_HTTP_READ_TIMEOUT_MS:5000}
     executor-threads: ${ETICKET_HTTP_EXECUTOR_THREADS:256}
+
+csv:
+  service:
+    url: ${CSV_SERVICE_URL:http://localhost:8090}
 
 logging:
   level:

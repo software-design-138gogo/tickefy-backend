@@ -9,6 +9,8 @@ import com.tickefy.checkin.modules.checkin.dto.*;
 import com.tickefy.checkin.modules.checkin.entity.SyncBatch;
 import com.tickefy.checkin.modules.checkin.repository.CheckinEventRepository;
 import com.tickefy.checkin.modules.checkin.repository.SyncBatchRepository;
+import com.tickefy.checkin.modules.vip.dto.VipGuestSnapshotDto;
+import com.tickefy.checkin.modules.vip.service.VipProjectionService;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
@@ -38,6 +40,7 @@ public class CheckinService {
     private final TransactionTemplate transactionTemplate;
     private final JdbcTemplate jdbcTemplate;
     private final String checkinEventsTable;
+    private final VipProjectionService vipProjectionService;
 
     public CheckinService(ETicketClient eTicketClient,
                           CheckinEventRepository checkinEventRepository,
@@ -45,7 +48,8 @@ public class CheckinService {
                           ObjectMapper objectMapper,
                           TransactionTemplate transactionTemplate,
                           JdbcTemplate jdbcTemplate,
-                          @Value("${app.database.schema:public}") String databaseSchema) {
+                          @Value("${app.database.schema:public}") String databaseSchema,
+                          VipProjectionService vipProjectionService) {
         this.eTicketClient = eTicketClient;
         this.checkinEventRepository = checkinEventRepository;
         this.syncBatchRepository = syncBatchRepository;
@@ -53,6 +57,7 @@ public class CheckinService {
         this.transactionTemplate = transactionTemplate;
         this.jdbcTemplate = jdbcTemplate;
         this.checkinEventsTable = qualifiedTable(databaseSchema, "checkin_events");
+        this.vipProjectionService = vipProjectionService;
     }
 
     /**
@@ -98,7 +103,17 @@ public class CheckinService {
                         ticket.holderName(),
                         ticket.status()))
                 .toList();
-        return new SnapshotResponse(concertId, gate, now, expiresAt, tickets.size(), tickets);
+        List<VipGuestSnapshotDto> vipGuests = safeGetVip(concertId);
+        return new SnapshotResponse(concertId, gate, now, expiresAt, tickets.size(), tickets, vipGuests);
+    }
+
+    private List<VipGuestSnapshotDto> safeGetVip(String concertId) {
+        try {
+            return vipProjectionService.getVipGuestsForSnapshot(java.util.UUID.fromString(concertId));
+        } catch (Exception ex) {   // csv-down 503 / bad-UUID / no-context / bất kỳ — VIP optional
+            log.warn("VIP guests unavailable for snapshot concertId={}, returning empty (ticket snapshot unaffected)", concertId);
+            return java.util.List.of();
+        }
     }
 
     /**

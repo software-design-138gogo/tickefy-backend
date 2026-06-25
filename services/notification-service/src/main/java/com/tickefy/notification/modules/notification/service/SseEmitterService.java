@@ -78,4 +78,25 @@ public class SseEmitterService {
             log.debug("User {} is not connected via SSE. Notification saved only.", userId);
         }
     }
+
+    /**
+     * Broadcasts a real-time notification to all connected users.
+     */
+    public void broadcast(Notification notification) {
+        if (emitters.isEmpty()) {
+            return;
+        }
+        emitters.forEach((userId, emitter) -> {
+            try {
+                emitter.send(SseEmitter.event()
+                        .name("NOTIFICATION")
+                        .data(notification));
+            } catch (IOException e) {
+                log.warn("Failed to push broadcast SSE to user: {}. Removing emitter.", userId);
+                emitter.completeWithError(e);
+                emitters.remove(userId);
+            }
+        });
+        log.info("Broadcasted SSE notification to {} connected users", emitters.size());
+    }
 }

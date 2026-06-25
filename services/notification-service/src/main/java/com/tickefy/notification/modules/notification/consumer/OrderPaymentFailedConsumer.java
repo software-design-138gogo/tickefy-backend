@@ -2,10 +2,8 @@ package com.tickefy.notification.modules.notification.consumer;
 
 import com.tickefy.notification.config.RabbitMQConfig;
 import com.tickefy.notification.modules.core.entity.Notification;
-import com.tickefy.notification.modules.core.repository.NotificationRepository;
-import com.tickefy.notification.modules.notification.service.EmailService;
-import com.tickefy.notification.modules.notification.service.EmailTemplateService;
-import com.tickefy.notification.modules.notification.service.SseEmitterService;
+import com.tickefy.notification.modules.notification.strategy.NotificationContext;
+import com.tickefy.notification.modules.notification.strategy.NotificationDispatcher;
 import com.tickefy.notification.shared.dto.EventEnvelope;
 import com.tickefy.notification.shared.dto.OrderPaymentFailedPayload;
 import java.util.HashMap;
@@ -27,16 +25,16 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Pushes SSE real-time notification to the user.
  *   <li>Sends a payment failure warning email.
  * </ol>
+ * 
+ * <p>This consumer delegates all notification saving and channel delivery to the
+ * {@link NotificationDispatcher} to adhere to the Strategy Pattern (OCP).
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class OrderPaymentFailedConsumer {
 
-    private final NotificationRepository notificationRepository;
-    private final SseEmitterService sseEmitterService;
-    private final EmailService emailService;
-    private final EmailTemplateService emailTemplateService;
+    private final NotificationDispatcher notificationDispatcher;
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_ORDER_PAYMENT_FAILED)
     @Transactional
@@ -54,7 +52,7 @@ public class OrderPaymentFailedConsumer {
             return;
         }
 
-        // 1. Save in-app notification
+        // Build the in-app notification entity
         String content =
                 String.format(
                         "Thanh toán cho đơn hàng #%s thất bại. Lý do: %s. Vui lòng thử lại.",
@@ -73,26 +71,24 @@ public class OrderPaymentFailedConsumer {
                         .channel("IN_APP")
                         .build();
 
-        notificationRepository.save(notification);
-        log.info(
-                "[OrderPaymentFailedConsumer] Saved in-app notification userId={} orderId={}",
-                payload.getUserId(),
-                payload.getOrderId());
-
-        // 2. Push real-time SSE
-        sseEmitterService.sendNotification(payload.getUserId(), notification);
-
-        // 3. Send warning email (non-fatal)
+        // Build the email parameters
         String emailSubject = "Tickefy \u2014 Thanh toán thất bại";
-
         Map<String, Object> templateVars = new HashMap<>();
         templateVars.put("orderId", payload.getOrderId());
         templateVars.put("reason", payload.getReason());
         templateVars.put("failedAt", payload.getFailedAt());
 
-        String emailHtml = emailTemplateService.render("email/order-payment-failed", templateVars);
-
         String recipientEmail = "user+" + payload.getUserId() + "@mailpit.local";
-        emailService.sendEmail(recipientEmail, emailSubject, emailHtml);
+
+        // Dispatch via strategy dispatcher
+        NotificationContext context = NotificationContext.builder()
+                .notification(notification)
+                .emailSubject(emailSubject)
+                .emailTemplateName("email/order-payment-failed")
+                .templateVars(templateVars)
+                .recipientEmail(recipientEmail)
+                .build();
+
+        notificationDispatcher.dispatch(context);
     }
 }

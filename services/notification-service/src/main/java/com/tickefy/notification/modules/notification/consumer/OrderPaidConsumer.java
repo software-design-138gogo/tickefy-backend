@@ -2,10 +2,8 @@ package com.tickefy.notification.modules.notification.consumer;
 
 import com.tickefy.notification.config.RabbitMQConfig;
 import com.tickefy.notification.modules.core.entity.Notification;
-import com.tickefy.notification.modules.core.repository.NotificationRepository;
-import com.tickefy.notification.modules.notification.service.EmailService;
-import com.tickefy.notification.modules.notification.service.EmailTemplateService;
-import com.tickefy.notification.modules.notification.service.SseEmitterService;
+import com.tickefy.notification.modules.notification.strategy.NotificationContext;
+import com.tickefy.notification.modules.notification.strategy.NotificationDispatcher;
 import com.tickefy.notification.shared.dto.EventEnvelope;
 import com.tickefy.notification.shared.dto.OrderPaidPayload;
 import java.text.NumberFormat;
@@ -31,16 +29,16 @@ import org.springframework.transaction.annotation.Transactional;
  * </ol>
  *
  * <p>Email failures are non-fatal — in-app notifications are persisted regardless.
+ *
+ * <p>This consumer delegates all notification saving and channel delivery to the
+ * {@link NotificationDispatcher} to adhere to the Strategy Pattern (OCP).
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class OrderPaidConsumer {
 
-    private final NotificationRepository notificationRepository;
-    private final EmailService emailService;
-    private final EmailTemplateService emailTemplateService;
-    private final SseEmitterService sseEmitterService;
+    private final NotificationDispatcher notificationDispatcher;
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_ORDER_PAID)
     @Transactional
@@ -58,7 +56,7 @@ public class OrderPaidConsumer {
             return;
         }
 
-        // 1. Save in-app notification
+        // Build the in-app notification entity
         String content = buildOrderPaidContent(payload);
         Notification notification =
                 Notification.builder()
@@ -74,29 +72,25 @@ public class OrderPaidConsumer {
                         .channel("IN_APP")
                         .build();
 
-        notificationRepository.save(notification);
-        log.info(
-                "[OrderPaidConsumer] Saved in-app notification userId={} orderId={}",
-                payload.getUserId(),
-                payload.getOrderId());
-
-        // Push real-time SSE
-        sseEmitterService.sendNotification(payload.getUserId(), notification);
-
-        // 2. Send email (non-fatal)
+        // Build the email parameters
         String emailSubject = "Tickefy — Xác nhận thanh toán đơn hàng";
-        
         Map<String, Object> templateVars = new HashMap<>();
         templateVars.put("items", payload.getItems());
         templateVars.put("totalAmount", payload.getTotalAmount());
         templateVars.put("orderId", payload.getOrderId());
         
-        String emailHtml = emailTemplateService.render("email/order-paid", templateVars);
-        
-        // In Phase 2 we send to a mock address since userId != email address.
-        // Phase 3 will resolve user email via auth-service or include it in the event payload.
         String recipientEmail = "user+" + payload.getUserId() + "@mailpit.local";
-        emailService.sendEmail(recipientEmail, emailSubject, emailHtml);
+
+        // Dispatch via strategy dispatcher
+        NotificationContext context = NotificationContext.builder()
+                .notification(notification)
+                .emailSubject(emailSubject)
+                .emailTemplateName("email/order-paid")
+                .templateVars(templateVars)
+                .recipientEmail(recipientEmail)
+                .build();
+
+        notificationDispatcher.dispatch(context);
     }
 
     private String buildOrderPaidContent(OrderPaidPayload payload) {

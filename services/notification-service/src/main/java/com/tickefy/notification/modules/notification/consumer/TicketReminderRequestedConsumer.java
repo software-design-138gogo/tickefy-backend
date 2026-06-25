@@ -2,10 +2,8 @@ package com.tickefy.notification.modules.notification.consumer;
 
 import com.tickefy.notification.config.RabbitMQConfig;
 import com.tickefy.notification.modules.core.entity.Notification;
-import com.tickefy.notification.modules.core.repository.NotificationRepository;
-import com.tickefy.notification.modules.notification.service.EmailService;
-import com.tickefy.notification.modules.notification.service.EmailTemplateService;
-import com.tickefy.notification.modules.notification.service.SseEmitterService;
+import com.tickefy.notification.modules.notification.strategy.NotificationContext;
+import com.tickefy.notification.modules.notification.strategy.NotificationDispatcher;
 import com.tickefy.notification.shared.dto.EventEnvelope;
 import com.tickefy.notification.shared.dto.TicketReminderRequestedPayload;
 import java.util.HashMap;
@@ -17,15 +15,26 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Consumes {@code TicketReminderRequested} events from RabbitMQ.
+ *
+ * <p>On each message:
+ *
+ * <ol>
+ *   <li>Saves an in-app {@link Notification} to the database.
+ *   <li>Pushes SSE real-time notification to the user.
+ *   <li>Sends a ticket reminder email.
+ * </ol>
+ *
+ * <p>This consumer delegates all notification saving and channel delivery to the
+ * {@link NotificationDispatcher} to adhere to the Strategy Pattern (OCP).
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class TicketReminderRequestedConsumer {
 
-    private final NotificationRepository notificationRepository;
-    private final SseEmitterService sseEmitterService;
-    private final EmailService emailService;
-    private final EmailTemplateService emailTemplateService;
+    private final NotificationDispatcher notificationDispatcher;
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_TICKET_REMINDER_REQUESTED)
     @Transactional
@@ -39,7 +48,7 @@ public class TicketReminderRequestedConsumer {
             return;
         }
 
-        // 1. Save in-app notification
+        // Build the in-app notification entity
         String content = String.format("Chỉ còn chưa đầy 24h nữa là sự kiện %s sẽ chính thức bắt đầu! Hãy chuẩn bị sẵn sàng %d vé của bạn.",
                 payload.getConcertTitle(), payload.getTicketCount());
         
@@ -52,24 +61,25 @@ public class TicketReminderRequestedConsumer {
                 .referenceType("CONCERT")
                 .channel("IN_APP")
                 .build();
-        
-        notificationRepository.save(notification);
-        log.info("[TicketReminderRequestedConsumer] Saved in-app notification userId={} concertId={}",
-                payload.getUserId(), payload.getConcertId());
 
-        // 2. Push SSE
-        sseEmitterService.sendNotification(payload.getUserId(), notification);
+        // Build the email parameters
+        String emailSubject = "Tickefy — Nhắc nhở sự kiện sắp diễn ra";
+        Map<String, Object> templateVars = new HashMap<>();
+        templateVars.put("concertTitle", payload.getConcertTitle());
+        templateVars.put("eventDateTime", payload.getEventDateTime());
+        templateVars.put("ticketCount", payload.getTicketCount());
+        
+        String recipientEmail = "user+" + payload.getUserId() + "@mailpit.local";
 
-        // 3. Send email
-        Map<String, Object> vars = new HashMap<>();
-        vars.put("concertTitle", payload.getConcertTitle());
-        vars.put("eventDateTime", payload.getEventDateTime());
-        vars.put("ticketCount", payload.getTicketCount());
-        
-        String html = emailTemplateService.render("email/ticket-reminder", vars);
-        
-        // Use Mailpit format for user
-        String recipient = "user+" + payload.getUserId() + "@mailpit.local";
-        emailService.sendEmail(recipient, "Tickefy — Nhắc nhở sự kiện sắp diễn ra", html);
+        // Dispatch via strategy dispatcher
+        NotificationContext context = NotificationContext.builder()
+                .notification(notification)
+                .emailSubject(emailSubject)
+                .emailTemplateName("email/ticket-reminder")
+                .templateVars(templateVars)
+                .recipientEmail(recipientEmail)
+                .build();
+
+        notificationDispatcher.dispatch(context);
     }
 }

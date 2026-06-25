@@ -2,10 +2,8 @@ package com.tickefy.notification.modules.notification.consumer;
 
 import com.tickefy.notification.config.RabbitMQConfig;
 import com.tickefy.notification.modules.core.entity.Notification;
-import com.tickefy.notification.modules.core.repository.NotificationRepository;
-import com.tickefy.notification.modules.notification.service.EmailService;
-import com.tickefy.notification.modules.notification.service.EmailTemplateService;
-import com.tickefy.notification.modules.notification.service.SseEmitterService;
+import com.tickefy.notification.modules.notification.strategy.NotificationContext;
+import com.tickefy.notification.modules.notification.strategy.NotificationDispatcher;
 import com.tickefy.notification.shared.dto.ConcertCancelledPayload;
 import com.tickefy.notification.shared.dto.EventEnvelope;
 import java.util.HashMap;
@@ -27,16 +25,16 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Broadcasts an SSE notification to all active users.
  *   <li>Sends a system alert email.
  * </ol>
+ *
+ * <p>This consumer delegates all notification saving and channel delivery to the
+ * {@link NotificationDispatcher} to adhere to the Strategy Pattern (OCP).
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class ConcertCancelledConsumer {
 
-    private final NotificationRepository notificationRepository;
-    private final SseEmitterService sseEmitterService;
-    private final EmailService emailService;
-    private final EmailTemplateService emailTemplateService;
+    private final NotificationDispatcher notificationDispatcher;
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_CONCERT_CANCELLED)
     @Transactional
@@ -54,7 +52,7 @@ public class ConcertCancelledConsumer {
             return;
         }
 
-        // 1. Save system-wide in-app notification (userId = null = broadcast)
+        // Build the system-wide in-app notification (userId = null = broadcast)
         Notification notification =
                 Notification.builder()
                         .userId(null) // broadcast
@@ -66,23 +64,24 @@ public class ConcertCancelledConsumer {
                         .channel("IN_APP")
                         .build();
 
-        notificationRepository.save(notification);
-        log.info("[ConcertCancelledConsumer] Saved broadcast notification for concertId={}", payload.getConcertId());
-
-        // 2. Broadcast SSE to all connected users
-        sseEmitterService.broadcast(notification);
-
-        // 3. Send email system alert (non-fatal)
+        // Build the email parameters
         String emailSubject = "Tickefy \u2014 Sự kiện bị hủy";
-
         Map<String, Object> templateVars = new HashMap<>();
         templateVars.put("concertId", payload.getConcertId());
         templateVars.put("cancelledAt", payload.getCancelledAt());
         templateVars.put("reason", payload.getReason());
 
-        String emailHtml = emailTemplateService.render("email/concert-cancelled", templateVars);
-
         String recipientEmail = "system-alerts@tickefy.local";
-        emailService.sendEmail(recipientEmail, emailSubject, emailHtml);
+
+        // Dispatch via strategy dispatcher
+        NotificationContext context = NotificationContext.builder()
+                .notification(notification)
+                .emailSubject(emailSubject)
+                .emailTemplateName("email/concert-cancelled")
+                .templateVars(templateVars)
+                .recipientEmail(recipientEmail)
+                .build();
+
+        notificationDispatcher.dispatch(context);
     }
 }

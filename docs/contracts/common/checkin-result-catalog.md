@@ -4,7 +4,7 @@ status: ACCEPTED
 version: 1.0
 owner: Hòa (ticket/checkin)
 reviewers: [BE Lead, Mobile]
-lastUpdated: 2026-06-16
+lastUpdated: 2026-06-26
 ---
 
 # Check-in Result Catalog — Ticket / Check-in
@@ -38,6 +38,8 @@ lastUpdated: 2026-06-16
 | `OFFLINE_DUPLICATE_LOCAL` | QR đã scan trước đó trên cùng thiết bị/snapshot | Từ chối local, không enqueue item mới |
 | `OFFLINE_NOT_IN_SNAPSHOT` | QR không có trong snapshot local | Từ chối local, đánh dấu cần xử lý thủ công |
 | `OFFLINE_SNAPSHOT_EXPIRED` | Snapshot local quá hạn | Không cho scan offline, yêu cầu tải snapshot mới khi có mạng |
+| `OFFLINE_VIP_ACCEPTED_PENDING_SYNC` | Email khớp VIP guest snapshot local còn hạn | Cho khách VIP vào tạm thời; chưa enqueue vào QR sync batch MVP |
+| `OFFLINE_VIP_NOT_FOUND` | Email không có trong VIP guest snapshot local hoặc snapshot không khả dụng | Từ chối local, yêu cầu kiểm tra lại email hoặc dùng online lookup |
 
 ## 4. Offline sync item result codes
 

@@ -124,7 +124,8 @@ public class OrderService {
                     reservation.expiresAt(),
                     req.ticketTypeId(),
                     req.quantity(),
-                    reservation.unitPrice());
+                    reservation.unitPrice(),
+                    reservation.ticketTypeName());
             currentStatus = OrderStatus.RESERVED;
             log.debug("Order reserved: orderId={} reservationId={}", order.getId(), reservation.reservationId());
         }

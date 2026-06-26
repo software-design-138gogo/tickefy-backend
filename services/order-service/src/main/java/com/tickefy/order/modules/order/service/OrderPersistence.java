@@ -80,7 +80,8 @@ public class OrderPersistence {
             Instant expiresAt,
             UUID ticketTypeId,
             int quantity,
-            long unitPrice) {
+            long unitPrice,
+            String ticketTypeName) {
         OrderEntity order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalStateException("Order not found: " + orderId));
 
@@ -105,6 +106,7 @@ public class OrderPersistence {
                 .ticketTypeId(ticketTypeId)
                 .quantity(quantity)
                 .unitPrice(unitPrice)
+                .ticketTypeName(ticketTypeName)
                 .build();
         order.getItems().add(item);
 
@@ -167,7 +169,7 @@ public class OrderPersistence {
                         i.getTicketTypeId().toString(),
                         i.getQuantity(),
                         null, // zoneId — nguồn Event (Dương), order chưa có
-                        null)) // ticketTypeName — nguồn Event, order chưa có
+                        i.getTicketTypeName())) // ticketTypeName — captured at reserve (inventory source)
                 .toList();
         OrderEvents.OrderPaidPayload payload = new OrderEvents.OrderPaidPayload(
                 order.getId().toString(),

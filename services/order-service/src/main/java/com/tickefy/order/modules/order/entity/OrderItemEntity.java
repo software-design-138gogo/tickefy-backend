@@ -39,4 +39,7 @@ public class OrderItemEntity {
 
     @Column(name = "unit_price", nullable = false)
     private long unitPrice;
+
+    @Column(name = "ticket_type_name")
+    private String ticketTypeName;
 }

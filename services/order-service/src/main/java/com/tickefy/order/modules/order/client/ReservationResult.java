@@ -7,4 +7,5 @@ public record ReservationResult(
         UUID reservationId,
         long unitPrice,
         long totalAmount,
-        Instant expiresAt) {}
+        Instant expiresAt,
+        String ticketTypeName) {}

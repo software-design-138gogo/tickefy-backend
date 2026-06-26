@@ -166,7 +166,7 @@ class ReservationServiceUnitTest {
         UUID reservationId = UUID.randomUUID();
         Instant expiresAt = Instant.now().plusSeconds(900);
         ReservationResponse expected = new ReservationResponse(
-                reservationId, ticketTypeId, 1, unitPrice, unitPrice /* totalAmount */, expiresAt);
+                reservationId, ticketTypeId, 1, unitPrice, unitPrice /* totalAmount */, expiresAt, null);
         when(persistence.writeReservationToDb(ticketTypeId, userId, orderId, 1, unitPrice))
                 .thenReturn(expected);
 
@@ -181,6 +181,37 @@ class ReservationServiceUnitTest {
         assertThat(result.expiresAt()).isEqualTo(expiresAt);
 
         verify(persistence, times(1)).writeReservationToDb(ticketTypeId, userId, orderId, 1, unitPrice);
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression (PLAN-N1-FIX): reserve() enriches response with ticketTypeName from ticket_types.name
+    // so order carries it loss-less into OrderPaid/TicketsIssued. Before fix this field did not exist.
+    // -----------------------------------------------------------------------
+    @Test
+    void reserve_success_responseCarriesTicketTypeName() {
+        stubHappyPathBase();
+        when(redisService.executeReserve(ticketTypeId, userId, 1, perUserLimit)).thenReturn(1L);
+
+        UUID reservationId = UUID.randomUUID();
+        Instant expiresAt = Instant.now().plusSeconds(900);
+        ReservationResponse base = new ReservationResponse(
+                reservationId, ticketTypeId, 1, unitPrice, unitPrice, expiresAt, null);
+        when(persistence.writeReservationToDb(ticketTypeId, userId, orderId, 1, unitPrice))
+                .thenReturn(base);
+
+        com.tickefy.inventory.modules.inventory.entity.TicketTypeEntity tt =
+                com.tickefy.inventory.modules.inventory.entity.TicketTypeEntity.builder()
+                        .id(ticketTypeId)
+                        .name("N1GA")
+                        .build();
+        when(ticketTypeRepository.findById(ticketTypeId)).thenReturn(Optional.of(tt));
+
+        ReservationResponse result = service.reserve(new ReserveRequest(userId, ticketTypeId, orderId, 1));
+
+        assertThat(result.ticketTypeName()).isEqualTo("N1GA");
+        // base fields preserved by the enrich wrapper
+        assertThat(result.reservationId()).isEqualTo(reservationId);
+        assertThat(result.totalAmount()).isEqualTo(unitPrice);
     }
 
     // -----------------------------------------------------------------------
@@ -255,7 +286,7 @@ class ReservationServiceUnitTest {
         when(redisService.getMeta(ticketTypeId)).thenReturn(metaMap(saleStart, saleEnd));
 
         ReservationResponse stubResponse = new ReservationResponse(
-                existing.getId(), ticketTypeId, 1, unitPrice, unitPrice, existing.getExpiresAt());
+                existing.getId(), ticketTypeId, 1, unitPrice, unitPrice, existing.getExpiresAt(), null);
         when(persistence.toResponse(existing, unitPrice)).thenReturn(stubResponse);
 
         ReservationResponse result = service.reserve(new ReserveRequest(userId, ticketTypeId, orderId, 1));

@@ -4,7 +4,7 @@ status: DRAFT
 version: 1.1
 owner: BE Lead
 reviewers:
-lastUpdated: 2026-06-19
+lastUpdated: 2026-06-26
 ---
 
 # Event Envelope
@@ -1706,15 +1706,16 @@ Queue: event-service.concert-introduction-generated.queue
   "payload": {
     "importJobId": "90ee94cf-ab2a-4c55-9618-b8c18336ac7c",
     "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "status": "COMPLETED",
     "totalRows": 100,
     "successRows": 95,
     "failedRows": 3,
-    "duplicateRows": 2,
-    "errorReportObjectKey": "vip-import/jobs/90ee94cf/errors.csv",
-    "completedAt": "2026-06-16T12:00:00Z"
+    "duplicateRows": 2
   }
 }
 ```
+
+> Lưu ý: VIP events (`csv-ingestion-service` → `checkin-service`) hiện dùng envelope core 5-field theo CLAUDE §6.4 (`messageId`, `eventType`, `eventVersion`, `occurredAt`, `payload`); các field tracing `source`/`correlationId`/`causationId` ở §3–§4 là mục tiêu chung, VIP chưa implement (consumer dùng `@JsonIgnoreProperties(ignoreUnknown=true)` nên tương thích khi bổ sung sau).
 
 Routing:
 
@@ -1738,13 +1739,7 @@ Queue: checkin.vip-guest-import-completed
   "payload": {
     "importJobId": "90ee94cf-ab2a-4c55-9618-b8c18336ac7c",
     "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
-    "totalRows": 100,
-    "successRows": 0,
-    "failedRows": 60,
-    "duplicateRows": 0,
-    "failureReason": "ERROR_THRESHOLD_EXCEEDED",
-    "errorReportObjectKey": "vip-import/jobs/90ee94cf/errors.csv",
-    "failedAt": "2026-06-16T12:05:00Z"
+    "failureReason": "ERROR_THRESHOLD_EXCEEDED"
   }
 }
 ```
@@ -1754,8 +1749,10 @@ Routing:
 ```text
 Exchange: tickefy.exchange
 Routing key: vip-guest-import.failed
-Queue: monitoring.vip-guest-import-failed
+Queue: (FUTURE — chưa có consumer)
 ```
+
+> Lưu ý: `csv-ingestion-service` hiện publish `VipGuestImportFailed` nhưng CHƯA có consumer/queue nào bind routing key `vip-guest-import.failed` — message hiện không được tiêu thụ (dropped). Trạng thái import lỗi tra cứu qua API status (`GET /api/admin/csv-import/{importJobId}`). Queue monitoring là hạng mục tương lai nếu cần event-driven alerting.
 
 ---
 

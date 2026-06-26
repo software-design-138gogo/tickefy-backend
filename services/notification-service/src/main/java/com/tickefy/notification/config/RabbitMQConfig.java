@@ -35,8 +35,11 @@ public class RabbitMQConfig {
         };
     }
 
-    public static final String EXCHANGE_EVENTS = "tickefy.events";
-    public static final String EXCHANGE_DLX = "tickefy.dlx";
+    @org.springframework.beans.factory.annotation.Value("${RABBITMQ_EXCHANGE:tickefy.events}")
+    private String exchangeEvents;
+
+    @org.springframework.beans.factory.annotation.Value("${RABBITMQ_DLX:tickefy.dlx}")
+    private String exchangeDlx;
 
     @Bean
     public MessageConverter jsonMessageConverter() {
@@ -45,18 +48,18 @@ public class RabbitMQConfig {
 
     @Bean
     public TopicExchange eventsExchange() {
-        return new TopicExchange(EXCHANGE_EVENTS, true, false);
+        return new TopicExchange(exchangeEvents, true, false);
     }
 
     @Bean
     public TopicExchange dlxExchange() {
-        return new TopicExchange(EXCHANGE_DLX, true, false);
+        return new TopicExchange(exchangeDlx, true, false);
     }
 
     // Helper methods for creating queue, dlq and bindings
     private Queue createQueue(String queueName, String dlqName) {
         return QueueBuilder.durable(queueName)
-                .withArgument("x-dead-letter-exchange", EXCHANGE_DLX)
+                .withArgument("x-dead-letter-exchange", exchangeDlx)
                 .withArgument("x-dead-letter-routing-key", dlqName)
                 .build();
     }
@@ -145,4 +148,27 @@ public class RabbitMQConfig {
     @Bean public Queue concertCancelledDlq() { return createDlq(DLQ_CONCERT_CANCELLED); }
     @Bean public Binding concertCancelledBinding(Queue concertCancelledQueue, TopicExchange eventsExchange) { return createBinding(concertCancelledQueue, eventsExchange, "concert.cancelled"); }
     @Bean public Binding concertCancelledDlqBinding(Queue concertCancelledDlq, TopicExchange dlxExchange) { return createBinding(concertCancelledDlq, dlxExchange, DLQ_CONCERT_CANCELLED); }
+
+    // ==========================================
+    // Ticket Reminder Requested
+    // ==========================================
+    public static final String QUEUE_TICKET_REMINDER_REQUESTED = "notification.ticket-reminder-requested";
+    public static final String DLQ_TICKET_REMINDER_REQUESTED = "notification.ticket-reminder-requested.dlq";
+
+    @Bean public Queue ticketReminderRequestedQueue() { return createQueue(QUEUE_TICKET_REMINDER_REQUESTED, DLQ_TICKET_REMINDER_REQUESTED); }
+    @Bean public Queue ticketReminderRequestedDlq() { return createDlq(DLQ_TICKET_REMINDER_REQUESTED); }
+    @Bean public Binding ticketReminderRequestedBinding1(Queue ticketReminderRequestedQueue, TopicExchange eventsExchange) { return createBinding(ticketReminderRequestedQueue, eventsExchange, "ticket.reminder-requested"); }
+    @Bean public Binding ticketReminderRequestedBinding2(Queue ticketReminderRequestedQueue, TopicExchange eventsExchange) { return createBinding(ticketReminderRequestedQueue, eventsExchange, "ticket.reminder.requested"); }
+    @Bean public Binding ticketReminderRequestedDlqBinding(Queue ticketReminderRequestedDlq, TopicExchange dlxExchange) { return createBinding(ticketReminderRequestedDlq, dlxExchange, DLQ_TICKET_REMINDER_REQUESTED); }
+
+    // ==========================================
+    // Internal Email Send Queue (Per-Channel)
+    // ==========================================
+    public static final String QUEUE_EMAIL_SEND = "notification.email.send";
+    public static final String DLQ_EMAIL_SEND = "notification.email.send.dlq";
+
+    @Bean public Queue emailSendQueue() { return createQueue(QUEUE_EMAIL_SEND, DLQ_EMAIL_SEND); }
+    @Bean public Queue emailSendDlq() { return createDlq(DLQ_EMAIL_SEND); }
+    @Bean public Binding emailSendBinding(Queue emailSendQueue, TopicExchange eventsExchange) { return createBinding(emailSendQueue, eventsExchange, "internal.email.send"); }
+    @Bean public Binding emailSendDlqBinding(Queue emailSendDlq, TopicExchange dlxExchange) { return createBinding(emailSendDlq, dlxExchange, DLQ_EMAIL_SEND); }
 }

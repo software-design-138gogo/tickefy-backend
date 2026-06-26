@@ -37,7 +37,7 @@ lastUpdated: 2026-06-16
 
 - Tuyệt đối không query cơ sở dữ liệu của các service khác (Không vi phạm kiến trúc Database-per-service).
 - Tuyệt đối không tự xử lý business logic về vé (ví dụ: quét DB để nhắc nhở 24h). Logic nhắc nhở phải do Ticket Service chủ động chạy Cronjob và bắn event `TicketReminder` sang.
-- Chưa hỗ trợ luồng gửi SMS hay Zalo OA (Out-of-scope trong Phase 1).
+- Chưa hỗ trợ luồng gửi SMS hay Zalo OA (Out-of-scope trong Phase 1, tuy nhiên hệ thống được thiết kế kiến trúc mở rộng sẵn sàng cho các kênh này qua Strategy Pattern, chi tiết tại mục 16).
 
 ## 3. Data ownership
 
@@ -169,7 +169,85 @@ stateDiagram-v2
 | DB bị Down tạm thời | Không lưu được In-app Notification. | RabbitMQ đẩy Message xuống DLQ, bảo toàn dữ liệu. |
 | Client ngắt mạng | SSE Connection Broken | Server phát hiện IOException, xóa session của User đó khỏi bộ nhớ RAM để tránh rò rỉ (Memory Leak). |
 
-## 16. Integration acceptance criteria
+## 16. Multi-channel Extension Architecture (Strategy Pattern)
+
+Để đảm bảo nguyên tắc **Open-Closed Principle (OCP)** và dễ dàng mở rộng thêm các kênh gửi thông báo mới trong tương lai (như SMS, Zalo OA) mà không cần chỉnh sửa code của các RabbitMQ Consumer, hệ thống áp dụng kiến trúc **Strategy Pattern**.
+
+### Sơ đồ thiết kế (Mermaid Diagram)
+
+```mermaid
+classDiagram
+    class NotificationDispatcher {
+        -List~NotificationChannelStrategy~ strategies
+        +dispatch(NotificationContext context) void
+    }
+    class NotificationContext {
+        +Notification notification
+        +String recipientEmail
+        +String recipientPhone
+        +String recipientZaloId
+        +String emailTemplateName
+        +Map~String, Object~ templateVars
+    }
+    class NotificationChannelStrategy {
+        <<interface>>
+        +supports(NotificationContext context) boolean
+        +send(NotificationContext context) void
+    }
+    class SseNotificationStrategy {
+        +supports(NotificationContext context) boolean
+        +send(NotificationContext context) void
+    }
+    class EmailNotificationStrategy {
+        +supports(NotificationContext context) boolean
+        +send(NotificationContext context) void
+    }
+    class SmsNotificationStrategy {
+        +supports(NotificationContext context) boolean
+        +send(NotificationContext context) void
+    }
+    class ZaloNotificationStrategy {
+        +supports(NotificationContext context) boolean
+        +send(NotificationContext context) void
+    }
+
+    NotificationDispatcher --> NotificationChannelStrategy : Duyệt qua danh sách
+    NotificationDispatcher ..> NotificationContext : Sử dụng làm tham số
+    NotificationChannelStrategy <|.. SseNotificationStrategy : Implement
+    NotificationChannelStrategy <|.. EmailNotificationStrategy : Implement
+    NotificationChannelStrategy <|.. SmsNotificationStrategy : Implement (Tương lai)
+    NotificationChannelStrategy <|.. ZaloNotificationStrategy : Implement (Tương lai)
+```
+
+### Các thành phần chính
+
+| Thành phần | Loại | Vai trò / Nhiệm vụ |
+|---|---|---|
+| `NotificationContext` | Class | Dữ liệu ngữ cảnh để gửi thông báo. Đóng gói đầy đủ thông tin nhận diện (email, số điện thoại, Zalo ID) và nội dung (template, biến template, đối tượng Notification). |
+| `NotificationChannelStrategy` | Interface | Định nghĩa giao diện chuẩn cho tất cả các kênh thông báo. Gồm hai phương thức `supports` (kiểm tra kênh này có phù hợp với ngữ cảnh hiện tại không) và `send` (gửi thông báo qua kênh tương ứng). |
+| `SseNotificationStrategy` | Class | Hiện thực gửi thông báo Realtime In-app thông qua `SseEmitterService`. |
+| `EmailNotificationStrategy` | Class | Hiện thực gửi Email thông qua `EmailService`. |
+| `NotificationDispatcher` | Class | Bộ điều phối trung tâm. Nhận dữ liệu từ Consumer, lưu lịch sử thông báo vào Database (In-app notification), sau đó duyệt qua toàn bộ các Strategies có trong Spring Context để tự động kích hoạt kênh gửi tương ứng. |
+
+### Cơ chế cô lập lỗi (Fault Tolerance)
+
+Để tránh trường hợp một kênh gửi gặp sự cố (ví dụ: SMTP Server bị timeout) gây gián đoạn hoặc rollback toàn bộ luồng gửi của các kênh khác (như SSE vẫn cần được hiển thị trên Web UI), `NotificationDispatcher` thực hiện cơ chế bọc lỗi riêng biệt cho từng Strategy:
+
+```java
+for (NotificationChannelStrategy strategy : strategies) {
+    if (strategy.supports(context)) {
+        try {
+            strategy.send(context);
+        } catch (Exception e) {
+            log.error("Lỗi khi gửi thông báo qua kênh {}: {}", 
+                      strategy.getClass().getSimpleName(), e.getMessage(), e);
+            // Ghi nhận lỗi nhưng không ném Exception tiếp để tránh làm hỏng các kênh còn lại
+        }
+    }
+}
+```
+
+## 17. Integration acceptance criteria
 - [ ] Mở Postman, cắm vào luồng `/stream` và Publish event `OrderPaid` lên RabbitMQ → Thấy Postman in ra JSON tức thì.
 - [ ] Vào trang UI của Mailpit (`http://localhost:8025`) thấy thư gửi đến đẹp mắt, hiển thị chuẩn HTML và đổ đúng tên User, giá tiền.
 - [ ] Post một `device_token` rác lên API. Chạy thử FCM Send bị lỗi → Có in log Error nhưng Notification Service không chết.
@@ -178,5 +256,5 @@ stateDiagram-v2
 - [ ] Queue names khớp convention `notification.{event-name}` theo `event-envelope.md` §6.3.
 - [ ] DLQ configured cho tất cả consumer queues.
 
-## 17. Open questions
+## 18. Open questions
 - Frontend Web (Hiệp) đã tích hợp thư viện Firebase SDK để hứng Web Push Notification chưa?

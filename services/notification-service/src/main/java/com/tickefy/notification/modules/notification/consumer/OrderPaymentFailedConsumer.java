@@ -5,11 +5,8 @@ import com.tickefy.notification.modules.core.entity.Notification;
 import com.tickefy.notification.modules.notification.strategy.NotificationContext;
 import com.tickefy.notification.modules.notification.strategy.NotificationDispatcher;
 import com.tickefy.notification.shared.dto.EventEnvelope;
-import com.tickefy.notification.shared.dto.OrderPaidPayload;
-import java.text.NumberFormat;
+import com.tickefy.notification.shared.dto.OrderPaymentFailedPayload;
 import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,50 +16,52 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Consumes {@code OrderPaid} events from RabbitMQ.
+ * Consumes {@code OrderPaymentFailed} events from RabbitMQ.
  *
  * <p>On each message:
  *
  * <ol>
  *   <li>Saves an in-app {@link Notification} to the database.
- *   <li>Sends a payment confirmation email via Mailpit (dev) or SMTP (prod).
+ *   <li>Pushes SSE real-time notification to the user.
+ *   <li>Sends a payment failure warning email.
  * </ol>
- *
- * <p>Email failures are non-fatal — in-app notifications are persisted regardless.
- *
+ * 
  * <p>This consumer delegates all notification saving and channel delivery to the
  * {@link NotificationDispatcher} to adhere to the Strategy Pattern (OCP).
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OrderPaidConsumer {
+public class OrderPaymentFailedConsumer {
 
     private final NotificationDispatcher notificationDispatcher;
 
-    @RabbitListener(queues = RabbitMQConfig.QUEUE_ORDER_PAID)
+    @RabbitListener(queues = RabbitMQConfig.QUEUE_ORDER_PAYMENT_FAILED)
     @Transactional
-    public void handle(@Payload EventEnvelope<OrderPaidPayload> envelope) {
+    public void handle(@Payload EventEnvelope<OrderPaymentFailedPayload> envelope) {
         log.info(
-                "[OrderPaidConsumer] Received messageId={} correlationId={}",
+                "[OrderPaymentFailedConsumer] Received messageId={} correlationId={}",
                 envelope.getMessageId(),
                 envelope.getCorrelationId());
 
-        OrderPaidPayload payload = envelope.getPayload();
+        OrderPaymentFailedPayload payload = envelope.getPayload();
         if (payload == null || payload.getUserId() == null) {
             log.warn(
-                    "[OrderPaidConsumer] Skipping malformed message messageId={}",
+                    "[OrderPaymentFailedConsumer] Skipping malformed message messageId={}",
                     envelope.getMessageId());
             return;
         }
 
         // Build the in-app notification entity
-        String content = buildOrderPaidContent(payload);
+        String content =
+                String.format(
+                        "Thanh toán cho đơn hàng #%s thất bại. Lý do: %s. Vui lòng thử lại.",
+                        payload.getOrderId(), payload.getReason());
         Notification notification =
                 Notification.builder()
                         .userId(payload.getUserId())
-                        .eventType("OrderPaid")
-                        .title("Thanh toán thành công")
+                        .eventType("OrderPaymentFailed")
+                        .title("Thanh toán thất bại")
                         .content(content)
                         .referenceId(
                                 payload.getOrderId() != null
@@ -73,39 +72,23 @@ public class OrderPaidConsumer {
                         .build();
 
         // Build the email parameters
-        String emailSubject = "Tickefy — Xác nhận thanh toán đơn hàng";
+        String emailSubject = "Tickefy \u2014 Thanh toán thất bại";
         Map<String, Object> templateVars = new HashMap<>();
-        templateVars.put("items", payload.getItems());
-        templateVars.put("totalAmount", payload.getTotalAmount());
         templateVars.put("orderId", payload.getOrderId());
-        
+        templateVars.put("reason", payload.getReason());
+        templateVars.put("failedAt", payload.getFailedAt());
+
         String recipientEmail = "user+" + payload.getUserId() + "@mailpit.local";
 
         // Dispatch via strategy dispatcher
         NotificationContext context = NotificationContext.builder()
                 .notification(notification)
                 .emailSubject(emailSubject)
-                .emailTemplateName("email/order-paid")
+                .emailTemplateName("email/order-payment-failed")
                 .templateVars(templateVars)
                 .recipientEmail(recipientEmail)
                 .build();
 
         notificationDispatcher.dispatch(context);
-    }
-
-    private String buildOrderPaidContent(OrderPaidPayload payload) {
-        NumberFormat vndFormat = NumberFormat.getInstance(new Locale("vi", "VN"));
-        String amount =
-                payload.getTotalAmount() != null
-                        ? vndFormat.format(payload.getTotalAmount()) + " VND"
-                        : "N/A";
-        return String.format(
-                "Đơn hàng #%s đã được thanh toán thành công. Tổng tiền: %s.",
-                payload.getOrderId(), amount);
-    }
-
-    /** Returns the list of event types this consumer supports. Used for version validation. */
-    public static List<String> supportedEventTypes() {
-        return List.of("OrderPaid");
     }
 }

@@ -227,7 +227,11 @@ public class ConcertService {
                 .id(UUID.randomUUID())
                 .aggregateId(saved.getId().toString())
                 .eventType("ConcertCancelled")
-                .payload(objectMapper.writeValueAsString(Map.of("reason", reason != null ? reason : "")))
+                .payload(objectMapper.writeValueAsString(Map.of(
+                    "concertId", saved.getId(),
+                    "cancelledAt", Instant.now(),
+                    "reason", reason != null ? reason : ""
+                )))
                 .status("PENDING")
                 .createdAt(Instant.now())
                 .build();

@@ -43,7 +43,7 @@ class ConcertServiceTest {
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
+        objectMapper = new ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         concertService = new ConcertService(
                 concertRepository,
                 venueRepository,

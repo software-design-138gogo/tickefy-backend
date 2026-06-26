@@ -1,0 +1,1 @@
+ALTER TABLE concerts ADD COLUMN reminder_sent BOOLEAN DEFAULT FALSE;

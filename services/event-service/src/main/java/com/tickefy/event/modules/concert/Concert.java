@@ -57,6 +57,9 @@ public class Concert {
     @Column(name = "created_by")
     private UUID createdBy;
 
+    @Column(name = "reminder_sent")
+    private Boolean reminderSent = false;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "concert_artists",
@@ -100,6 +103,7 @@ public class Concert {
     public Instant getSaleEndAt() { return saleEndAt; }
     public Instant getEventDate() { return eventDate; }
     public UUID getCreatedBy() { return createdBy; }
+    public Boolean getReminderSent() { return reminderSent; }
     public Set<Artist> getArtists() { return artists; }
     public Set<ConcertZone> getZones() { return zones; }
     public Instant getCreatedAt() { return createdAt; }
@@ -119,5 +123,6 @@ public class Concert {
     public void setSaleEndAt(Instant saleEndAt) { this.saleEndAt = saleEndAt; }
     public void setEventDate(Instant eventDate) { this.eventDate = eventDate; }
     public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
+    public void setReminderSent(Boolean reminderSent) { this.reminderSent = reminderSent; }
     public void setArtists(Set<Artist> artists) { this.artists = artists; }
 }

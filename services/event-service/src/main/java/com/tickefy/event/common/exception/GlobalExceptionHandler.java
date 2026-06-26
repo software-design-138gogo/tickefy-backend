@@ -1,9 +1,9 @@
 package com.tickefy.event.common.exception;
 
 import com.tickefy.event.common.constants.HeaderConstants;
-import com.tickefy.event.common.response.ApiResponse;
-import com.tickefy.event.common.response.ErrorResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -24,8 +25,8 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Void>> handleMethodArgumentNotValid(
-            MethodArgumentNotValidException ex) {
+    public ResponseEntity<ProblemDetail> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException ex, HttpServletRequest request) {
         Map<String, String> details =
                 ex.getBindingResult().getFieldErrors().stream()
                         .collect(
@@ -38,15 +39,17 @@ public class GlobalExceptionHandler {
                                         (first, second) -> first,
                                         LinkedHashMap::new));
 
-        return buildErrorResponse(
+        return buildProblemDetail(
                 HttpStatus.BAD_REQUEST,
                 ErrorCode.VALIDATION_ERROR,
                 "Invalid request data",
-                details);
+                details,
+                request);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException ex) {
+    public ResponseEntity<ProblemDetail> handleConstraintViolation(
+            ConstraintViolationException ex, HttpServletRequest request) {
         Map<String, String> details =
                 ex.getConstraintViolations().stream()
                         .collect(
@@ -56,47 +59,56 @@ public class GlobalExceptionHandler {
                                         (first, second) -> first,
                                         LinkedHashMap::new));
 
-        return buildErrorResponse(
+        return buildProblemDetail(
                 HttpStatus.BAD_REQUEST,
                 ErrorCode.VALIDATION_ERROR,
                 "Invalid request data",
-                details);
+                details,
+                request);
     }
 
     @ExceptionHandler(PropertyReferenceException.class)
-    public ResponseEntity<ApiResponse<Void>> handlePropertyReferenceException(PropertyReferenceException ex) {
-        return buildErrorResponse(
+    public ResponseEntity<ProblemDetail> handlePropertyReferenceException(
+            PropertyReferenceException ex, HttpServletRequest request) {
+        return buildProblemDetail(
                 HttpStatus.BAD_REQUEST,
                 ErrorCode.VALIDATION_ERROR,
                 "Invalid sorting property: " + ex.getPropertyName(),
-                null);
+                null,
+                request);
     }
 
     @ExceptionHandler(ApiException.class)
-    public ResponseEntity<ApiResponse<Void>> handleApiException(ApiException ex) {
-        return buildErrorResponse(ex.getStatus(), ex.getErrorCode(), ex.getMessage(), ex.getDetails());
+    public ResponseEntity<ProblemDetail> handleApiException(ApiException ex, HttpServletRequest request) {
+        return buildProblemDetail(ex.getStatus(), ex.getErrorCode(), ex.getMessage(), ex.getDetails(), request);
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleException(Exception ex) {
+    public ResponseEntity<ProblemDetail> handleException(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception", ex);
-        return buildErrorResponse(
+        return buildProblemDetail(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 ErrorCode.INTERNAL_SERVER_ERROR,
                 "An unexpected error occurred",
-                null);
+                null,
+                request);
     }
 
-    private ResponseEntity<ApiResponse<Void>> buildErrorResponse(
-            HttpStatus status, ErrorCode errorCode, String message, Object details) {
+    private ResponseEntity<ProblemDetail> buildProblemDetail(
+            HttpStatus status, ErrorCode errorCode, String message, Object details, HttpServletRequest request) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, message);
+        problemDetail.setTitle(errorCode.name());
+        problemDetail.setInstance(URI.create(request.getRequestURI()));
+        
         String requestId = MDC.get(HeaderConstants.REQUEST_ID);
-        ErrorResponse errorResponse =
-                new ErrorResponse(
-                        status.value(),
-                        errorCode.name(),
-                        message,
-                        details != null ? details : Map.of());
-        ApiResponse<Void> body = ApiResponse.error(errorResponse, requestId);
-        return ResponseEntity.status(status).body(body);
+        if (requestId != null) {
+            problemDetail.setProperty("requestId", requestId);
+        }
+        
+        if (details != null) {
+            problemDetail.setProperty("errors", details);
+        }
+        
+        return ResponseEntity.status(status).body(problemDetail);
     }
 }

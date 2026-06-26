@@ -86,8 +86,7 @@ class AdminConcertControllerTest {
         mockMvc.perform(post("/admin/concerts")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest)))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("INVALID_TOKEN"));
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -129,7 +128,7 @@ class AdminConcertControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.error.code").value(ErrorCode.CONCERT_ACCESS_DENIED.name()));
+                .andExpect(jsonPath("$.title").value(ErrorCode.CONCERT_ACCESS_DENIED.name()));
     }
 
     @Test

@@ -39,7 +39,7 @@ public class OutboxDrainer {
         for (OutboxEvent event : pendingEvents) {
             try {
                 // Convert PascalCase to lowercase.dot.separated (e.g. ConcertPublished -> concert.published)
-                String routingKey = event.getEventType().replaceAll("([a-z])([A-Z]+)", "$1.$2").toLowerCase();
+                String routingKey = event.getEventType().replaceAll("([a-z])([A-Z])", "$1.$2").toLowerCase();
                 
                 EventEnvelope envelope = EventEnvelope.builder()
                         .messageId(event.getId().toString())

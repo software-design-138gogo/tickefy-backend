@@ -142,7 +142,8 @@ public class InventoryClient {
             long unitPrice = data.path("unitPrice").asLong();
             long totalAmount = data.path("totalAmount").asLong();
             Instant expiresAt = Instant.parse(data.path("expiresAt").asText());
-            return new ReservationResult(reservationId, unitPrice, totalAmount, expiresAt);
+            String ticketTypeName = data.path("ticketTypeName").asText(null);
+            return new ReservationResult(reservationId, unitPrice, totalAmount, expiresAt, ticketTypeName);
         } catch (Exception e) {
             log.error("Failed to parse inventory reservation response", e);
             throw new InventoryUnavailableException("Failed to parse inventory response: " + e.getMessage());

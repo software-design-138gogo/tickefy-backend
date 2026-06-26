@@ -92,7 +92,8 @@ public class OrderIntegrationTest extends BaseIntegrationTest {
                 UUID.randomUUID(),
                 3_000_000L,
                 6_000_000L,
-                Instant.now().plusSeconds(900));
+                Instant.now().plusSeconds(900),
+                "VIP");
     }
 
     // ===== AC1: Create order — reserve OK → PAYMENT_PENDING =====

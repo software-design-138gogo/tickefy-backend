@@ -119,7 +119,7 @@ class ReservationServiceFallbackTest {
         UUID reservationId = UUID.randomUUID();
         // tt.price=1000, qty=1 → unitPrice=1000, totalAmount=1000
         ReservationResponse expected = new ReservationResponse(
-                reservationId, ticketTypeId, 1, 1000L, 1000L, Instant.now().plusSeconds(900));
+                reservationId, ticketTypeId, 1, 1000L, 1000L, Instant.now().plusSeconds(900), null);
         // perUserLimit=null → -1 (unlimited); unitPrice=1000 from DB-rebuilt meta
         when(persistence.writeReservationFallback(ticketTypeId, userId, orderId, 1, -1, 1000L))
                 .thenReturn(expected);

@@ -44,8 +44,28 @@ public class ReservationService {
         this.persistence = persistence;
     }
 
-    // Non-transactional orchestrator: idempotent step0, meta, sale-window, stock, Lua, compensation.
+    /**
+     * Public entry: run reservation, then enrich response with ticketTypeName so order can carry the
+     * loss-less name into OrderPaid/TicketsIssued (FE shows ticket type name). Name is resolved once
+     * via PK lookup (cheap) because the Redis fast-path uses cached meta which does not hold the name.
+     */
     public ReservationResponse reserve(ReserveRequest req) {
+        ReservationResponse base = reserveInternal(req);
+        String ticketTypeName = ticketTypeRepository.findById(req.ticketTypeId())
+                .map(TicketTypeEntity::getName)
+                .orElse(null);
+        return new ReservationResponse(
+                base.reservationId(),
+                base.ticketTypeId(),
+                base.quantity(),
+                base.unitPrice(),
+                base.totalAmount(),
+                base.expiresAt(),
+                ticketTypeName);
+    }
+
+    // Non-transactional orchestrator: idempotent step0, meta, sale-window, stock, Lua, compensation.
+    private ReservationResponse reserveInternal(ReserveRequest req) {
         UUID ticketTypeId = req.ticketTypeId();
         UUID userId = req.userId();
         UUID orderId = req.orderId();

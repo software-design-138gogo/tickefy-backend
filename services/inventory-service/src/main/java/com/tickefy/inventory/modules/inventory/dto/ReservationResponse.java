@@ -9,4 +9,5 @@ public record ReservationResponse(
         Integer quantity,
         long unitPrice,
         long totalAmount,
-        Instant expiresAt) {}
+        Instant expiresAt,
+        String ticketTypeName) {}

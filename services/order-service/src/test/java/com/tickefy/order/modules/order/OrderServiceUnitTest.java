@@ -284,7 +284,7 @@ class OrderServiceUnitTest {
 
         UUID reservationId = UUID.randomUUID();
         Instant expiresAt = Instant.now().plusSeconds(900);
-        ReservationResult reservation = new ReservationResult(reservationId, 25000L, 50000L, expiresAt);
+        ReservationResult reservation = new ReservationResult(reservationId, 25000L, 50000L, expiresAt, "GA");
         when(inventoryClient.reserve(any(ReserveClientRequest.class), eq(BEARER))).thenReturn(reservation);
 
         OrderEntity reservedEntity = OrderEntity.builder()
@@ -304,7 +304,8 @@ class OrderServiceUnitTest {
                         eq(expiresAt),
                         eq(TICKET_TYPE_ID),
                         eq(2),
-                        eq(25000L)))
+                        eq(25000L),
+                        eq("GA")))
                 .thenReturn(reservedEntity);
 
         PaymentResult payment = new PaymentResult("tx-123", "https://pay.stub/tx-123", "INITIATED");
@@ -335,7 +336,8 @@ class OrderServiceUnitTest {
         verify(inventoryClient).reserve(any(ReserveClientRequest.class), eq(BEARER));
         // markReserved WAS called
         verify(orderPersistence).markReserved(
-                eq(existingOrderId), eq(reservationId), eq(50000L), eq(expiresAt), eq(TICKET_TYPE_ID), eq(2), eq(25000L));
+                eq(existingOrderId), eq(reservationId), eq(50000L), eq(expiresAt), eq(TICKET_TYPE_ID), eq(2), eq(25000L),
+                eq("GA"));
         // paymentClient WAS called with new signature
         verify(paymentClient).createTransaction(any(CreatePaymentCommand.class), eq(BEARER));
         // markPaymentPending WAS called

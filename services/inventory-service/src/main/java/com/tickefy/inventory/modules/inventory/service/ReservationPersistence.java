@@ -134,6 +134,7 @@ public class ReservationPersistence {
                 entity.getQuantity(),
                 unitPrice,
                 totalAmount,
-                entity.getExpiresAt());
+                entity.getExpiresAt(),
+                null); // ticketTypeName enriched by ReservationService.reserve wrapper (PK lookup)
     }
 }

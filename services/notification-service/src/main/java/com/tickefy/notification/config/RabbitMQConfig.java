@@ -160,4 +160,15 @@ public class RabbitMQConfig {
     @Bean public Binding ticketReminderRequestedBinding1(Queue ticketReminderRequestedQueue, TopicExchange eventsExchange) { return createBinding(ticketReminderRequestedQueue, eventsExchange, "ticket.reminder-requested"); }
     @Bean public Binding ticketReminderRequestedBinding2(Queue ticketReminderRequestedQueue, TopicExchange eventsExchange) { return createBinding(ticketReminderRequestedQueue, eventsExchange, "ticket.reminder.requested"); }
     @Bean public Binding ticketReminderRequestedDlqBinding(Queue ticketReminderRequestedDlq, TopicExchange dlxExchange) { return createBinding(ticketReminderRequestedDlq, dlxExchange, DLQ_TICKET_REMINDER_REQUESTED); }
+
+    // ==========================================
+    // Internal Email Send Queue (Per-Channel)
+    // ==========================================
+    public static final String QUEUE_EMAIL_SEND = "notification.email.send";
+    public static final String DLQ_EMAIL_SEND = "notification.email.send.dlq";
+
+    @Bean public Queue emailSendQueue() { return createQueue(QUEUE_EMAIL_SEND, DLQ_EMAIL_SEND); }
+    @Bean public Queue emailSendDlq() { return createDlq(DLQ_EMAIL_SEND); }
+    @Bean public Binding emailSendBinding(Queue emailSendQueue, TopicExchange eventsExchange) { return createBinding(emailSendQueue, eventsExchange, "internal.email.send"); }
+    @Bean public Binding emailSendDlqBinding(Queue emailSendDlq, TopicExchange dlxExchange) { return createBinding(emailSendDlq, dlxExchange, DLQ_EMAIL_SEND); }
 }

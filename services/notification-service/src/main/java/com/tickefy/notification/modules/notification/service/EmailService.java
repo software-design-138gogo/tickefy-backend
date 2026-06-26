@@ -29,8 +29,7 @@ public class EmailService {
     /**
      * Sends an HTML email.
      *
-     * <p>Failures are swallowed and logged — callers must not rely on a thrown exception to detect
-     * mail errors.
+     * <p>Failures throw RuntimeException so that the Outbox Worker can catch and retry.
      *
      * @param to recipient email address
      * @param subject email subject line
@@ -47,13 +46,8 @@ public class EmailService {
             mailSender.send(message);
             log.info("[EmailService] Email sent successfully to={} subject={}", to, subject);
         } catch (Exception ex) {
-            // Defensive: log only, never propagate — in-app notification must not be rolled back
-            log.error(
-                    "[EmailService] Failed to send email to={} subject={} error={}",
-                    to,
-                    subject,
-                    ex.getMessage(),
-                    ex);
+            log.error("[EmailService] Failed to send email to={} subject={} error={}", to, subject, ex.getMessage());
+            throw new RuntimeException("Failed to send email", ex);
         }
     }
 }

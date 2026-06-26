@@ -33,6 +33,11 @@ app:
     outbox:
       enabled: false
 
+management:
+  health:
+    rabbit:
+      enabled: false   # §6.12: no broker connection in IT (listener-auto-startup off) -> avoid /health ACCESS_REFUSED
+
 logging:
   level:
     root: WARN

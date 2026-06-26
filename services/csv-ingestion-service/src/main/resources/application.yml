@@ -8,7 +8,7 @@ spring:
       max-file-size: 10MB
       max-request-size: 11MB
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy}?currentSchema=${DB_SCHEMA:csv_ingestion_service}&options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver

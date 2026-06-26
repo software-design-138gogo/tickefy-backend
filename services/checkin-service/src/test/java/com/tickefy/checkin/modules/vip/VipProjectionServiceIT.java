@@ -147,13 +147,13 @@ class VipProjectionServiceIT extends PostgresContainerITBase {
     }
 
     // -------------------------------------------------------------------------
-    // AC-VPS-4  email lookup — exact match + absent email → empty page
+    // AC-VPS-4  email lookup — case-insensitive normalized match + absent email → empty page
     // -------------------------------------------------------------------------
 
     @Test
-    void getVipGuests_emailFilter_shouldReturnExactMatchAndEmptyForAbsent() {
+    void getVipGuests_emailFilter_shouldNormalizeCaseAndWhitespace() {
         List<VipGuestDto> csvData = List.of(
-                new VipGuestDto("alice@test.com", "Alice", TICKET_TYPE_ID, "Gold VIP"),
+                new VipGuestDto("Alice@Test.COM", "Alice", TICKET_TYPE_ID, "Gold VIP"),
                 new VipGuestDto("charlie@test.com", "Charlie", TICKET_TYPE_ID, "Silver VIP"),
                 new VipGuestDto("diana@test.com", "Diana", TICKET_TYPE_ID, "Silver VIP"));
         when(csvVipClient.fetchAll(CONCERT_ID)).thenReturn(csvData);
@@ -161,10 +161,21 @@ class VipProjectionServiceIT extends PostgresContainerITBase {
         // Populate
         service.getVipGuests(CONCERT_ID, null, PAGE);
 
-        // Exact match
-        Page<VipGuestProjectionResponse> match = service.getVipGuests(CONCERT_ID, "alice@test.com", PAGE);
-        assertThat(match.getTotalElements()).isEqualTo(1);
-        assertThat(match.getContent().get(0).email()).isEqualTo("alice@test.com");
+        assertThat(projectionRepo.findByConcertId(CONCERT_ID))
+                .extracting(VipGuestProjectionEntity::getEmail)
+                .contains("alice@test.com");
+
+        Page<VipGuestProjectionResponse> lowercase = service.getVipGuests(CONCERT_ID, "alice@test.com", PAGE);
+        assertThat(lowercase.getTotalElements()).isEqualTo(1);
+        assertThat(lowercase.getContent().get(0).email()).isEqualTo("alice@test.com");
+
+        Page<VipGuestProjectionResponse> uppercase = service.getVipGuests(CONCERT_ID, "ALICE@TEST.COM", PAGE);
+        assertThat(uppercase.getTotalElements()).isEqualTo(1);
+        assertThat(uppercase.getContent().get(0).email()).isEqualTo("alice@test.com");
+
+        Page<VipGuestProjectionResponse> padded = service.getVipGuests(CONCERT_ID, "  ALICE@TEST.COM  ", PAGE);
+        assertThat(padded.getTotalElements()).isEqualTo(1);
+        assertThat(padded.getContent().get(0).email()).isEqualTo("alice@test.com");
 
         // Non-existing
         Page<VipGuestProjectionResponse> absent = service.getVipGuests(CONCERT_ID, "notexist@test.com", PAGE);

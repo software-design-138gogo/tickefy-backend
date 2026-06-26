@@ -1,18 +1,26 @@
 package com.tickefy.checkin.modules.checkin.dto;
 
+import java.time.Instant;
 import java.util.List;
 
 public record SyncResponse(
         String syncBatchId,
-        int processed,
-        List<SyncItemResult> accepted,
-        List<SyncItemResult> rejected,
-        List<SyncItemResult> conflicts
+        String result,
+        String concertId,
+        String deviceId,
+        int totalItems,
+        int acceptedCount,
+        int rejectedCount,
+        int conflictCount,
+        boolean replayDetected,
+        List<SyncItemResult> items
 ) {
     public record SyncItemResult(
-            String localId,
-            String qrTokenMasked,
-            String serverResult,
-            String ticketId
+            String offlineScanId,
+            String ticketId,
+            String result,
+            Instant checkedInAt,
+            Instant firstCheckedInAt,
+            String conflictId
     ) {}
 }

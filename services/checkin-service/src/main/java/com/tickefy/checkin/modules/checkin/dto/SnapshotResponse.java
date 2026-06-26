@@ -8,8 +8,10 @@ import java.util.List;
  * Snapshot DTO returned to mobile for offline scan preparation.
  */
 public record SnapshotResponse(
+        String snapshotId,
         String concertId,
         String gate,
+        int version,
         Instant generatedAt,
         Instant expiresAt,
         int totalCount,

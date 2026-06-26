@@ -163,42 +163,41 @@ class CheckinServiceSnapshotVip3Test {
     }
 
     // -------------------------------------------------------------------------
-    // AC-VIP3-4  SnapshotResponse shape: 6 old fields + vipGuests (field #7)
+    // AC-VIP3-4  SnapshotResponse shape: mobile metadata + ticket/VIP payload
     // -------------------------------------------------------------------------
 
     @Test
-    void snapshotResponse_shapeShouldHaveAllSevenFields() {
+    void snapshotResponse_shapeShouldHaveMobileContractFields() {
         when(vipProjectionService.getVipGuestsForSnapshot(any())).thenReturn(List.of());
 
         SnapshotResponse response = checkinService.getSnapshot(CONCERT_ID, GATE);
 
-        // field 1: concertId
+        assertThat(response.snapshotId())
+                .as("AC-VIP3-4: field snapshotId must be stable UUID shape")
+                .hasSize(36);
+        assertThat(response.version())
+                .as("AC-VIP3-4: field version must be present for mobile SQLite metadata")
+                .isEqualTo(1);
         assertThat(response.concertId())
                 .as("AC-VIP3-4: field concertId must equal input")
                 .isEqualTo(CONCERT_ID);
-        // field 2: gate
         assertThat(response.gate())
                 .as("AC-VIP3-4: field gate must equal input")
                 .isEqualTo(GATE);
-        // field 3: generatedAt
         assertThat(response.generatedAt())
                 .as("AC-VIP3-4: field generatedAt must not be null")
                 .isNotNull();
-        // field 4: expiresAt
         assertThat(response.expiresAt())
                 .as("AC-VIP3-4: field expiresAt must be after generatedAt")
                 .isAfter(response.generatedAt());
-        // field 5: totalCount
         assertThat(response.totalCount())
                 .as("AC-VIP3-4: field totalCount must equal tickets list size")
                 .isEqualTo(response.tickets().size());
-        // field 6: tickets
         assertThat(response.tickets())
                 .as("AC-VIP3-4: field tickets must not be null")
                 .isNotNull();
-        // field 7: vipGuests (NEW)
         assertThat(response.vipGuests())
-                .as("AC-VIP3-4: field vipGuests (NEW) must not be null")
+                .as("AC-VIP3-4: field vipGuests must not be null")
                 .isNotNull();
     }
 

@@ -14,6 +14,7 @@ import com.tickefy.checkin.modules.vip.exception.CsvUnavailableException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -65,9 +66,14 @@ public class VipProjectionService {
         if (email == null || email.isBlank()) {
             page = projectionRepo.findByConcertId(concertId, pageable);
         } else {
-            page = projectionRepo.findByConcertIdAndEmail(concertId, email, pageable);
+            page = projectionRepo.findByConcertIdAndEmail(
+                    concertId, normalizeEmail(email), pageable);
         }
         return page.map(VipGuestMapper::toResponse);
+    }
+
+    private static String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     /**

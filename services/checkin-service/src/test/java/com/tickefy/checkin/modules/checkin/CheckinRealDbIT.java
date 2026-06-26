@@ -91,13 +91,11 @@ class CheckinRealDbIT extends PostgresContainerITBase {
 
         var response = checkinService.sync(request, "staff-1");
 
-        assertThat(response.accepted()).hasSize(1);
-        assertThat(response.accepted().get(0).qrTokenMasked()).isEqualTo("raw-****1234");
-        assertThat(response.accepted().get(0).qrTokenMasked()).isNotEqualTo(rawToken);
+        assertThat(response.result()).isEqualTo("SYNC_BATCH_ACCEPTED");
+        assertThat(response.acceptedCount()).isEqualTo(1);
+        assertThat(response.items().get(0).result()).isEqualTo("SYNC_ACCEPTED");
         assertThat(checkinEventRepository.findAll().get(0).getQrTokenMasked()).isEqualTo("raw-****1234");
         assertThat(syncBatchRepository.findBySyncBatchId("batch-mask").orElseThrow().getResultPayload())
-                .contains("qrTokenMasked")
-                .contains("raw-****1234")
                 .doesNotContain(rawToken);
     }
 
@@ -120,7 +118,9 @@ class CheckinRealDbIT extends PostgresContainerITBase {
 
         var replay = checkinService.sync(request, "staff-1");
 
-        assertThat(replay.accepted()).hasSize(1);
+        assertThat(replay.result()).isEqualTo("SYNC_BATCH_REPLAYED");
+        assertThat(replay.replayDetected()).isTrue();
+        assertThat(replay.acceptedCount()).isEqualTo(1);
         assertThat(syncBatchRepository.findAll()).hasSize(1);
         verify(eTicketClient, never()).getTicketByToken(rawToken);
     }

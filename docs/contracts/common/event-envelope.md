@@ -60,8 +60,10 @@ OrderExpired
 OrderCancelled
 OrderRefunded
 TicketsIssued
+TicketReminderRequested
 TicketRevoked
 TicketCheckedIn
+ConcertUpcoming
 ConcertIntroductionGenerated
 VipGuestImportCompleted
 VipGuestImportFailed
@@ -581,7 +583,9 @@ Ví dụ:
 | `OrderCancelled`          | `order.cancelled`            |
 | `OrderRefunded`           | `order.refunded`             |
 | `TicketsIssued`           | `tickets.issued`             |
+| `TicketReminderRequested` | `ticket.reminder-requested`  |
 | `TicketCheckedIn`         | `ticket.checked-in`          |
+| `ConcertUpcoming`         | `concert.upcoming`           |
 | `ConcertIntroductionGenerated` | `concert.introduction.generated` |
 | `VipGuestImportCompleted` | `vip-guest-import.completed` |
 | `VipGuestImportFailed`    | `vip-guest-import.failed`    |
@@ -1551,6 +1555,37 @@ Routing:
 Exchange: tickefy.exchange
 Routing key: tickets.issued
 Queue: notification.tickets-issued
+```
+
+---
+
+### 14.3.1. `TicketReminderRequested`
+
+```json
+{
+  "messageId": "89d43545-c93f-38f4-a6a3-3ce48aab26d6",
+  "eventType": "TicketReminderRequested",
+  "eventVersion": "1.0",
+  "source": "ticket-service",
+  "occurredAt": "2026-06-19T12:00:00Z",
+  "correlationId": "reminder-job-correlation",
+  "causationId": "concert-upcoming-message-id",
+  "payload": {
+    "userId": "508020c5-d766-4d3d-baf9-e0bb405698ad",
+    "concertId": "54062b96-3fbf-421f-b42c-c8fba5542a18",
+    "concertTitle": "Tickefy Live",
+    "eventDateTime": "2026-06-20T12:00:00Z",
+    "ticketCount": 2
+  }
+}
+```
+
+Routing:
+
+```text
+Exchange: tickefy.exchange
+Routing key: ticket.reminder-requested
+Queue: notification.ticket-reminder-requested
 ```
 
 ---

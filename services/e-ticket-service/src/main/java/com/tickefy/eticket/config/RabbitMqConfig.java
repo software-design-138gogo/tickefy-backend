@@ -17,7 +17,10 @@ import org.springframework.context.annotation.Configuration;
  * RabbitMQ topology for e-ticket-service.
  *
  * Consumes: order.paid (when order-service confirms payment)
+ * Consumes: concert.cancelled (when event-service cancels a concert)
+ * Consumes: concert.upcoming (when event-service triggers 24h reminder)
  * Publishes: tickets.issued (consumed by notification-service)
+ * Publishes: ticket.reminder-requested (consumed by notification-service)
  */
 @Configuration
 public class RabbitMqConfig {
@@ -27,6 +30,10 @@ public class RabbitMqConfig {
      * too (tickefy.dlx is topic). A queue-name-based key keeps each service's DLQ isolated. */
     private static final String ORDER_PAID_DLQ = "ticket-service.order-paid.queue.dlq";
     private static final String ORDER_PAID_DL_RK = "ticket-service.order-paid.dlq";
+    private static final String CONCERT_CANCELLED_DLQ = "ticket-service.concert-cancelled.queue.dlq";
+    private static final String CONCERT_CANCELLED_DL_RK = "ticket-service.concert-cancelled.dlq";
+    private static final String CONCERT_UPCOMING_DLQ = "ticket-service.concert-upcoming.queue.dlq";
+    private static final String CONCERT_UPCOMING_DL_RK = "ticket-service.concert-upcoming.dlq";
 
     @Value("${app.messaging.exchange:tickefy.exchange}")
     private String exchange;
@@ -36,6 +43,12 @@ public class RabbitMqConfig {
 
     @Value("${app.messaging.queue.order-paid:ticket-service.order-paid.queue}")
     private String orderPaidQueue;
+
+    @Value("${app.messaging.queue.concert-cancelled:ticket-service.concert-cancelled.queue}")
+    private String concertCancelledQueue;
+
+    @Value("${app.messaging.queue.concert-upcoming:ticket-service.concert-upcoming.queue}")
+    private String concertUpcomingQueue;
 
     // ── Exchange ──────────────────────────────────────────────────────────────
 
@@ -64,6 +77,32 @@ public class RabbitMqConfig {
         return QueueBuilder.durable(ORDER_PAID_DLQ).build();
     }
 
+    @Bean
+    public Queue concertCancelledQueue() {
+        return QueueBuilder.durable(concertCancelledQueue)
+                .deadLetterExchange(dlxName)
+                .deadLetterRoutingKey(CONCERT_CANCELLED_DL_RK)
+                .build();
+    }
+
+    @Bean
+    public Queue concertCancelledDlq() {
+        return QueueBuilder.durable(CONCERT_CANCELLED_DLQ).build();
+    }
+
+    @Bean
+    public Queue concertUpcomingQueue() {
+        return QueueBuilder.durable(concertUpcomingQueue)
+                .deadLetterExchange(dlxName)
+                .deadLetterRoutingKey(CONCERT_UPCOMING_DL_RK)
+                .build();
+    }
+
+    @Bean
+    public Queue concertUpcomingDlq() {
+        return QueueBuilder.durable(CONCERT_UPCOMING_DLQ).build();
+    }
+
     // ── Bindings ──────────────────────────────────────────────────────────────
 
     @Bean
@@ -72,8 +111,28 @@ public class RabbitMqConfig {
     }
 
     @Bean
+    public Binding concertCancelledBinding(Queue concertCancelledQueue, TopicExchange tickefyExchange) {
+        return BindingBuilder.bind(concertCancelledQueue).to(tickefyExchange).with("concert.cancelled");
+    }
+
+    @Bean
+    public Binding concertUpcomingBinding(Queue concertUpcomingQueue, TopicExchange tickefyExchange) {
+        return BindingBuilder.bind(concertUpcomingQueue).to(tickefyExchange).with("concert.upcoming");
+    }
+
+    @Bean
     public Binding orderPaidDlqBinding(Queue orderPaidDlq, TopicExchange tickefyDlx) {
         return BindingBuilder.bind(orderPaidDlq).to(tickefyDlx).with(ORDER_PAID_DL_RK);
+    }
+
+    @Bean
+    public Binding concertCancelledDlqBinding(Queue concertCancelledDlq, TopicExchange tickefyDlx) {
+        return BindingBuilder.bind(concertCancelledDlq).to(tickefyDlx).with(CONCERT_CANCELLED_DL_RK);
+    }
+
+    @Bean
+    public Binding concertUpcomingDlqBinding(Queue concertUpcomingDlq, TopicExchange tickefyDlx) {
+        return BindingBuilder.bind(concertUpcomingDlq).to(tickefyDlx).with(CONCERT_UPCOMING_DL_RK);
     }
 
     // ── Converters ────────────────────────────────────────────────────────────

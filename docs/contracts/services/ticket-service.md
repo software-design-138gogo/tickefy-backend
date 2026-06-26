@@ -92,7 +92,7 @@ lastUpdated: 2026-06-16
 |---|---|
 | PostgreSQL | Store tickets, QR metadata, processed messages |
 | Redis | Optional cache/idempotency accelerator; DB remains source of truth |
-| RabbitMQ | Consume `OrderPaid`, `ConcertCancelled`; publish `TicketsIssued` |
+| RabbitMQ | Consume `OrderPaid`, `ConcertCancelled`, `ConcertUpcoming`; publish `TicketsIssued`, `TicketReminderRequested` |
 | Object Storage | Optional QR/PDF assets if ticket PDF generation is owned here |
 
 ## 5. Public APIs
@@ -161,6 +161,7 @@ Response uses check-in result semantics from `../common/checkin-result-catalog.m
 | Event | Routing key | When | Consumers (queue) | Contract |
 |---|---|---|---|---|
 | `TicketsIssued` | `tickets.issued` | Tickets created after `OrderPaid` | `notification-service` (`notification.tickets-issued`) | Payload: `{orderId, userId, concertId, tickets[{ticketId, orderItemId, ticketTypeId, ticketTypeName, status}], issuedAt}` — theo `../common/event-envelope.md` §14.3 |
+| `TicketReminderRequested` | `ticket.reminder-requested` | `ConcertUpcoming` received and issued tickets exist for a user | `notification-service` (`notification.ticket-reminder-requested`) | Payload: `{userId, concertId, concertTitle, eventDateTime, ticketCount}` |
 | `TicketCheckedIn` | `ticket.checked-in` | Optional after successful check-in | Hiện chưa có consumer khai báo (analytics/optional trong tương lai) | Payload: `{ticketId, concertId, userId, staffId, gate, checkedInAt}` — theo `../common/event-envelope.md` §14.6 |
 
 > ⚠️ **`TicketRevoked`:** State machine §9 có state `REVOKED` (admin revoke) nhưng hiện CHƯA có event `TicketRevoked` trong `event-envelope.md` và CHƯA có consumer nào khai báo. `REVOKED` hiện là state transition nội bộ. Nếu cần thông báo service khác (notification), phải bổ sung event contract vào `event-envelope.md` trước.
@@ -173,6 +174,7 @@ Response uses check-in result semantics from `../common/checkin-result-catalog.m
 |---|---|---|---|---|
 | `OrderPaid` | `order-service` | `ticket.order-paid` | Issue tickets for order items (loop `quantity` → N vé/item) | **envelope** → đọc `payload.{orderId,userId,concertId,paidAt,items[{orderItemId,ticketTypeId,quantity,zoneId,ticketTypeName}]}`; idempotency `(orderItemId, seat_sequence)` |
 | `ConcertCancelled` | `event-service` | `ticket.concert-cancelled` | Mark issued tickets for concert as `CANCELLED` | `messageId`, `concertId` |
+| `ConcertUpcoming` | `event-service` | `ticket.concert-upcoming` | Group issued tickets by user and publish `TicketReminderRequested` | Stable child `messageId` derived from parent `messageId` + `userId` |
 | `OrderRefunded` | `order-service` | `ticket.order-refunded` | Mark tickets for refunded order as `REFUNDED` | `messageId`, `orderId` |
 
 ## 9. State machines

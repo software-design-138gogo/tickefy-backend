@@ -41,9 +41,25 @@ public class CheckinController {
                 checkinService.getSnapshot(concertId, gate), requestId()));
     }
 
-    /** POST /api/checkin/sync — sync offline batch */
+    /** POST /api/checkin/offline-snapshots — canonical mobile snapshot endpoint */
+    @PostMapping("/offline-snapshots")
+    public ResponseEntity<ApiResponse<SnapshotResponse>> createSnapshot(
+            @Valid @RequestBody CreateSnapshotRequest req) {
+        return ResponseEntity.ok(ApiResponse.success(
+                checkinService.getSnapshot(req.concertId(), req.gate(), req.deviceId()), requestId()));
+    }
+
+    /** POST /api/checkin/sync — legacy alias for offline batch sync */
     @PostMapping("/sync")
     public ResponseEntity<ApiResponse<SyncResponse>> sync(
+            @Valid @RequestBody SyncRequest req) {
+        return ResponseEntity.ok(ApiResponse.success(
+                checkinService.sync(req, authContext.currentUserId()), requestId()));
+    }
+
+    /** POST /api/checkin/offline-sync-batches — canonical mobile sync endpoint */
+    @PostMapping("/offline-sync-batches")
+    public ResponseEntity<ApiResponse<SyncResponse>> syncOfflineBatch(
             @Valid @RequestBody SyncRequest req) {
         return ResponseEntity.ok(ApiResponse.success(
                 checkinService.sync(req, authContext.currentUserId()), requestId()));

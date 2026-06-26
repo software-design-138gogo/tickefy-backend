@@ -186,6 +186,8 @@ public class CheckinServiceTest {
 
         SnapshotResponse response = checkinService.getSnapshot("concert-1", "gate-A");
 
+        assertThat(response.snapshotId()).hasSize(36);
+        assertThat(response.version()).isEqualTo(1);
         assertThat(response.tickets()).hasSize(1);
         assertThat(response.tickets().get(0).ticketId()).isEqualTo("ticket-1");
         assertThat(response.tickets().get(0).qrTokenMasked()).isEqualTo("qr-t****en-1");
@@ -205,16 +207,19 @@ public class CheckinServiceTest {
 
         // First sync
         SyncResponse response1 = checkinService.sync(req, "staff-1");
-        assertThat(response1.accepted()).hasSize(1);
+        assertThat(response1.result()).isEqualTo("SYNC_BATCH_ACCEPTED");
+        assertThat(response1.acceptedCount()).isEqualTo(1);
         
         // Clear mock invocations to ensure the second sync uses the cache
         clearInvocations(eTicketClient);
 
         // Second sync (idempotent)
         SyncResponse response2 = checkinService.sync(req, "staff-1");
-        assertThat(response2.accepted()).hasSize(1);
-        assertThat(response2.accepted().get(0).ticketId()).isEqualTo("ticket-1");
-        assertThat(response2.accepted().get(0).localId()).isEqualTo("local-1");
+        assertThat(response2.result()).isEqualTo("SYNC_BATCH_REPLAYED");
+        assertThat(response2.replayDetected()).isTrue();
+        assertThat(response2.acceptedCount()).isEqualTo(1);
+        assertThat(response2.items().get(0).ticketId()).isEqualTo("ticket-1");
+        assertThat(response2.items().get(0).offlineScanId()).isEqualTo("local-1");
 
         // eTicketClient should NOT be called again
         verify(eTicketClient, never()).getTicketByToken(anyString());
@@ -246,14 +251,14 @@ public class CheckinServiceTest {
 
         // Device 1 Syncs
         SyncResponse response1 = checkinService.sync(req1, "staff-1");
-        assertThat(response1.accepted()).hasSize(1);
-        assertThat(response1.conflicts()).hasSize(0);
+        assertThat(response1.acceptedCount()).isEqualTo(1);
+        assertThat(response1.conflictCount()).isZero();
 
         // Device 2 Syncs
         SyncResponse response2 = checkinService.sync(req2, "staff-2");
-        assertThat(response2.accepted()).hasSize(0);
-        assertThat(response2.conflicts()).hasSize(1);
-        assertThat(response2.conflicts().get(0).serverResult()).isEqualTo("SYNC_DUPLICATE_REJECTED");
+        assertThat(response2.acceptedCount()).isZero();
+        assertThat(response2.conflictCount()).isEqualTo(1);
+        assertThat(response2.items().get(0).result()).isEqualTo("SYNC_DUPLICATE_REJECTED");
     }
 
     @Test
@@ -268,10 +273,10 @@ public class CheckinServiceTest {
 
         SyncResponse response = checkinService.sync(req, "staff-1");
 
-        assertThat(response.accepted()).isEmpty();
-        assertThat(response.conflicts()).isEmpty();
-        assertThat(response.rejected()).hasSize(1);
-        assertThat(response.rejected().get(0).serverResult()).isEqualTo("SYNC_CANCELLED_REJECTED");
+        assertThat(response.acceptedCount()).isZero();
+        assertThat(response.conflictCount()).isZero();
+        assertThat(response.rejectedCount()).isEqualTo(1);
+        assertThat(response.items().get(0).result()).isEqualTo("SYNC_CANCELLED_REJECTED");
     }
 
     @Test
@@ -285,10 +290,10 @@ public class CheckinServiceTest {
 
         SyncResponse response = checkinService.sync(req, "staff-1");
 
-        assertThat(response.accepted()).isEmpty();
-        assertThat(response.conflicts()).isEmpty();
-        assertThat(response.rejected()).hasSize(1);
-        assertThat(response.rejected().get(0).serverResult()).isEqualTo("SYNC_WRONG_EVENT");
+        assertThat(response.acceptedCount()).isZero();
+        assertThat(response.conflictCount()).isZero();
+        assertThat(response.rejectedCount()).isEqualTo(1);
+        assertThat(response.items().get(0).result()).isEqualTo("SYNC_WRONG_EVENT");
         assertThat(checkinEventRepository.findAll().get(0).getResult()).isEqualTo("SYNC_WRONG_EVENT");
         verify(eTicketClient, never()).checkIn(anyString());
     }
@@ -329,8 +334,8 @@ public class CheckinServiceTest {
         assertThat(syncBatchRepository.findAll()).hasSize(1);
         assertThat(responses).allSatisfy(response -> {
             assertThat(response.syncBatchId()).isEqualTo("batch-concurrent");
-            assertThat(response.accepted()).hasSize(1);
-            assertThat(response.accepted().get(0).localId()).isEqualTo("local-1");
+            assertThat(response.acceptedCount()).isEqualTo(1);
+            assertThat(response.items().get(0).offlineScanId()).isEqualTo("local-1");
         });
     }
 }

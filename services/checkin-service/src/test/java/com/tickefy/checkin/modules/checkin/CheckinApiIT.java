@@ -117,6 +117,8 @@ class CheckinApiIT extends PostgresContainerITBase {
                 .then()
                 .statusCode(200)
                 .body("success", equalTo(true))
+                .body("data.snapshotId.length()", equalTo(36))
+                .body("data.version", equalTo(1))
                 .body("data.concertId", equalTo("concert-1"))
                 .body("data.tickets[0].qrTokenMasked", equalTo("qr-t****en-1"))
                 .body("data.tickets[0].qrTokenHash", equalTo("hash-token-1"))
@@ -124,7 +126,42 @@ class CheckinApiIT extends PostgresContainerITBase {
     }
 
     @Test
-    void sync_shouldNotReturnRawQrToken() {
+    void canonicalSnapshotEndpoint_shouldReturnMobileContractShape() {
+        when(eTicketClient.getSnapshot("concert-1")).thenReturn(List.of(
+                new ETicketClient.SnapshotTicket(
+                        "ticket-1",
+                        "qr-t****en-1",
+                        "hash-token-1",
+                        "concert-1",
+                        "GA",
+                        "General Admission",
+                        "holder-1",
+                        "ISSUED",
+                        Instant.now())));
+
+        given()
+                .header("Authorization", bearer("staff-1", "CHECKIN_STAFF"))
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "concertId": "concert-1",
+                          "deviceId": "device-1",
+                          "gate": "gate-A"
+                        }
+                        """)
+                .when()
+                .post("/api/checkin/offline-snapshots")
+                .then()
+                .statusCode(200)
+                .body("success", equalTo(true))
+                .body("data.snapshotId.length()", equalTo(36))
+                .body("data.version", equalTo(1))
+                .body("data.vipGuests.size()", equalTo(0))
+                .body("data.tickets[0].qrTokenMasked", equalTo("qr-t****en-1"));
+    }
+
+    @Test
+    void canonicalSyncEndpoint_shouldNotReturnRawQrToken() {
         String rawToken = "raw-token-secret-1234";
         when(eTicketClient.getTicketByToken(rawToken)).thenReturn(Optional.of(
                 new ETicketClient.TicketInfo("ticket-1", "concert-1", "ISSUED", "GA", "General Admission", "user-1")));
@@ -136,12 +173,14 @@ class CheckinApiIT extends PostgresContainerITBase {
                 .body("""
                         {
                           "syncBatchId": "batch-api-mask",
+                          "snapshotId": "snapshot-api",
                           "deviceId": "device-1",
                           "concertId": "concert-1",
                           "gate": "gate-A",
                           "items": [
                             {
-                              "localId": "local-1",
+                              "offlineScanId": "local-1",
+                              "ticketId": "ticket-1",
                               "qrToken": "%s",
                               "localResult": "OFFLINE_ACCEPTED",
                               "scannedAt": "2026-06-11T19:30:00Z"
@@ -150,12 +189,14 @@ class CheckinApiIT extends PostgresContainerITBase {
                         }
                         """.formatted(rawToken))
                 .when()
-                .post("/api/checkin/sync")
+                .post("/api/checkin/offline-sync-batches")
                 .then()
                 .statusCode(200)
                 .body("success", equalTo(true))
-                .body("data.accepted[0].qrTokenMasked", equalTo("raw-****1234"))
-                .body("data.accepted[0].serverResult", equalTo("SYNC_ACCEPTED"))
+                .body("data.result", equalTo("SYNC_BATCH_ACCEPTED"))
+                .body("data.acceptedCount", equalTo(1))
+                .body("data.items[0].offlineScanId", equalTo("local-1"))
+                .body("data.items[0].result", equalTo("SYNC_ACCEPTED"))
                 .extract()
                 .asString();
 

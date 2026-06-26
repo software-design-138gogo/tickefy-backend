@@ -23,6 +23,18 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
     List<Ticket> findByConcertIdAndStatus(String concertId, com.tickefy.eticket.modules.ticket.entity.TicketStatus status);
 
+    @Modifying
+    @Query("""
+            UPDATE Ticket t
+            SET t.status = com.tickefy.eticket.modules.ticket.entity.TicketStatus.CANCELLED,
+                t.updatedAt = :now
+            WHERE t.concertId = :concertId
+              AND t.status = com.tickefy.eticket.modules.ticket.entity.TicketStatus.ISSUED
+            """)
+    int cancelIssuedTicketsByConcertId(
+            @Param("concertId") String concertId,
+            @Param("now") java.time.Instant now);
+
     /**
      * Atomic check-in: sets CHECKED_IN only when current status = ISSUED.
      * Returns 1 = ACCEPTED, 0 = DUPLICATE_REJECTED (already checked-in or wrong state).

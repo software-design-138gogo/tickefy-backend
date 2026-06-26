@@ -4,6 +4,7 @@ import com.tickefy.checkin.modules.vip.dto.VipGuestDto;
 import com.tickefy.checkin.modules.vip.dto.VipGuestProjectionResponse;
 import com.tickefy.checkin.modules.vip.dto.VipGuestSnapshotDto;
 import com.tickefy.checkin.modules.vip.entity.VipGuestProjectionEntity;
+import java.util.Locale;
 import java.util.UUID;
 
 public final class VipGuestMapper {
@@ -28,10 +29,14 @@ public final class VipGuestMapper {
     public static VipGuestProjectionEntity toEntity(UUID concertId, VipGuestDto dto) {
         return VipGuestProjectionEntity.builder()
                 .concertId(concertId)
-                .email(dto.email())
+                .email(normalizeEmail(dto.email()))
                 .fullName(dto.fullName())
                 .ticketTypeId(dto.ticketTypeId())
                 .ticketTypeName(dto.ticketTypeName())
                 .build();
+    }
+
+    private static String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 }

@@ -11,6 +11,7 @@ import com.tickefy.checkin.modules.checkin.repository.CheckinEventRepository;
 import com.tickefy.checkin.modules.checkin.repository.SyncBatchRepository;
 import com.tickefy.checkin.modules.vip.dto.VipGuestSnapshotDto;
 import com.tickefy.checkin.modules.vip.service.VipProjectionService;
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
@@ -68,11 +69,15 @@ public class CheckinService {
      */
     public ScanResponse scan(ScanRequest req, String staffId) {
         Instant now = Instant.now();
-        String tokenMasked = mask(req.qrToken());
+        String scannedQrToken = req.scannedQrToken();
+        if (scannedQrToken == null || scannedQrToken.isBlank()) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "QR token is required", HttpStatus.BAD_REQUEST);
+        }
+        String tokenMasked = mask(scannedQrToken);
 
         // Atomic QR check-in (HTTP — no TX). e-ticket-service validates the
         // expected concert before mutating ticket state.
-        ETicketClient.CheckInTicketResult checkIn = eTicketClient.checkInByToken(req.qrToken(), req.concertId());
+        ETicketClient.CheckInTicketResult checkIn = eTicketClient.checkInByToken(scannedQrToken, req.concertId());
         String ticketId = checkIn.ticketId();
         String result = mapCheckInResult(checkIn.result());
 
@@ -90,6 +95,10 @@ public class CheckinService {
      * Returns live ISSUED tickets from e-ticket-service for the concert.
      */
     public SnapshotResponse getSnapshot(String concertId, String gate) {
+        return getSnapshot(concertId, gate, null);
+    }
+
+    public SnapshotResponse getSnapshot(String concertId, String gate, String deviceId) {
         Instant now = Instant.now();
         Instant expiresAt = now.plusSeconds(SNAPSHOT_TTL_HOURS * 3600L);
         List<SnapshotResponse.SnapshotTicket> tickets = eTicketClient.getSnapshot(concertId).stream()
@@ -104,7 +113,16 @@ public class CheckinService {
                         ticket.status()))
                 .toList();
         List<VipGuestSnapshotDto> vipGuests = safeGetVip(concertId);
-        return new SnapshotResponse(concertId, gate, now, expiresAt, tickets.size(), tickets, vipGuests);
+        return new SnapshotResponse(
+                snapshotId(concertId, gate, deviceId),
+                concertId,
+                gate,
+                1,
+                now,
+                expiresAt,
+                tickets.size(),
+                tickets,
+                vipGuests);
     }
 
     private List<VipGuestSnapshotDto> safeGetVip(String concertId) {
@@ -123,7 +141,7 @@ public class CheckinService {
         Instant now = Instant.now();
         Optional<SyncBatch> existing = syncBatchRepository.findBySyncBatchId(req.syncBatchId());
         if (existing.isPresent() && existing.get().getResultPayload() != null) {
-            return cachedSyncResponse(existing.get());
+            return cachedSyncResponse(existing.get(), true);
         }
         if (existing.isPresent()) {
             return waitForCachedSyncResponse(req.syncBatchId());
@@ -147,13 +165,23 @@ public class CheckinService {
         List<SyncResponse.SyncItemResult> conflicts = new ArrayList<>();
 
         for (SyncRequest.SyncItem item : req.items()) {
-            String tokenMasked = mask(item.qrToken());
-            Optional<ETicketClient.TicketInfo> ticketMaybe = eTicketClient.getTicketByToken(item.qrToken());
+            String scannedQrToken = item.scannedQrToken();
+            String offlineScanId = item.stableScanId();
+            String tokenMasked = mask(scannedQrToken);
+            if (scannedQrToken == null || scannedQrToken.isBlank()) {
+                rejected.add(new SyncResponse.SyncItemResult(offlineScanId, item.ticketId(), "SYNC_ITEM_INVALID", null, null, null));
+                logEvent(item.ticketId(), tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
+                        "SYNC_ITEM_INVALID", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        req.syncBatchId());
+                continue;
+            }
+
+            Optional<ETicketClient.TicketInfo> ticketMaybe = eTicketClient.getTicketByToken(scannedQrToken);
 
             if (ticketMaybe.isEmpty()) {
-                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "INVALID_QR_TOKEN", null));
+                rejected.add(new SyncResponse.SyncItemResult(offlineScanId, item.ticketId(), "SYNC_ITEM_INVALID", null, null, null));
                 logEvent(null, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
-                        "INVALID_QR_TOKEN", true, item.scannedAt() != null ? item.scannedAt() : now, now,
+                        "SYNC_ITEM_INVALID", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
                 continue;
             }
@@ -164,7 +192,7 @@ public class CheckinService {
             String status = ticket.status();
 
             if (!req.concertId().equals(concertId)) {
-                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "SYNC_WRONG_EVENT", ticketId));
+                rejected.add(new SyncResponse.SyncItemResult(offlineScanId, ticketId, "SYNC_WRONG_EVENT", null, null, null));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
                         "SYNC_WRONG_EVENT", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
@@ -172,21 +200,21 @@ public class CheckinService {
             }
 
             if ("CANCELLED".equals(status)) {
-                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "SYNC_CANCELLED_REJECTED", ticketId));
+                rejected.add(new SyncResponse.SyncItemResult(offlineScanId, ticketId, "SYNC_CANCELLED_REJECTED", null, null, null));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
                         "SYNC_CANCELLED_REJECTED", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
                 continue;
             }
             if ("REFUNDED".equals(status)) {
-                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "SYNC_REFUNDED_REJECTED", ticketId));
+                rejected.add(new SyncResponse.SyncItemResult(offlineScanId, ticketId, "SYNC_REFUNDED_REJECTED", null, null, null));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
                         "SYNC_REFUNDED_REJECTED", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
                 continue;
             }
             if ("CHECKED_IN".equals(status)) {
-                conflicts.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, "SYNC_DUPLICATE_REJECTED", ticketId));
+                conflicts.add(new SyncResponse.SyncItemResult(offlineScanId, ticketId, "SYNC_DUPLICATE_REJECTED", null, null, null));
                 logEvent(ticketId, tokenMasked, req.concertId(), staffId, req.deviceId(), req.gate(),
                         "SYNC_DUPLICATE_REJECTED", true, item.scannedAt() != null ? item.scannedAt() : now, now,
                         req.syncBatchId());
@@ -201,15 +229,32 @@ public class CheckinService {
                     req.syncBatchId());
 
             if ("SYNC_ACCEPTED".equals(result)) {
-                accepted.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, result, ticketId));
+                accepted.add(new SyncResponse.SyncItemResult(offlineScanId, ticketId, result, now, null, null));
             } else if ("SYNC_DUPLICATE_REJECTED".equals(result)) {
-                conflicts.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, result, ticketId));
+                conflicts.add(new SyncResponse.SyncItemResult(offlineScanId, ticketId, result, null, null, null));
             } else {
-                rejected.add(new SyncResponse.SyncItemResult(item.localId(), tokenMasked, result, ticketId));
+                rejected.add(new SyncResponse.SyncItemResult(offlineScanId, ticketId, result, null, null, null));
             }
         }
 
-        SyncResponse response = new SyncResponse(req.syncBatchId(), req.items().size(), accepted, rejected, conflicts);
+        List<SyncResponse.SyncItemResult> items = new ArrayList<>();
+        items.addAll(accepted);
+        items.addAll(rejected);
+        items.addAll(conflicts);
+        String result = rejected.isEmpty() && conflicts.isEmpty()
+                ? "SYNC_BATCH_ACCEPTED"
+                : "SYNC_BATCH_COMPLETED_WITH_CONFLICTS";
+        SyncResponse response = new SyncResponse(
+                req.syncBatchId(),
+                result,
+                req.concertId(),
+                req.deviceId(),
+                req.items().size(),
+                accepted.size(),
+                rejected.size(),
+                conflicts.size(),
+                false,
+                items);
 
         batch.setProcessedAt(now);
         try {
@@ -290,13 +335,27 @@ public class CheckinService {
         return value;
     }
 
-    private SyncResponse cachedSyncResponse(SyncBatch batch) {
+    private SyncResponse cachedSyncResponse(SyncBatch batch, boolean replayDetected) {
         try {
             String payload = batch.getResultPayload();
             if (payload.startsWith("\"") && payload.endsWith("\"")) {
                 payload = objectMapper.readValue(payload, String.class);
             }
-            return objectMapper.readValue(payload, SyncResponse.class);
+            SyncResponse response = objectMapper.readValue(payload, SyncResponse.class);
+            if (!replayDetected) {
+                return response;
+            }
+            return new SyncResponse(
+                    response.syncBatchId(),
+                    "SYNC_BATCH_REPLAYED",
+                    response.concertId(),
+                    response.deviceId(),
+                    response.totalItems(),
+                    response.acceptedCount(),
+                    response.rejectedCount(),
+                    response.conflictCount(),
+                    true,
+                    response.items());
         } catch (Exception e) {
             log.warn("Failed to deserialize cached sync result for batchId={}", batch.getSyncBatchId(), e);
             throw new ApiException(
@@ -338,7 +397,7 @@ public class CheckinService {
         for (int attempt = 0; attempt < 40; attempt++) {
             Optional<SyncBatch> saved = syncBatchRepository.findBySyncBatchId(syncBatchId);
             if (saved.isPresent() && saved.get().getResultPayload() != null) {
-                return cachedSyncResponse(saved.get());
+                return cachedSyncResponse(saved.get(), true);
             }
             try {
                 Thread.sleep(50);
@@ -351,5 +410,13 @@ public class CheckinService {
                 ErrorCode.SYNC_SERVICE_UNAVAILABLE,
                 "Sync batch is still processing",
                 HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    private String snapshotId(String concertId, String gate, String deviceId) {
+        String key = String.join("|",
+                concertId == null ? "" : concertId,
+                gate == null ? "" : gate,
+                deviceId == null ? "" : deviceId);
+        return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)).toString();
     }
 }

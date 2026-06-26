@@ -27,4 +27,7 @@ public interface ConcertRepository extends JpaRepository<Concert, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM Concert c WHERE c.id = :id")
     java.util.Optional<Concert> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("SELECT c FROM Concert c WHERE c.status = 'PUBLISHED' AND c.reminderSent = false AND c.eventDate <= :timeLimit AND c.eventDate >= :now")
+    List<Concert> findUpcomingConcertsForReminder(@Param("now") java.time.Instant now, @Param("timeLimit") java.time.Instant timeLimit);
 }

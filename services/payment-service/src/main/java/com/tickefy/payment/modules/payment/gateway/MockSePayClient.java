@@ -17,6 +17,9 @@ public class MockSePayClient implements SePayClient {
     @Value("${app.sepay.mock.query-result:NONE}")
     private String queryResult;
 
+    @Value("${app.sepay.mock.refund-mode:NONE}")
+    private String refundMode;
+
     @Override
     public CreateQrResult createQr(UUID paymentId, long amount, String currency, UUID orderId) {
         if ("FAIL".equalsIgnoreCase(failMode)) {
@@ -63,5 +66,38 @@ public class MockSePayClient implements SePayClient {
                 queryResult,
                 resolvedStatus);
         return new QueryStatusResult(resolvedGatewayTxnId, resolvedStatus);
+    }
+
+    @Override
+    public RefundResult refund(String gatewayTransactionId, long amount, String refundRequestId) {
+        if ("REJECT".equalsIgnoreCase(refundMode)) {
+            // Business decline (e.g. card closed) — return value, NOT exception → CB stays closed (R1).
+            log.warn(
+                    "MockSePay.refund refund-mode=REJECT gatewayTransactionId={} refundRequestId={}",
+                    gatewayTransactionId,
+                    refundRequestId);
+            return new RefundResult("REJECTED", null, "card_locked");
+        }
+        if ("FAIL".equalsIgnoreCase(refundMode)) {
+            log.warn("MockSePay.refund refund-mode=FAIL refundRequestId={}", refundRequestId);
+            throw new PaymentGatewayException("mock forced refund failure");
+        }
+        if ("TIMEOUT".equalsIgnoreCase(refundMode)) {
+            log.warn("MockSePay.refund refund-mode=TIMEOUT refundRequestId={} sleeping 35s", refundRequestId);
+            try {
+                Thread.sleep(35_000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            throw new PaymentGatewayException("mock refund timeout");
+        }
+        String gatewayRef = "MOCK-REFUND-" + refundRequestId;
+        log.info(
+                "MockSePay.refund OK gatewayTransactionId={} amount={} refundRequestId={} gatewayRef={}",
+                gatewayTransactionId,
+                amount,
+                refundRequestId,
+                gatewayRef);
+        return new RefundResult("REFUNDED", gatewayRef, null);
     }
 }

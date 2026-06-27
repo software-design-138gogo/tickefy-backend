@@ -73,10 +73,45 @@ class OrderStateMachineTest {
                 () -> stateMachine.assertTransition(OrderStatus.PAYMENT_PENDING, OrderStatus.EXPIRED));
     }
 
+    // ===== Refund leg (two-phase: PAID -> REFUND_PENDING -> {REFUNDED, REFUND_MANUAL_REVIEW}) =====
+
     @Test
-    void validTransition_PAID_to_REFUNDED() {
+    void validTransition_PAID_to_REFUND_PENDING() {
         assertThatNoException().isThrownBy(
-                () -> stateMachine.assertTransition(OrderStatus.PAID, OrderStatus.REFUNDED));
+                () -> stateMachine.assertTransition(OrderStatus.PAID, OrderStatus.REFUND_PENDING));
+    }
+
+    @Test
+    void validTransition_REFUND_PENDING_to_REFUNDED() {
+        assertThatNoException().isThrownBy(
+                () -> stateMachine.assertTransition(OrderStatus.REFUND_PENDING, OrderStatus.REFUNDED));
+    }
+
+    @Test
+    void validTransition_REFUND_PENDING_to_REFUND_MANUAL_REVIEW() {
+        assertThatNoException().isThrownBy(
+                () -> stateMachine.assertTransition(OrderStatus.REFUND_PENDING, OrderStatus.REFUND_MANUAL_REVIEW));
+    }
+
+    @Test
+    void illegalTransition_PAID_to_REFUNDED_direct_throws() {
+        // Refund is two-phase now — PAID can no longer refund directly, must pass REFUND_PENDING.
+        assertThatThrownBy(() -> stateMachine.assertTransition(OrderStatus.PAID, OrderStatus.REFUNDED))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void illegalTransition_REFUND_PENDING_to_PAID_throws() {
+        assertThatThrownBy(() -> stateMachine.assertTransition(OrderStatus.REFUND_PENDING, OrderStatus.PAID))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void illegalTransition_REFUND_MANUAL_REVIEW_to_REFUNDED_throws() {
+        // Terminal in MVP — manual resolve is out of scope.
+        assertThatThrownBy(() -> stateMachine.assertTransition(
+                        OrderStatus.REFUND_MANUAL_REVIEW, OrderStatus.REFUNDED))
+                .isInstanceOf(ApiException.class);
     }
 
     // ===== Illegal transitions: skip-step / back-step must throw =====

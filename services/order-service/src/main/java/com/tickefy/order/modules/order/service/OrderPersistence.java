@@ -189,6 +189,19 @@ public class OrderPersistence {
     }
 
     /**
+     * Refund leg (ConcertCancelled consumer): bulk-flip every PAID order of a cancelled concert to
+     * REFUND_PENDING. Short DB-only TX, no network (§8). Idempotent via the {@code status='PAID'}
+     * guard inside the bulk update — redelivery flips 0 rows. Does NOT publish OrderRefunded (that
+     * event is emitted later by the refund worker, after payment refund succeeds).
+     *
+     * @return number of orders moved to REFUND_PENDING
+     */
+    @Transactional
+    public int markConcertOrdersRefundPending(UUID concertId) {
+        return orderRepository.markConcertPaidOrdersRefundPending(concertId, Instant.now());
+    }
+
+    /**
      * TX (Pass 2): PAYMENT_PENDING → PAYMENT_FAILED + write OrderPaymentFailed to outbox.
      * Idempotent: already PAYMENT_FAILED/terminal → no-op.
      */

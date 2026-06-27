@@ -47,6 +47,15 @@ public final class OrderEvents {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record PaymentPayload(String orderId, String paymentTransactionId, String status) {}
 
+    // ── Inbound: concert.cancelled (ENVELOPE from event-service, 7-field) ─────
+    // Ignore source/occurredAt/correlationId/causationId — only concertId is needed (BC4).
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ConcertCancelledEnvelope(
+            String messageId, String eventType, String eventVersion, ConcertCancelledPayload payload) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ConcertCancelledPayload(String concertId, String cancelledAt, String reason) {}
+
     // ── Outbound: order.paid (ENVELOPE) ──────────────────────────────────────
     public record OrderPaidMessage(
             String messageId,

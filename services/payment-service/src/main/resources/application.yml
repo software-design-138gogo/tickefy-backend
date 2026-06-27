@@ -84,7 +84,7 @@ app:
     schema: ${DB_SCHEMA:payment_service}
   payment:
     expiry: ${PAYMENT_EXPIRY:PT15M}
-    provider: MOCK_SEPAY
+    provider: ${APP_PAYMENT_PROVIDER:MOCK_SEPAY}
     callback:
       secret: ${SEPAY_WEBHOOK_SECRET:}
       require-signature: ${PAYMENT_CALLBACK_REQUIRE_SIGNATURE:false}
@@ -101,9 +101,20 @@ app:
     outbox:
       enabled: true
   sepay:
+    mode: ${APP_SEPAY_MODE:mock}
+    base-url: ${SEPAY_BASE_URL:https://userapi.sepay.vn}
+    api-token: ${SEPAY_API_KEY:}
+    account-number: ${SEPAY_ACCOUNT_NUMBER:}
+    bank-code: ${SEPAY_BANK_CODE:}
+    account-name: ${SEPAY_ACCOUNT_NAME:}
+    qr-base-url: ${SEPAY_QR_BASE_URL:https://qr.sepay.vn/img}
+    qr-template: ${SEPAY_QR_TEMPLATE:compact}
+    connect-timeout: ${SEPAY_CONNECT_TIMEOUT:PT2S}
+    read-timeout: ${SEPAY_READ_TIMEOUT:PT10S}
     mock:
       fail-mode: ${SEPAY_MOCK_FAIL_MODE:NONE}
       query-result: ${SEPAY_MOCK_QUERY_RESULT:NONE}
+      refund-mode: ${SEPAY_MOCK_REFUND_MODE:NONE}
   dev:
     payment-sim:
       enabled: ${DEV_PAYMENT_SIM_ENABLED:false}

@@ -2,11 +2,9 @@ package com.tickefy.payment.modules.payment.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -137,7 +135,7 @@ class ReconciliationJobUnitTest {
 
         when(txRepo.findByStatusAndCreatedAtBefore(eq("PENDING"), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(tx));
-        when(paymentGatewayClient.queryStatus(gatewayOrderId))
+        when(paymentGatewayClient.queryStatus(gatewayOrderId, tx.getAmount()))
                 .thenReturn(new QueryStatusResult(gatewayTxnId, "SUCCESS"));
 
         reconciliationJob.reconcile();
@@ -158,7 +156,7 @@ class ReconciliationJobUnitTest {
 
         when(txRepo.findByStatusAndCreatedAtBefore(eq("PENDING"), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(tx));
-        when(paymentGatewayClient.queryStatus(gatewayOrderId))
+        when(paymentGatewayClient.queryStatus(gatewayOrderId, tx.getAmount()))
                 .thenReturn(new QueryStatusResult("GW-TXN-FAIL-001", "FAILED"));
 
         reconciliationJob.reconcile();
@@ -179,7 +177,7 @@ class ReconciliationJobUnitTest {
 
         when(txRepo.findByStatusAndCreatedAtBefore(eq("PENDING"), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(tx));
-        when(paymentGatewayClient.queryStatus(gatewayOrderId))
+        when(paymentGatewayClient.queryStatus(gatewayOrderId, tx.getAmount()))
                 .thenReturn(new QueryStatusResult("GW-TXN-STILL-PEND", "PENDING"));
 
         reconciliationJob.reconcile();
@@ -208,10 +206,10 @@ class ReconciliationJobUnitTest {
                 .thenReturn(List.of(tx1, tx2));
 
         // tx1 → CB open → throws PaymentGatewayException
-        when(paymentGatewayClient.queryStatus(gwId1))
+        when(paymentGatewayClient.queryStatus(gwId1, tx1.getAmount()))
                 .thenThrow(new PaymentGatewayException("CB open - circuit breaker is OPEN"));
         // tx2 → SUCCESS
-        when(paymentGatewayClient.queryStatus(gwId2))
+        when(paymentGatewayClient.queryStatus(gwId2, tx2.getAmount()))
                 .thenReturn(new QueryStatusResult(gaTxnId2, "SUCCESS"));
 
         // Should NOT throw (batch continues after exception)
@@ -237,7 +235,7 @@ class ReconciliationJobUnitTest {
 
         reconciliationJob.reconcile();
 
-        verify(paymentGatewayClient, never()).queryStatus(anyString());
+        verify(paymentGatewayClient, never()).queryStatus(anyString(), any());
         verify(paymentTxService, never()).resolveSuccess(any(), anyString());
         verify(paymentTxService, never()).resolveFailed(any(), anyString());
     }
@@ -254,14 +252,14 @@ class ReconciliationJobUnitTest {
 
         when(txRepo.findByStatusAndCreatedAtBefore(eq("PENDING"), any(Instant.class), any(Pageable.class)))
                 .thenReturn(List.of(tx));
-        when(paymentGatewayClient.queryStatus(expectedKey))
+        when(paymentGatewayClient.queryStatus(expectedKey, tx.getAmount()))
                 .thenReturn(new QueryStatusResult("GW-TXN", "PENDING"));
 
         reconciliationJob.reconcile();
 
         // Verify queryStatus called exactly with gatewayOrderId, NOT tx.getId()
-        verify(paymentGatewayClient, times(1)).queryStatus(expectedKey);
-        verify(paymentGatewayClient, never()).queryStatus(txId.toString());
+        verify(paymentGatewayClient, times(1)).queryStatus(expectedKey, tx.getAmount());
+        verify(paymentGatewayClient, never()).queryStatus(eq(txId.toString()), any());
     }
 
     // ============================================================

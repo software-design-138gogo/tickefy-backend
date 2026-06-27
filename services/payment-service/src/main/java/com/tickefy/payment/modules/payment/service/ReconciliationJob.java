@@ -63,7 +63,7 @@ public class ReconciliationJob {
                 // [CHỐT §F.2] khóa = gateway_order_id (luôn có sau PENDING/TX2)
                 String key = tx.getGatewayOrderId();
                 // queryStatus NGOÀI TX — CB bọc trong PaymentGatewayClient
-                QueryStatusResult r = paymentGatewayClient.queryStatus(key);
+                QueryStatusResult r = paymentGatewayClient.queryStatus(key, tx.getAmount());
 
                 switch (r.status()) {
                     case "SUCCESS" ->

@@ -8,6 +8,10 @@ public interface SePayClient {
 
     QueryStatusResult queryStatus(String gatewayTransactionId);
 
+    default QueryStatusResult queryStatus(String gatewayTransactionId, Long expectedAmount) {
+        return queryStatus(gatewayTransactionId);
+    }
+
     /**
      * Refund a settled payment (mảnh [3]).
      *

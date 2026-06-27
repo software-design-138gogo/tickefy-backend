@@ -6,7 +6,7 @@ import com.tickefy.notification.modules.core.repository.ProcessedMessageReposito
 import com.tickefy.notification.modules.notification.strategy.NotificationContext;
 import com.tickefy.notification.modules.notification.strategy.NotificationDispatcher;
 import com.tickefy.notification.shared.dto.EventEnvelope;
-import com.tickefy.notification.shared.dto.OrderPaymentFailedPayload;
+import com.tickefy.notification.shared.dto.OrderExpiredPayload;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -17,47 +17,41 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Consumes {@code OrderPaymentFailed} events from RabbitMQ.
+ * Consumes {@code OrderExpired} events from RabbitMQ (fixes F-new5).
  *
- * <p>On each message:
- *
- * <ol>
- *   <li>Saves an in-app {@link Notification} to the database.
- *   <li>Pushes SSE real-time notification to the user.
- *   <li>Sends a payment failure warning email.
- * </ol>
- * 
- * <p>This consumer delegates all notification saving and channel delivery to the
- * {@link NotificationDispatcher} to adhere to the Strategy Pattern (OCP).
+ * <p>On each message: dedups (F1), saves an in-app {@link Notification}, and dispatches an
+ * order-expired email via the {@link NotificationDispatcher}. Email failures are non-fatal.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OrderPaymentFailedConsumer {
+public class OrderExpiredConsumer {
+
+    private static final String EVENT_TYPE = "OrderExpired";
 
     private final NotificationDispatcher notificationDispatcher;
     private final ProcessedMessageRepository processedMessageRepository;
 
-    @RabbitListener(queues = RabbitMQConfig.QUEUE_ORDER_PAYMENT_FAILED)
+    @RabbitListener(queues = RabbitMQConfig.QUEUE_ORDER_EXPIRED)
     @Transactional
-    public void handle(@Payload EventEnvelope<OrderPaymentFailedPayload> envelope) {
+    public void handle(@Payload EventEnvelope<OrderExpiredPayload> envelope) {
         log.info(
-                "[OrderPaymentFailedConsumer] Received messageId={} correlationId={}",
+                "[OrderExpiredConsumer] Received messageId={} correlationId={}",
                 envelope.getMessageId(),
                 envelope.getCorrelationId());
 
-        OrderPaymentFailedPayload payload = envelope.getPayload();
+        OrderExpiredPayload payload = envelope.getPayload();
         if (payload == null || payload.getUserId() == null) {
             log.warn(
-                    "[OrderPaymentFailedConsumer] Skipping malformed message messageId={}",
+                    "[OrderExpiredConsumer] Skipping malformed message messageId={}",
                     envelope.getMessageId());
             return;
         }
 
         // F1 dedup: atomic INSERT ... ON CONFLICT DO NOTHING. rows=0 -> already processed, skip.
-        if (processedMessageRepository.tryMarkProcessed(envelope.getMessageId(), "OrderPaymentFailed") == 0) {
+        if (processedMessageRepository.tryMarkProcessed(envelope.getMessageId(), EVENT_TYPE) == 0) {
             log.warn(
-                    "[OrderPaymentFailedConsumer] Already processed messageId={} — skip",
+                    "[OrderExpiredConsumer] Already processed messageId={} — skip",
                     envelope.getMessageId());
             return;
         }
@@ -65,13 +59,13 @@ public class OrderPaymentFailedConsumer {
         // Build the in-app notification entity
         String content =
                 String.format(
-                        "Thanh toán cho đơn hàng #%s thất bại. Lý do: %s. Vui lòng thử lại.",
-                        payload.getOrderId(), payload.getReason());
+                        "Đơn hàng #%s đã hết hạn do chưa hoàn tất thanh toán. Vé đã được trả lại kho.",
+                        payload.getOrderId());
         Notification notification =
                 Notification.builder()
                         .userId(payload.getUserId())
-                        .eventType("OrderPaymentFailed")
-                        .title("Thanh toán thất bại")
+                        .eventType(EVENT_TYPE)
+                        .title("Đơn hàng đã hết hạn")
                         .content(content)
                         .referenceId(
                                 payload.getOrderId() != null
@@ -81,23 +75,21 @@ public class OrderPaymentFailedConsumer {
                         .channel("IN_APP")
                         .build();
 
-        // Build the email parameters
-        String emailSubject = "Tickefy \u2014 Thanh toán thất bại";
+        // Build the email parameters (matches templates/email/order-expired.html vars)
+        String emailSubject = "Tickefy — Đơn hàng đã hết hạn";
         Map<String, Object> templateVars = new HashMap<>();
         templateVars.put("orderId", payload.getOrderId());
-        templateVars.put("reason", payload.getReason());
-        templateVars.put("failedAt", payload.getFailedAt());
 
         String recipientEmail = "user+" + payload.getUserId() + "@mailpit.local";
 
-        // Dispatch via strategy dispatcher
-        NotificationContext context = NotificationContext.builder()
-                .notification(notification)
-                .emailSubject(emailSubject)
-                .emailTemplateName("email/order-payment-failed")
-                .templateVars(templateVars)
-                .recipientEmail(recipientEmail)
-                .build();
+        NotificationContext context =
+                NotificationContext.builder()
+                        .notification(notification)
+                        .emailSubject(emailSubject)
+                        .emailTemplateName("email/order-expired")
+                        .templateVars(templateVars)
+                        .recipientEmail(recipientEmail)
+                        .build();
 
         notificationDispatcher.dispatch(context);
     }

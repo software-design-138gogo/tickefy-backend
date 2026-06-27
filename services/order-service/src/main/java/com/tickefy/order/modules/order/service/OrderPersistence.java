@@ -202,6 +202,60 @@ public class OrderPersistence {
     }
 
     /**
+     * Short DB-only TX after the remote refund succeeds. The row lock plus REFUND_PENDING guard
+     * makes concurrent/replayed worker runs produce at most one OrderRefunded outbox row.
+     */
+    @Transactional
+    public boolean markRefunded(UUID orderId, UUID paymentTransactionId) {
+        OrderEntity order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new IllegalStateException("Order not found: " + orderId));
+        OrderStatus current = OrderStatus.valueOf(order.getStatus());
+        if (current != OrderStatus.REFUND_PENDING) {
+            log.info("markRefunded skipped (state guard) orderId={} status={}", orderId, current);
+            return false;
+        }
+
+        stateMachine.assertTransition(current, OrderStatus.REFUNDED);
+        order.setStatus(OrderStatus.REFUNDED.name());
+        order.setPaymentTransactionId(paymentTransactionId.toString());
+        orderRepository.save(order);
+
+        String refundedAt = Instant.now().toString();
+        OrderEvents.OrderRefundedPayload payload = new OrderEvents.OrderRefundedPayload(
+                order.getId().toString(),
+                order.getUserId().toString(),
+                order.getConcertId().toString(),
+                order.getTotalAmount(),
+                paymentTransactionId.toString(),
+                refundedAt);
+        OrderEvents.OrderRefundedMessage message = new OrderEvents.OrderRefundedMessage(
+                UUID.randomUUID().toString(),
+                OrderEvents.Type.ORDER_REFUNDED,
+                OrderEvents.EVENT_VERSION,
+                refundedAt,
+                payload);
+        writeOutbox(orderId, OrderEvents.Type.ORDER_REFUNDED, message);
+        log.info("Order REFUNDED + OrderRefunded outbox written orderId={}", orderId);
+        return true;
+    }
+
+    /** Short DB-only TX for a non-retryable payment refund rejection. */
+    @Transactional
+    public boolean markRefundManualReview(UUID orderId) {
+        OrderEntity order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new IllegalStateException("Order not found: " + orderId));
+        OrderStatus current = OrderStatus.valueOf(order.getStatus());
+        if (current != OrderStatus.REFUND_PENDING) {
+            log.info("markRefundManualReview skipped (state guard) orderId={} status={}", orderId, current);
+            return false;
+        }
+        stateMachine.assertTransition(current, OrderStatus.REFUND_MANUAL_REVIEW);
+        order.setStatus(OrderStatus.REFUND_MANUAL_REVIEW.name());
+        orderRepository.save(order);
+        return true;
+    }
+
+    /**
      * TX (Pass 2): PAYMENT_PENDING → PAYMENT_FAILED + write OrderPaymentFailed to outbox.
      * Idempotent: already PAYMENT_FAILED/terminal → no-op.
      */

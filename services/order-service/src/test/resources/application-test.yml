@@ -26,6 +26,9 @@ app:
     base-url: http://localhost:9999
   payment:
     stub: true
+  refund:
+    worker:
+      enabled: false
   database:
     schema: public
   messaging:

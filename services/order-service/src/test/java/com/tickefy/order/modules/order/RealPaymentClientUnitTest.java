@@ -13,8 +13,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickefy.order.modules.order.client.CreatePaymentCommand;
 import com.tickefy.order.modules.order.client.PaymentResult;
+import com.tickefy.order.modules.order.client.PaymentRefundException;
 import com.tickefy.order.modules.order.client.PaymentUnavailableException;
 import com.tickefy.order.modules.order.client.RealPaymentClient;
+import com.tickefy.order.modules.order.client.RefundRequest;
+import com.tickefy.order.modules.order.client.RefundResponse;
 import java.lang.reflect.Field;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +47,7 @@ class RealPaymentClientUnitTest {
 
     private static final String DUMMY_BASE_URL = "http://payment-service-dummy";
     private static final String PAYMENT_PATH = "/internal/payments";
+    private static final String REFUND_PATH = "/internal/payments/refund";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private RealPaymentClient client;
@@ -70,6 +74,10 @@ class RealPaymentClientUnitTest {
         Field restClientField = RealPaymentClient.class.getDeclaredField("restClient");
         restClientField.setAccessible(true);
         restClientField.set(client, mockedRestClient);
+
+        Field refundRestClientField = RealPaymentClient.class.getDeclaredField("refundRestClient");
+        refundRestClientField.setAccessible(true);
+        refundRestClientField.set(client, mockedRestClient);
     }
 
     // -----------------------------------------------------------------------
@@ -368,6 +376,66 @@ class RealPaymentClientUnitTest {
                 .isInstanceOf(PaymentUnavailableException.class)
                 .as("200 with data present but paymentId absent must throw PaymentUnavailableException");
 
+        mockServer.verify();
+    }
+
+    @Test
+    void refund_requestShapeAndSuccessfulResponse_areMapped() {
+        UUID transactionId = UUID.randomUUID();
+        mockServer.expect(requestTo(DUMMY_BASE_URL + REFUND_PATH))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.orderId").value(ORDER_ID.toString()))
+                .andExpect(jsonPath("$.refundRequestId").value("refund-" + ORDER_ID))
+                .andExpect(jsonPath("$.amount").value(AMOUNT))
+                .andRespond(withSuccess(
+                        "{\"success\":true,\"data\":{\"status\":\"REFUNDED\",\"refundGatewayRef\":\"GW-123\",\"paymentTransactionId\":\""
+                                + transactionId + "\"}}",
+                        MediaType.APPLICATION_JSON));
+
+        RefundResponse response = client.refund(new RefundRequest(ORDER_ID, "refund-" + ORDER_ID, AMOUNT));
+
+        assertThat(response.status()).isEqualTo("REFUNDED");
+        assertThat(response.refundGatewayRef()).isEqualTo("GW-123");
+        assertThat(response.paymentTransactionId()).isEqualTo(transactionId);
+        mockServer.verify();
+    }
+
+    @Test
+    void refund_recognized422_preservesTaxonomy() {
+        mockServer.expect(requestTo(DUMMY_BASE_URL + REFUND_PATH))
+                .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":{\"code\":\"REFUND_AMOUNT_MISMATCH\",\"message\":\"bad amount\"}}"));
+
+        assertThatThrownBy(() -> client.refund(new RefundRequest(ORDER_ID, "refund-" + ORDER_ID, AMOUNT)))
+                .isInstanceOfSatisfying(PaymentRefundException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(422);
+                    assertThat(exception.getErrorCode()).isEqualTo("REFUND_AMOUNT_MISMATCH");
+                });
+        mockServer.verify();
+    }
+
+    @Test
+    void refund_503_isRetryableUnavailable() {
+        mockServer.expect(requestTo(DUMMY_BASE_URL + REFUND_PATH))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":{\"code\":\"PAYMENT_GATEWAY_UNAVAILABLE\",\"message\":\"later\"}}"));
+
+        assertThatThrownBy(() -> client.refund(new RefundRequest(ORDER_ID, "refund-" + ORDER_ID, AMOUNT)))
+                .isInstanceOf(PaymentUnavailableException.class);
+        mockServer.verify();
+    }
+
+    @Test
+    void refund_malformed200_isRetryableUnavailable() {
+        mockServer.expect(requestTo(DUMMY_BASE_URL + REFUND_PATH))
+                .andRespond(withSuccess(
+                        "{\"success\":true,\"data\":{\"status\":\"REFUNDED\"}}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.refund(new RefundRequest(ORDER_ID, "refund-" + ORDER_ID, AMOUNT)))
+                .isInstanceOf(PaymentUnavailableException.class);
         mockServer.verify();
     }
 }

@@ -55,7 +55,14 @@ app:
   payment:
     base-url: ${PAYMENT_SERVICE_URL:http://localhost:8085}
     internal-path: ${PAYMENT_INTERNAL_PATH:/internal/payments}
+    refund-path: ${PAYMENT_REFUND_PATH:/internal/payments/refund}
+    connect-timeout: ${PAYMENT_CONNECT_TIMEOUT:PT2S}
+    read-timeout: ${PAYMENT_READ_TIMEOUT:PT30S}
     stub: ${PAYMENT_STUB:true}
+  refund:
+    worker:
+      enabled: ${REFUND_WORKER_ENABLED:true}
+      fixed-delay-ms: ${REFUND_WORKER_FIXED_DELAY_MS:60000}
   order:
     expiry-ttl: ${ORDER_EXPIRY_TTL:PT15M}
   messaging:
@@ -70,3 +77,15 @@ logging:
   level:
     root: ${LOG_LEVEL:INFO}
     com.tickefy.order: ${LOG_LEVEL:INFO}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      paymentRefund:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        record-exceptions:
+          - com.tickefy.order.modules.order.client.PaymentUnavailableException

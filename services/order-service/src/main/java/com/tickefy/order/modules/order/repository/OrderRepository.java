@@ -1,6 +1,7 @@
 package com.tickefy.order.modules.order.repository;
 
 import com.tickefy.order.modules.order.entity.OrderEntity;
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -8,6 +9,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,6 +21,12 @@ public interface OrderRepository extends JpaRepository<OrderEntity, UUID> {
     Optional<OrderEntity> findByIdAndUserId(UUID id, UUID userId);
 
     Page<OrderEntity> findByUserId(UUID userId, Pageable pageable);
+
+    List<OrderEntity> findTop100ByStatusAndConcertIdInOrderByCreatedAtAsc(String status, List<UUID> concertIds);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM OrderEntity o WHERE o.id = :id")
+    Optional<OrderEntity> findByIdForUpdate(@Param("id") UUID id);
 
     /** Expire worker: PAYMENT_PENDING orders past their expiry. */
     List<OrderEntity> findByStatusAndExpiresAtBefore(String status, Instant cutoff);

@@ -19,4 +19,12 @@ public class StubPaymentClient implements PaymentClient {
         log.debug("StubPaymentClient: orderId={} amount={} txId={}", cmd.orderId(), cmd.amount(), txId);
         return new PaymentResult(txId, paymentUrl, "INITIATED");
     }
+
+    @Override
+    public RefundResponse refund(RefundRequest request) {
+        UUID transactionId = UUID.randomUUID();
+        String gatewayRef = "STUB-REFUND-" + UUID.randomUUID();
+        log.debug("Stub refund: orderId={} amount={} txId={}", request.orderId(), request.amount(), transactionId);
+        return new RefundResponse("REFUNDED", gatewayRef, transactionId);
+    }
 }

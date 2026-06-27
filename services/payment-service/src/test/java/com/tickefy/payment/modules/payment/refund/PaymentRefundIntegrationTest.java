@@ -54,6 +54,7 @@ class PaymentRefundIntegrationTest extends BaseRefundIntegrationTest {
         UUID paymentId = seedTx(orderId, "SUCCESS", 150_000L);
 
         mockMvc.perform(post("/internal/payments/refund")
+                        .header("X-Internal-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(orderId, 150_000L)))
                 .andExpect(status().isOk())
@@ -87,6 +88,7 @@ class PaymentRefundIntegrationTest extends BaseRefundIntegrationTest {
 
         // 1st refund
         mockMvc.perform(post("/internal/payments/refund")
+                        .header("X-Internal-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(orderId, 150_000L)))
                 .andExpect(status().isOk())
@@ -99,6 +101,7 @@ class PaymentRefundIntegrationTest extends BaseRefundIntegrationTest {
 
         // 2nd refund — same refundRequestId → idempotent replay (no 2nd gateway refund)
         mockMvc.perform(post("/internal/payments/refund")
+                        .header("X-Internal-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(orderId, 150_000L)))
                 .andExpect(status().isOk())
@@ -125,6 +128,7 @@ class PaymentRefundIntegrationTest extends BaseRefundIntegrationTest {
         seedTx(orderId, "PENDING", 150_000L);
 
         mockMvc.perform(post("/internal/payments/refund")
+                        .header("X-Internal-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(orderId, 150_000L)))
                 .andExpect(status().isConflict())
@@ -138,6 +142,7 @@ class PaymentRefundIntegrationTest extends BaseRefundIntegrationTest {
         UUID orderId = UUID.randomUUID(); // nothing seeded for this order
 
         mockMvc.perform(post("/internal/payments/refund")
+                        .header("X-Internal-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(orderId, 150_000L)))
                 .andExpect(status().isNotFound())
@@ -151,6 +156,7 @@ class PaymentRefundIntegrationTest extends BaseRefundIntegrationTest {
         UUID paymentId = seedTx(orderId, "SUCCESS", 150_000L);
 
         mockMvc.perform(post("/internal/payments/refund")
+                        .header("X-Internal-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(orderId, 999_000L)))
                 .andExpect(status().isUnprocessableEntity())

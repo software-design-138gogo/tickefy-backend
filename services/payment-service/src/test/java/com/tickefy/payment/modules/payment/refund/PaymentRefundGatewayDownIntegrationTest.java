@@ -53,6 +53,7 @@ class PaymentRefundGatewayDownIntegrationTest extends BaseRefundIntegrationTest 
                 "order-" + orderId, "MOCK-" + paymentId, "GW-TXN-" + paymentId, "SUCCESS");
 
         mockMvc.perform(post("/internal/payments/refund")
+                        .header("X-Internal-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"orderId\":\"" + orderId + "\",\"refundRequestId\":\"refund-"
                                 + orderId + "\",\"amount\":150000}"))

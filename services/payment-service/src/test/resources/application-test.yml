@@ -17,6 +17,8 @@ spring:
 app:
   database:
     schema: public
+  internal:
+    token: test-internal-token
   payment:
     reconcile:
       enabled: false

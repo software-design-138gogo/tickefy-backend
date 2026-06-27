@@ -83,6 +83,7 @@ public class OutboxPublisher {
             case OrderEvents.Type.ORDER_PAID -> OrderEvents.RoutingKey.ORDER_PAID;
             case OrderEvents.Type.ORDER_PAYMENT_FAILED -> OrderEvents.RoutingKey.ORDER_PAYMENT_FAILED;
             case OrderEvents.Type.ORDER_EXPIRED -> OrderEvents.RoutingKey.ORDER_EXPIRED;
+            case OrderEvents.Type.ORDER_REFUNDED -> OrderEvents.RoutingKey.ORDER_REFUNDED;
             default -> null;
         };
     }

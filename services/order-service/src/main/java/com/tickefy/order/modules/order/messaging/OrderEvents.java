@@ -27,6 +27,7 @@ public final class OrderEvents {
         public static final String ORDER_PAID = "OrderPaid";
         public static final String ORDER_PAYMENT_FAILED = "OrderPaymentFailed";
         public static final String ORDER_EXPIRED = "OrderExpired";
+        public static final String ORDER_REFUNDED = "OrderRefunded";
 
         private Type() {}
     }
@@ -35,6 +36,7 @@ public final class OrderEvents {
         public static final String ORDER_PAID = "order.paid";
         public static final String ORDER_PAYMENT_FAILED = "order.payment.failed";
         public static final String ORDER_EXPIRED = "order.expired";
+        public static final String ORDER_REFUNDED = "order.refunded";
 
         private RoutingKey() {}
     }
@@ -92,4 +94,20 @@ public final class OrderEvents {
             List<OrderReleaseItem> items) {}
 
     public record OrderReleaseItem(String ticketTypeId, int quantity) {}
+
+    // ── Outbound: order.refunded (ENVELOPE) ─────────────────────────────────
+    public record OrderRefundedMessage(
+            String messageId,
+            String eventType,
+            String eventVersion,
+            String occurredAt,
+            OrderRefundedPayload payload) {}
+
+    public record OrderRefundedPayload(
+            String orderId,
+            String userId,
+            String concertId,
+            long refundAmount,
+            String paymentTransactionId,
+            String refundedAt) {}
 }

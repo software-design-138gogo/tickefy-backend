@@ -28,9 +28,11 @@ public class RabbitMqConfig {
 
     public static final String PAYMENT_SUCCEEDED_QUEUE = "order-service.payment-succeeded.queue";
     public static final String PAYMENT_FAILED_QUEUE = "order-service.payment-failed.queue";
+    public static final String CONCERT_CANCELLED_QUEUE = "order-service.concert-cancelled.queue";
 
     private static final String PAYMENT_SUCCEEDED_RK = "payment.succeeded";
     private static final String PAYMENT_FAILED_RK = "payment.failed";
+    private static final String CONCERT_CANCELLED_RK = "concert.cancelled";
 
     @Value("${app.messaging.exchange:tickefy.exchange}")
     private String exchangeName;
@@ -94,6 +96,44 @@ public class RabbitMqConfig {
     @Bean
     public Binding paymentFailedDlqBinding(Queue paymentFailedDlq, TopicExchange tickefyDlx) {
         return BindingBuilder.bind(paymentFailedDlq).to(tickefyDlx).with(PAYMENT_FAILED_RK + ".dlq");
+    }
+
+    // ── concert.cancelled (multi-consumer fan-out: order + inventory + notification + e-ticket) ──
+    // DLQ routing key is QUEUE-NAME-based (§6.6) — NOT rk-based — so this queue's poison messages do
+    // not pollute the other consumers' DLQs that share routing key concert.cancelled.
+    @Bean
+    public Queue concertCancelledQueue() {
+        return QueueBuilder.durable(CONCERT_CANCELLED_QUEUE)
+                .deadLetterExchange(dlxName)
+                .deadLetterRoutingKey(dlRk(CONCERT_CANCELLED_QUEUE))
+                .build();
+    }
+
+    @Bean
+    public Queue concertCancelledDlq() {
+        return QueueBuilder.durable(CONCERT_CANCELLED_QUEUE + ".dlq").build();
+    }
+
+    @Bean
+    public Binding concertCancelledBinding(Queue concertCancelledQueue, TopicExchange tickefyExchange) {
+        return BindingBuilder.bind(concertCancelledQueue).to(tickefyExchange).with(CONCERT_CANCELLED_RK);
+    }
+
+    @Bean
+    public Binding concertCancelledDlqBinding(Queue concertCancelledDlq, TopicExchange tickefyDlx) {
+        return BindingBuilder.bind(concertCancelledDlq).to(tickefyDlx).with(dlRk(CONCERT_CANCELLED_QUEUE));
+    }
+
+    /**
+     * Dead-letter routing key derived from the QUEUE NAME (§6.6: per-queue, not per-routing-key).
+     * Strips the ".queue" suffix then appends ".dlq" — mirrors inventory-service convention so a
+     * fan-out routing key (e.g. concert.cancelled) never cross-pollinates sibling DLQs.
+     */
+    private static String dlRk(String queueName) {
+        String base = queueName.endsWith(".queue")
+                ? queueName.substring(0, queueName.length() - ".queue".length())
+                : queueName;
+        return base + ".dlq";
     }
 
     // ── Converters / template / listener factory ─────────────────────────────

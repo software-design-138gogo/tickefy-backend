@@ -24,7 +24,10 @@ import org.hibernate.type.SqlTypes;
             @UniqueConstraint(name = "uq_payment_idempotency", columnNames = "idempotency_key"),
             @UniqueConstraint(
                     name = "uq_payment_gateway_txn",
-                    columnNames = "gateway_transaction_id")
+                    columnNames = "gateway_transaction_id"),
+            @UniqueConstraint(
+                    name = "uq_payment_refund_request",
+                    columnNames = "refund_request_id")
         })
 @Getter
 @Setter
@@ -64,6 +67,17 @@ public class PaymentTransaction {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "gateway_response", columnDefinition = "jsonb")
     private String gatewayResponse;
+
+    // Refund leg (mảnh [3]). refund_request_id = order-side idempotency key ("refund-"+orderId),
+    // UNIQUE (uq_payment_refund_request) → no double-refund. All nullable for pre-refund rows.
+    @Column(name = "refund_request_id", length = 100)
+    private String refundRequestId;
+
+    @Column(name = "refunded_at")
+    private Instant refundedAt;
+
+    @Column(name = "refund_gateway_ref", length = 100)
+    private String refundGatewayRef;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

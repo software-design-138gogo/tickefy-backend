@@ -18,6 +18,9 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
 
     Optional<PaymentTransaction> findByGatewayOrderId(String gatewayOrderId);
 
+    /** Refund idempotency (§10.4): replay lookup by order-side refund request id. */
+    Optional<PaymentTransaction> findByRefundRequestId(String refundRequestId);
+
     List<PaymentTransaction> findByOrderId(UUID orderId);
 
     List<PaymentTransaction> findByStatusAndCreatedAtBefore(String status, Instant before, Pageable pageable);

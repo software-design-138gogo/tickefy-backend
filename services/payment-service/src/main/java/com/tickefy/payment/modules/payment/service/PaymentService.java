@@ -9,11 +9,14 @@ import com.tickefy.payment.modules.payment.cache.PaymentIdempotencyCache;
 import com.tickefy.payment.modules.payment.dto.CallbackRequest;
 import com.tickefy.payment.modules.payment.dto.CreatePaymentRequest;
 import com.tickefy.payment.modules.payment.dto.CreatePaymentResponse;
+import com.tickefy.payment.modules.payment.dto.RefundPaymentRequest;
+import com.tickefy.payment.modules.payment.dto.RefundResponse;
 import com.tickefy.payment.modules.payment.entity.OutboxEntity;
 import com.tickefy.payment.modules.payment.entity.PaymentStatus;
 import com.tickefy.payment.modules.payment.entity.PaymentTransaction;
 import com.tickefy.payment.modules.payment.gateway.PaymentGatewayClient;
 import com.tickefy.payment.modules.payment.gateway.SePayClient.CreateQrResult;
+import com.tickefy.payment.modules.payment.gateway.SePayClient.RefundResult;
 import com.tickefy.payment.modules.payment.repository.OutboxRepository;
 import com.tickefy.payment.modules.payment.repository.PaymentTransactionRepository;
 import java.nio.charset.StandardCharsets;
@@ -22,7 +25,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -161,6 +166,108 @@ public class PaymentService {
 
         // TX2: INITIATED->PENDING + afterCommit cache -> return 201
         return paymentTxService.tx2SetPending(paymentId, req.idempotencyKey(), qr);
+    }
+
+    /**
+     * Refund a settled payment (mảnh [3]) — mirrors createTransaction TX-split (§8): gateway call
+     * OUTSIDE any TX, persistence in a short proxy-bean TX.
+     *
+     * <p>Taxonomy: 200 REFUNDED (incl. idempotent replay) / 422 REFUND_REJECTED (business decline) /
+     * 422 REFUND_AMOUNT_MISMATCH (G2) / 503 PAYMENT_GATEWAY_UNAVAILABLE (retryable) / 404 no tx /
+     * 409 tx exists but none SUCCESS. NO event published — OrderRefunded is the order worker's job.
+     */
+    public RefundResponse refund(RefundPaymentRequest req) {
+        // 1. Idempotency (§10.4): replay by refund_request_id → return existing refund, NO 2nd refund.
+        var existingRefund = txRepo.findByRefundRequestId(req.refundRequestId());
+        if (existingRefund.isPresent()) {
+            PaymentTransaction tx = existingRefund.get();
+            log.info(
+                    "Idempotent refund replay refundRequestId={} paymentId={} — no double-refund",
+                    req.refundRequestId(),
+                    tx.getId());
+            return new RefundResponse("REFUNDED", tx.getRefundGatewayRef(), tx.getId());
+        }
+
+        // 2. Lookup the settled tx (G1): SUCCESS rows for this order, newest first.
+        List<PaymentTransaction> txs = txRepo.findByOrderId(req.orderId());
+        if (txs.isEmpty()) {
+            throw new ApiException(
+                    ErrorCode.PAYMENT_NOT_FOUND,
+                    "No payment transaction for orderId=" + req.orderId(),
+                    HttpStatus.NOT_FOUND);
+        }
+        PaymentTransaction settled =
+                txs.stream()
+                        .filter(t -> PaymentStatus.SUCCESS.name().equals(t.getStatus()))
+                        .max(Comparator.comparing(PaymentTransaction::getCreatedAt))
+                        .orElse(null);
+        if (settled == null) {
+            throw new ApiException(
+                    ErrorCode.CONFLICT,
+                    "No SUCCESS transaction to refund for orderId=" + req.orderId(),
+                    HttpStatus.CONFLICT);
+        }
+
+        // 3. Amount validate (G2): refund must match the settled amount exactly.
+        if (req.amount() == null || req.amount() != settled.getAmount()) {
+            log.warn(
+                    "refund amount mismatch orderId={} paymentId={} expected={} got={}",
+                    req.orderId(),
+                    settled.getId(),
+                    settled.getAmount(),
+                    req.amount());
+            throw new ApiException(
+                    ErrorCode.REFUND_AMOUNT_MISMATCH,
+                    "Refund amount does not match settled transaction amount",
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        // 4. Gateway refund OUTSIDE any TX (CB+RL in PaymentGatewayClient proxy — cross-bean).
+        //    Retryable down/timeout → ApiException 503 surfaces from the CB fallback (tx untouched).
+        RefundResult result =
+                paymentGatewayClient.refund(
+                        settled.getGatewayTransactionId(), settled.getAmount(), req.refundRequestId());
+
+        // R1: REJECTED is a return value (NOT an exception) → map to 422, leave tx SUCCESS.
+        if ("REJECTED".equals(result.status())) {
+            log.warn(
+                    "refund REJECTED by gateway orderId={} paymentId={} reason={}",
+                    req.orderId(),
+                    settled.getId(),
+                    result.reason());
+            throw new ApiException(
+                    ErrorCode.REFUND_REJECTED,
+                    result.reason() != null ? result.reason() : "Refund rejected by gateway",
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
+
+        // 5. Persist REFUNDED in a short TX. Concurrent same-refundRequestId → UNIQUE race → replay.
+        try {
+            PaymentTransaction refunded =
+                    paymentTxService.txRefund(
+                            settled.getId(), req.refundRequestId(), result.gatewayRef());
+            log.info(
+                    "refund OK orderId={} paymentId={} gatewayRef={}",
+                    req.orderId(),
+                    refunded.getId(),
+                    refunded.getRefundGatewayRef());
+            return new RefundResponse(
+                    "REFUNDED", refunded.getRefundGatewayRef(), refunded.getId());
+        } catch (DataIntegrityViolationException race) {
+            PaymentTransaction tx =
+                    txRepo.findByRefundRequestId(req.refundRequestId())
+                            .orElseThrow(
+                                    () ->
+                                            new ApiException(
+                                                    ErrorCode.INTERNAL_SERVER_ERROR,
+                                                    "Failed to resolve refund race",
+                                                    HttpStatus.INTERNAL_SERVER_ERROR));
+            log.info(
+                    "refund race resolved (uq_payment_refund_request) refundRequestId={} paymentId={}",
+                    req.refundRequestId(),
+                    tx.getId());
+            return new RefundResponse("REFUNDED", tx.getRefundGatewayRef(), tx.getId());
+        }
     }
 
     @Transactional

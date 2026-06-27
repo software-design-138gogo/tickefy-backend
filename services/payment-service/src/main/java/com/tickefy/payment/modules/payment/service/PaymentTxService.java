@@ -295,6 +295,41 @@ public class PaymentTxService {
                 outbox.getId());
     }
 
+    /**
+     * Refund short-TX (mảnh [3]): SUCCESS → REFUNDED + persist refund columns. Gateway call already
+     * happened OUTSIDE this TX (§8). May throw DataIntegrityViolationException on
+     * uq_payment_refund_request if a concurrent refund with the same refundRequestId won the race —
+     * caller re-reads and returns the existing refund (no double-refund).
+     */
+    @Transactional
+    public PaymentTransaction txRefund(UUID paymentId, String refundRequestId, String gatewayRef) {
+        PaymentTransaction tx =
+                txRepo.findById(paymentId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                ErrorCode.INTERNAL_SERVER_ERROR,
+                                                "txRefund: payment not found paymentId=" + paymentId,
+                                                HttpStatus.INTERNAL_SERVER_ERROR));
+
+        PaymentStatus current = PaymentStatus.valueOf(tx.getStatus());
+        stateMachine.assertTransition(current, PaymentStatus.REFUNDED);
+
+        tx.setStatus(PaymentStatus.REFUNDED.name());
+        tx.setRefundRequestId(refundRequestId);
+        tx.setRefundedAt(Instant.now());
+        tx.setRefundGatewayRef(gatewayRef);
+        txRepo.save(tx);
+
+        log.info(
+                "txRefund tx={} orderId={} -> REFUNDED refundRequestId={} gatewayRef={}",
+                tx.getId(),
+                tx.getOrderId(),
+                refundRequestId,
+                gatewayRef);
+        return tx;
+    }
+
     private org.hibernate.exception.ConstraintViolationException unwrapConstraintViolation(
             DataIntegrityViolationException e) {
         Throwable cause = e.getCause();

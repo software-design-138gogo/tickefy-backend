@@ -61,6 +61,23 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
         record-exceptions:
           - com.tickefy.payment.modules.payment.gateway.PaymentGatewayException
+      sepayRefund:                                  # MỚI (G6) — refund CB riêng, refund-fail KHÔNG trip create-payment CB
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:                          # CHỈ PaymentGatewayException (REJECTED là return value, KHÔNG mở CB — R1)
+          - com.tickefy.payment.modules.payment.gateway.PaymentGatewayException
+  ratelimiter:
+    instances:
+      sepayRefund:                                  # MỚI (G5) — outbound throttle cổng refund
+        limit-for-period: 10                        # 10 req / refresh-period
+        limit-refresh-period: 1s
+        timeout-duration: 5s                        # chờ slot rồi mới fail (block thay vì reject ngay)
 
 app:
   database:

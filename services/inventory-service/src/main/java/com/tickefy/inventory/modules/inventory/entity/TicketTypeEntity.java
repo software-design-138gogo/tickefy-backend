@@ -51,6 +51,9 @@ public class TicketTypeEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "concert_cancelled", nullable = false)
+    private boolean concertCancelled;
+
     @PrePersist
     void prePersist() {
         if (id == null) {

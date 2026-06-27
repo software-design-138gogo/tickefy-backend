@@ -41,4 +41,19 @@ public final class InventoryEvents {
         @JsonIgnoreProperties(ignoreUnknown = true)
         public record Item(String ticketTypeId, int quantity) {}
     }
+
+    /**
+     * concert.cancelled (from event-service). ENVELOPE; only concertId is needed (BC4) — other
+     * envelope/payload fields (source/occurredAt/correlationId/...) are ignored.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ConcertCancelledMessage(
+            String messageId,
+            String eventType,
+            String eventVersion,
+            Payload payload) {
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public record Payload(String concertId, String cancelledAt, String reason) {}
+    }
 }

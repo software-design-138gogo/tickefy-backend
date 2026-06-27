@@ -88,12 +88,19 @@ class ReservationServiceUnitTest {
                 "saleEndAt", String.valueOf(end.toEpochMilli()));
     }
 
-    /** Common happy-path stubs: no existing reservation, valid Redis meta, stock key exists. */
+    /** Common happy-path stubs: no existing reservation, valid Redis meta, stock key exists,
+     * ticket type present and NOT cancelled (concert-cancelled guard reads it from DB). */
     private void stubHappyPathBase() {
         when(reservationRepository.findByOrderIdAndTicketTypeId(orderId, ticketTypeId))
                 .thenReturn(Optional.empty());
         when(redisService.getMeta(ticketTypeId)).thenReturn(metaMap(saleStart, saleEnd));
         when(redisService.stockKeyExists(ticketTypeId)).thenReturn(true);
+        when(ticketTypeRepository.findById(ticketTypeId)).thenReturn(Optional.of(
+                com.tickefy.inventory.modules.inventory.entity.TicketTypeEntity.builder()
+                        .id(ticketTypeId)
+                        .name("TT")
+                        .concertCancelled(false)
+                        .build()));
     }
 
     @BeforeEach
@@ -295,5 +302,34 @@ class ReservationServiceUnitTest {
         verify(redisService, never()).executeReserve(any(), any(), anyInt(), anyInt());
         verify(persistence, never()).writeReservationToDb(any(), any(), any(), anyInt(), anyInt());
         verify(persistence, times(1)).toResponse(existing, unitPrice);
+    }
+
+    // -----------------------------------------------------------------------
+    // Concert-cancelled guard (CLAUDE §6.3): cancelled ticket type -> 409 CONCERT_CANCELLED,
+    // Lua never invoked (fail-fast before stock check).
+    // -----------------------------------------------------------------------
+    @Test
+    void reserve_concertCancelled_throws_conflict_noLua() {
+        when(reservationRepository.findByOrderIdAndTicketTypeId(orderId, ticketTypeId))
+                .thenReturn(Optional.empty());
+        when(redisService.getMeta(ticketTypeId)).thenReturn(metaMap(saleStart, saleEnd));
+        when(ticketTypeRepository.findById(ticketTypeId)).thenReturn(Optional.of(
+                com.tickefy.inventory.modules.inventory.entity.TicketTypeEntity.builder()
+                        .id(ticketTypeId)
+                        .name("TT")
+                        .concertCancelled(true)
+                        .build()));
+
+        assertThatThrownBy(() -> service.reserve(new ReserveRequest(userId, ticketTypeId, orderId, 1)))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException api = (ApiException) ex;
+                    assertThat(api.getErrorCode()).isEqualTo(ErrorCode.CONCERT_CANCELLED);
+                    assertThat(api.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                });
+
+        // fail-fast: Lua + persistence must NOT run
+        verify(redisService, never()).executeReserve(any(), any(), anyInt(), anyInt());
+        verify(persistence, never()).writeReservationToDb(any(), any(), any(), anyInt(), anyInt());
     }
 }

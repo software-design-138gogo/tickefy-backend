@@ -75,6 +75,20 @@ public class TicketTypeService {
         return mapper.toResponse(entity, totalQty);
     }
 
+    /**
+     * Marks every ticket type of a cancelled concert (concert.cancelled consumer, §6.3). Separate bean
+     * from the consumer so the @Transactional proxy applies (no self-invocation, §8). Idempotent: a
+     * redelivered/re-published event re-sets the same value — final state converges.
+     *
+     * @return number of ticket-type rows matched for the concert
+     */
+    @Transactional
+    public int markConcertCancelled(UUID concertId) {
+        int marked = ticketTypeRepository.markConcertCancelled(concertId);
+        log.info("Marked concert cancelled concertId={} ticketTypesMatched={}", concertId, marked);
+        return marked;
+    }
+
     @Transactional(readOnly = true)
     public List<TicketTypeResponse> list(UUID concertId) {
         List<TicketTypeEntity> entities = ticketTypeRepository.findByConcertId(concertId);

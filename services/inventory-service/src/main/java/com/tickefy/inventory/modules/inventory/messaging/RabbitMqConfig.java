@@ -26,10 +26,12 @@ public class RabbitMqConfig {
     public static final String ORDER_PAID_QUEUE = "inventory-service.order-paid.queue";
     public static final String ORDER_PAYMENT_FAILED_QUEUE = "inventory-service.order-payment-failed.queue";
     public static final String ORDER_EXPIRED_QUEUE = "inventory-service.order-expired.queue";
+    public static final String CONCERT_CANCELLED_QUEUE = "inventory-service.concert-cancelled.queue";
 
     private static final String ORDER_PAID_RK = "order.paid";
     private static final String ORDER_PAYMENT_FAILED_RK = "order.payment.failed";
     private static final String ORDER_EXPIRED_RK = "order.expired";
+    private static final String CONCERT_CANCELLED_RK = "concert.cancelled";
 
     @Value("${app.messaging.exchange:tickefy.exchange}")
     private String exchangeName;
@@ -105,6 +107,29 @@ public class RabbitMqConfig {
     @Bean
     public Binding orderExpiredDlqBinding(Queue orderExpiredDlq, TopicExchange tickefyDlx) {
         return BindingBuilder.bind(orderExpiredDlq).to(tickefyDlx).with(dlRk(ORDER_EXPIRED_QUEUE));
+    }
+
+    // ── concert.cancelled (MULTI-consumer fan-out: order + inventory + e-ticket + notification) ──
+    // DLQ routing key is QUEUE-NAME-based (§6.6 dlRk) — NOT rk-based — so this queue's poison messages
+    // do not pollute sibling consumers' DLQs that share routing key concert.cancelled.
+    @Bean
+    public Queue concertCancelledQueue() {
+        return dlqEnabled(CONCERT_CANCELLED_QUEUE);
+    }
+
+    @Bean
+    public Queue concertCancelledDlq() {
+        return QueueBuilder.durable(CONCERT_CANCELLED_QUEUE + ".dlq").build();
+    }
+
+    @Bean
+    public Binding concertCancelledBinding(Queue concertCancelledQueue, TopicExchange tickefyExchange) {
+        return BindingBuilder.bind(concertCancelledQueue).to(tickefyExchange).with(CONCERT_CANCELLED_RK);
+    }
+
+    @Bean
+    public Binding concertCancelledDlqBinding(Queue concertCancelledDlq, TopicExchange tickefyDlx) {
+        return BindingBuilder.bind(concertCancelledDlq).to(tickefyDlx).with(dlRk(CONCERT_CANCELLED_QUEUE));
     }
 
     /**

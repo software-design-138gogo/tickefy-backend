@@ -95,6 +95,15 @@ public class ReservationService {
             throw new ApiException(ErrorCode.SALE_WINDOW_CLOSED, "Sale has ended", HttpStatus.FORBIDDEN);
         }
 
+        // Step 2.5: concert-cancelled guard (DB authoritative, fail-fast BEFORE stock check).
+        // Cancellation is NOT cached in Redis meta — emergency stop-sale must read the DB source of truth.
+        TicketTypeEntity tt = ticketTypeRepository.findById(ticketTypeId)
+                .orElseThrow(() -> new ApiException(
+                        ErrorCode.RESOURCE_NOT_FOUND, "Ticket type not found", HttpStatus.NOT_FOUND));
+        if (tt.isConcertCancelled()) {
+            throw new ApiException(ErrorCode.CONCERT_CANCELLED, "Concert has been cancelled", HttpStatus.CONFLICT);
+        }
+
         // Step 3 [M3]: ensure stock key exists, then EVALSHA
         ensureStockLoaded(ticketTypeId);
 

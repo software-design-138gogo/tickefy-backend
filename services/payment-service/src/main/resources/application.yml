@@ -82,6 +82,8 @@ resilience4j:
 app:
   database:
     schema: ${DB_SCHEMA:payment_service}
+  internal:
+    token: ${PAYMENT_INTERNAL_TOKEN:}
   payment:
     expiry: ${PAYMENT_EXPIRY:PT15M}
     provider: MOCK_SEPAY

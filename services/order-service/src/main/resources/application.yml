@@ -58,6 +58,7 @@ app:
     refund-path: ${PAYMENT_REFUND_PATH:/internal/payments/refund}
     connect-timeout: ${PAYMENT_CONNECT_TIMEOUT:PT2S}
     read-timeout: ${PAYMENT_READ_TIMEOUT:PT30S}
+    internal-token: ${PAYMENT_INTERNAL_TOKEN:}
     stub: ${PAYMENT_STUB:true}
   refund:
     worker:

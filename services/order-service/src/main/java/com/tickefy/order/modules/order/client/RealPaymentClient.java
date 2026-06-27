@@ -33,7 +33,7 @@ public class RealPaymentClient implements PaymentClient {
 
     /** Kept for focused unit tests that construct the adapter directly. */
     public RealPaymentClient(String baseUrl, String paymentPath, ObjectMapper objectMapper) {
-        this(baseUrl, paymentPath, "/internal/payments/refund", Duration.ofSeconds(2), Duration.ofSeconds(30), objectMapper);
+        this(baseUrl, paymentPath, "/internal/payments/refund", Duration.ofSeconds(2), Duration.ofSeconds(30), "", objectMapper);
     }
 
     @Autowired
@@ -43,17 +43,22 @@ public class RealPaymentClient implements PaymentClient {
             @Value("${app.payment.refund-path:/internal/payments/refund}") String refundPath,
             @Value("${app.payment.connect-timeout:PT2S}") Duration connectTimeout,
             @Value("${app.payment.read-timeout:PT30S}") Duration readTimeout,
+            @Value("${app.payment.internal-token:}") String internalToken,
             ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
         this.paymentPath = paymentPath;
         this.refundPath = refundPath;
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+        this.restClient = RestClient.builder()
+                .baseUrl(baseUrl)
+                .defaultHeader("X-Internal-Token", internalToken)
+                .build();
 
         HttpClient httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(readTimeout);
         this.refundRestClient = RestClient.builder()
                 .baseUrl(baseUrl)
+                .defaultHeader("X-Internal-Token", internalToken)
                 .requestFactory(requestFactory)
                 .build();
     }

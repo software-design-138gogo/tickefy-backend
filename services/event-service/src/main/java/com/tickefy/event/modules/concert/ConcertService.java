@@ -311,6 +311,28 @@ public class ConcertService {
         return true;
     }
 
+    public ConcertResponse updateManualIntroduction(
+            UUID id, String introduction, UUID actorId, boolean admin) {
+        Concert concert = concertRepository.findByIdWithDetails(id)
+            .orElseThrow(() -> new ApiException(
+                ErrorCode.RESOURCE_NOT_FOUND,
+                "Concert not found: " + id,
+                HttpStatus.NOT_FOUND));
+        requireManageAccess(concert, actorId, admin);
+
+        Instant now = Instant.now();
+        concert.setConcertIntroduction(introduction);
+        concert.setConcertIntroductionSourceJobId(null);
+        concert.setConcertIntroductionLanguage(null);
+        concert.setConcertIntroductionUpdatedAt(now);
+        concert.setManualIntroductionUpdatedAt(now);
+
+        Concert saved = concertRepository.save(concert);
+        concertCacheService.evict(id);
+        concertCacheService.evictList();
+        return ConcertResponse.from(saved);
+    }
+
     // --- HELPER ---
     private Concert findById(UUID id) {
         return concertRepository.findById(id)

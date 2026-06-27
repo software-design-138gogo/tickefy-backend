@@ -71,6 +71,22 @@ public class AdminConcertController {
                 requestId);
     }
 
+    @PatchMapping("/{id}/introduction")
+    public ApiResponse<ConcertResponse> updateConcertIntroduction(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateConcertIntroductionRequest body,
+            JwtAuthenticationToken authentication,
+            HttpServletRequest request) {
+        String requestId = (String) request.getAttribute(HeaderConstants.REQUEST_ID);
+        return ApiResponse.success(
+                concertService.updateManualIntroduction(
+                        id,
+                        body.concertIntroduction(),
+                        actorId(authentication),
+                        isAdmin(authentication)),
+                requestId);
+    }
+
     @GetMapping("/upload-url")
     public ApiResponse<Map<String, String>> getUploadUrl(
             @RequestParam UUID concertId,

@@ -67,6 +67,13 @@ spring:
               filters:
                 - StripPrefix=1
 
+            - id: event-service-admin-artists-route
+              uri: ${app.services.event-url}
+              predicates:
+                - Path=/api/admin/artists/**
+              filters:
+                - StripPrefix=1
+
             # =========================================================
             # Inventory Service
             # =========================================================

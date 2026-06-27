@@ -179,7 +179,7 @@ class GatewayIntegrationTest {
   }
 
   @Test
-  void shouldKeepEventRoutePathUnchanged() {
+  void shouldRewriteEventRoute() {
     webTestClient.get()
         .uri("/api/concerts")
         .exchange()
@@ -190,7 +190,31 @@ class GatewayIntegrationTest {
         .expectHeader()
         .valueEquals(
             "X-Stub-Path",
-            "/api/concerts");
+            "/concerts");
+  }
+
+  @Test
+  void shouldRewriteAdminArtistRoute() {
+    webTestClient.post()
+        .uri("/api/admin/artists")
+        .header(
+            HttpHeaders.AUTHORIZATION,
+            bearer(VALID_TOKEN))
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "name": "Tickefy Artist"
+            }
+            """)
+        .exchange()
+
+        .expectStatus()
+        .isOk()
+
+        .expectHeader()
+        .valueEquals(
+            "X-Stub-Path",
+            "/admin/artists");
   }
 
   @Test

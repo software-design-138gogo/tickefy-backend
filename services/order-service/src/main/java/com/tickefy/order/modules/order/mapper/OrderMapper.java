@@ -1,5 +1,6 @@
 package com.tickefy.order.modules.order.mapper;
 
+import com.tickefy.order.modules.order.dto.AdminOrderResponse;
 import com.tickefy.order.modules.order.dto.OrderItemResponse;
 import com.tickefy.order.modules.order.dto.OrderResponse;
 import com.tickefy.order.modules.order.entity.OrderEntity;
@@ -20,6 +21,22 @@ public class OrderMapper {
                 order.getTotalAmount(),
                 order.getPaymentUrl(),
                 order.getExpiresAt(),
+                items);
+    }
+
+    public AdminOrderResponse toAdminResponse(OrderEntity order) {
+        List<OrderItemResponse> items = order.getItems().stream()
+                .map(this::toItemResponse)
+                .toList();
+        return new AdminOrderResponse(
+                order.getId(),
+                order.getUserId(),
+                order.getConcertId(),
+                order.getStatus(),
+                order.getTotalAmount(),
+                order.getPaymentUrl(),
+                order.getExpiresAt(),
+                order.getCreatedAt(),
                 items);
     }
 

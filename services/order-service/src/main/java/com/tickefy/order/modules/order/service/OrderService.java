@@ -11,6 +11,7 @@ import com.tickefy.order.modules.order.client.PaymentResult;
 import com.tickefy.order.modules.order.client.PaymentUnavailableException;
 import com.tickefy.order.modules.order.client.ReservationResult;
 import com.tickefy.order.modules.order.client.ReserveClientRequest;
+import com.tickefy.order.modules.order.dto.AdminOrderResponse;
 import com.tickefy.order.modules.order.dto.CreateOrderRequest;
 import com.tickefy.order.modules.order.dto.OrderResponse;
 import com.tickefy.order.modules.order.entity.OrderEntity;
@@ -159,5 +160,9 @@ public class OrderService {
 
     public Page<OrderResponse> getOrdersForUser(UUID userId, Pageable pageable) {
         return orderPersistence.loadUserOrders(userId, pageable);
+    }
+
+    public Page<AdminOrderResponse> getAdminOrders(Pageable pageable) {
+        return orderPersistence.loadAdminOrders(pageable);
     }
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickefy.order.common.exception.ApiException;
 import com.tickefy.order.common.exception.ErrorCode;
+import com.tickefy.order.modules.order.dto.AdminOrderResponse;
 import com.tickefy.order.modules.order.dto.OrderResponse;
 import com.tickefy.order.modules.order.entity.OrderEntity;
 import com.tickefy.order.modules.order.entity.OrderItemEntity;
@@ -362,6 +363,12 @@ public class OrderPersistence {
     public Page<OrderResponse> loadUserOrders(UUID userId, Pageable pageable) {
         return orderRepository.findByUserId(userId, pageable)
                 .map(orderMapper::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AdminOrderResponse> loadAdminOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable)
+                .map(orderMapper::toAdminResponse);
     }
 
     /**

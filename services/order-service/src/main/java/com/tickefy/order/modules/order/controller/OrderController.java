@@ -2,6 +2,7 @@ package com.tickefy.order.modules.order.controller;
 
 import com.tickefy.order.common.constants.HeaderConstants;
 import com.tickefy.order.common.response.ApiResponse;
+import com.tickefy.order.modules.order.dto.AdminOrderResponse;
 import com.tickefy.order.modules.order.dto.CreateOrderRequest;
 import com.tickefy.order.modules.order.dto.OrderResponse;
 import com.tickefy.order.modules.order.service.OrderService;
@@ -49,6 +50,15 @@ public class OrderController {
         OrderResponse response = orderService.createOrder(req, userId, bearerToken);
         String requestId = MDC.get(HeaderConstants.REQUEST_ID);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, requestId));
+    }
+
+    @GetMapping("/orders")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Page<AdminOrderResponse>>> getAdminOrders(
+            @PageableDefault(size = 50) Pageable pageable) {
+        Page<AdminOrderResponse> page = orderService.getAdminOrders(pageable);
+        String requestId = MDC.get(HeaderConstants.REQUEST_ID);
+        return ResponseEntity.ok(ApiResponse.success(page, requestId));
     }
 
     @GetMapping("/orders/{orderId}")

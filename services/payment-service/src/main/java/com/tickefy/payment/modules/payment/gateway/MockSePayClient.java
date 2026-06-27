@@ -4,9 +4,11 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(name = "app.sepay.mode", havingValue = "mock", matchIfMissing = true)
 public class MockSePayClient implements SePayClient {
 
     private static final Logger log = LoggerFactory.getLogger(MockSePayClient.class);

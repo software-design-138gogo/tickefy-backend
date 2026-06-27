@@ -46,8 +46,22 @@ public class PaymentGatewayClient {
         return delegate.queryStatus(key);
     }
 
+    @CircuitBreaker(name = "sepay", fallbackMethod = "queryStatusFallback")
+    public QueryStatusResult queryStatus(String key, Long expectedAmount) {
+        return delegate.queryStatus(key, expectedAmount);
+    }
+
     QueryStatusResult queryStatusFallback(String key, Throwable t) {
         log.warn("SePay CB queryStatus fallback key={} cause={}", key, t.toString());
+        throw new PaymentGatewayException("queryStatus CB fallback: " + t.getMessage());
+    }
+
+    QueryStatusResult queryStatusFallback(String key, Long expectedAmount, Throwable t) {
+        log.warn(
+                "SePay CB queryStatus fallback key={} expectedAmount={} cause={}",
+                key,
+                expectedAmount,
+                t.toString());
         throw new PaymentGatewayException("queryStatus CB fallback: " + t.getMessage());
     }
 

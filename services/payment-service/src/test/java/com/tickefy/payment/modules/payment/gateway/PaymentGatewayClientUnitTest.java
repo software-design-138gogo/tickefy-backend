@@ -27,7 +27,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * AC-CB-fallback: createQrFallback throws ApiException PAYMENT_GATEWAY_UNAVAILABLE 503.

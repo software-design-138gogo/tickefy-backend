@@ -10,15 +10,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrderStateMachine {
 
-    private static final Map<OrderStatus, Set<OrderStatus>> TRANSITIONS = Map.of(
-            OrderStatus.CREATED, Set.of(OrderStatus.RESERVED, OrderStatus.CANCELLED),
-            OrderStatus.RESERVED, Set.of(OrderStatus.PAYMENT_PENDING, OrderStatus.EXPIRED, OrderStatus.CANCELLED),
-            OrderStatus.PAYMENT_PENDING, Set.of(OrderStatus.PAID, OrderStatus.PAYMENT_FAILED, OrderStatus.EXPIRED),
-            OrderStatus.PAID, Set.of(OrderStatus.REFUNDED),
-            OrderStatus.PAYMENT_FAILED, Set.of(),
-            OrderStatus.EXPIRED, Set.of(),
-            OrderStatus.CANCELLED, Set.of(),
-            OrderStatus.REFUNDED, Set.of());
+    private static final Map<OrderStatus, Set<OrderStatus>> TRANSITIONS = Map.ofEntries(
+            Map.entry(OrderStatus.CREATED, Set.of(OrderStatus.RESERVED, OrderStatus.CANCELLED)),
+            Map.entry(OrderStatus.RESERVED, Set.of(OrderStatus.PAYMENT_PENDING, OrderStatus.EXPIRED, OrderStatus.CANCELLED)),
+            Map.entry(OrderStatus.PAYMENT_PENDING, Set.of(OrderStatus.PAID, OrderStatus.PAYMENT_FAILED, OrderStatus.EXPIRED)),
+            // Refund is two-phase: PAID never refunds directly, it must pass through REFUND_PENDING.
+            Map.entry(OrderStatus.PAID, Set.of(OrderStatus.REFUND_PENDING)),
+            Map.entry(OrderStatus.REFUND_PENDING, Set.of(OrderStatus.REFUNDED, OrderStatus.REFUND_MANUAL_REVIEW)),
+            Map.entry(OrderStatus.PAYMENT_FAILED, Set.of()),
+            Map.entry(OrderStatus.EXPIRED, Set.of()),
+            Map.entry(OrderStatus.CANCELLED, Set.of()),
+            Map.entry(OrderStatus.REFUNDED, Set.of()),
+            Map.entry(OrderStatus.REFUND_MANUAL_REVIEW, Set.of()));
 
     public void assertTransition(OrderStatus from, OrderStatus to) {
         Set<OrderStatus> allowed = TRANSITIONS.getOrDefault(from, Set.of());

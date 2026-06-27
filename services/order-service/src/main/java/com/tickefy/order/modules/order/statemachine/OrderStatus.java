@@ -8,5 +8,7 @@ public enum OrderStatus {
     PAYMENT_FAILED,
     EXPIRED,
     CANCELLED,
-    REFUNDED
+    REFUNDED,
+    REFUND_PENDING,
+    REFUND_MANUAL_REVIEW
 }

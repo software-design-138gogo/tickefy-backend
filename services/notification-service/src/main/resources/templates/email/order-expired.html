@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="vi">
+<head><meta charset="UTF-8"><title>Đơn hàng đã hết hạn</title></head>
+<body style="font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <h2 style="color:#e67e22;margin-top:0">⏰ Đơn hàng đã hết hạn</h2>
+    <p>Xin chào,</p>
+    <p>Đơn hàng của bạn đã <strong>hết hạn</strong> do chưa hoàn tất thanh toán trong thời gian quy định. Vé đã được trả lại kho.</p>
+
+    <div style="background:#fdebd0;border-left:4px solid #e67e22;padding:12px 16px;margin:20px 0;border-radius:4px">
+        <p style="margin:0;color:#9c640c">
+            <strong>Mã đơn hàng:</strong> <span th:text="${orderId}">UUID</span>
+        </p>
+    </div>
+
+    <p>Bạn có thể đặt lại vé bất cứ lúc nào nếu sự kiện vẫn còn vé.</p>
+    <p style="text-align:center;margin:24px 0">
+        <a href="#" style="background:#007bff;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold">Đặt vé lại</a>
+    </p>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="color:#999;font-size:11px;text-align:center">© 2026 Tickefy. Email này được gửi tự động, vui lòng không trả lời.</p>
+</div>
+</body>
+</html>

@@ -2,6 +2,7 @@ package com.tickefy.notification.modules.notification.consumer;
 
 import com.tickefy.notification.config.RabbitMQConfig;
 import com.tickefy.notification.modules.core.entity.Notification;
+import com.tickefy.notification.modules.core.repository.ProcessedMessageRepository;
 import com.tickefy.notification.modules.notification.strategy.NotificationContext;
 import com.tickefy.notification.modules.notification.strategy.NotificationDispatcher;
 import com.tickefy.notification.shared.dto.ConcertCancelledPayload;
@@ -35,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConcertCancelledConsumer {
 
     private final NotificationDispatcher notificationDispatcher;
+    private final ProcessedMessageRepository processedMessageRepository;
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_CONCERT_CANCELLED)
     @Transactional
@@ -48,6 +50,14 @@ public class ConcertCancelledConsumer {
         if (payload == null || payload.getConcertId() == null) {
             log.warn(
                     "[ConcertCancelledConsumer] Skipping malformed message messageId={}",
+                    envelope.getMessageId());
+            return;
+        }
+
+        // F1 dedup: atomic INSERT ... ON CONFLICT DO NOTHING. rows=0 -> already processed, skip.
+        if (processedMessageRepository.tryMarkProcessed(envelope.getMessageId(), "ConcertCancelled") == 0) {
+            log.warn(
+                    "[ConcertCancelledConsumer] Already processed messageId={} — skip",
                     envelope.getMessageId());
             return;
         }

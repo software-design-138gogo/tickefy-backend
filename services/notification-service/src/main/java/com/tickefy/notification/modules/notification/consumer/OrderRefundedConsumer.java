@@ -6,8 +6,10 @@ import com.tickefy.notification.modules.core.repository.ProcessedMessageReposito
 import com.tickefy.notification.modules.notification.strategy.NotificationContext;
 import com.tickefy.notification.modules.notification.strategy.NotificationDispatcher;
 import com.tickefy.notification.shared.dto.EventEnvelope;
-import com.tickefy.notification.shared.dto.OrderPaymentFailedPayload;
+import com.tickefy.notification.shared.dto.OrderRefundedPayload;
+import java.text.NumberFormat;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,61 +19,60 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Consumes {@code OrderPaymentFailed} events from RabbitMQ.
+ * Consumes {@code OrderRefunded} events from RabbitMQ (fixes F-new1).
  *
- * <p>On each message:
- *
- * <ol>
- *   <li>Saves an in-app {@link Notification} to the database.
- *   <li>Pushes SSE real-time notification to the user.
- *   <li>Sends a payment failure warning email.
- * </ol>
- * 
- * <p>This consumer delegates all notification saving and channel delivery to the
- * {@link NotificationDispatcher} to adhere to the Strategy Pattern (OCP).
+ * <p>On each message: dedups (F1), saves an in-app {@link Notification}, and dispatches a refund
+ * confirmation email via the {@link NotificationDispatcher}. Email failures are non-fatal.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OrderPaymentFailedConsumer {
+public class OrderRefundedConsumer {
+
+    private static final String EVENT_TYPE = "OrderRefunded";
 
     private final NotificationDispatcher notificationDispatcher;
     private final ProcessedMessageRepository processedMessageRepository;
 
-    @RabbitListener(queues = RabbitMQConfig.QUEUE_ORDER_PAYMENT_FAILED)
+    @RabbitListener(queues = RabbitMQConfig.QUEUE_ORDER_REFUNDED)
     @Transactional
-    public void handle(@Payload EventEnvelope<OrderPaymentFailedPayload> envelope) {
+    public void handle(@Payload EventEnvelope<OrderRefundedPayload> envelope) {
         log.info(
-                "[OrderPaymentFailedConsumer] Received messageId={} correlationId={}",
+                "[OrderRefundedConsumer] Received messageId={} correlationId={}",
                 envelope.getMessageId(),
                 envelope.getCorrelationId());
 
-        OrderPaymentFailedPayload payload = envelope.getPayload();
+        OrderRefundedPayload payload = envelope.getPayload();
         if (payload == null || payload.getUserId() == null) {
             log.warn(
-                    "[OrderPaymentFailedConsumer] Skipping malformed message messageId={}",
+                    "[OrderRefundedConsumer] Skipping malformed message messageId={}",
                     envelope.getMessageId());
             return;
         }
 
         // F1 dedup: atomic INSERT ... ON CONFLICT DO NOTHING. rows=0 -> already processed, skip.
-        if (processedMessageRepository.tryMarkProcessed(envelope.getMessageId(), "OrderPaymentFailed") == 0) {
+        if (processedMessageRepository.tryMarkProcessed(envelope.getMessageId(), EVENT_TYPE) == 0) {
             log.warn(
-                    "[OrderPaymentFailedConsumer] Already processed messageId={} — skip",
+                    "[OrderRefundedConsumer] Already processed messageId={} — skip",
                     envelope.getMessageId());
             return;
         }
 
         // Build the in-app notification entity
+        String amount =
+                payload.getRefundAmount() != null
+                        ? NumberFormat.getInstance(new Locale("vi", "VN"))
+                                .format(payload.getRefundAmount())
+                        : "N/A";
         String content =
                 String.format(
-                        "Thanh toán cho đơn hàng #%s thất bại. Lý do: %s. Vui lòng thử lại.",
-                        payload.getOrderId(), payload.getReason());
+                        "Đơn hàng #%s đã được hoàn tiền %s VND.",
+                        payload.getOrderId(), amount);
         Notification notification =
                 Notification.builder()
                         .userId(payload.getUserId())
-                        .eventType("OrderPaymentFailed")
-                        .title("Thanh toán thất bại")
+                        .eventType(EVENT_TYPE)
+                        .title("Hoàn tiền thành công")
                         .content(content)
                         .referenceId(
                                 payload.getOrderId() != null
@@ -81,23 +82,25 @@ public class OrderPaymentFailedConsumer {
                         .channel("IN_APP")
                         .build();
 
-        // Build the email parameters
-        String emailSubject = "Tickefy \u2014 Thanh toán thất bại";
+        // Build the email parameters (matches templates/email/order-refunded.html vars)
+        String emailSubject = "Tickefy — Hoàn tiền đơn hàng";
         Map<String, Object> templateVars = new HashMap<>();
         templateVars.put("orderId", payload.getOrderId());
-        templateVars.put("reason", payload.getReason());
-        templateVars.put("failedAt", payload.getFailedAt());
+        templateVars.put("refundAmount", payload.getRefundAmount());
+        templateVars.put("currency", "VND");
+        templateVars.put("refundedAt", payload.getRefundedAt());
+        templateVars.put("reason", "Sự kiện bị hủy / hoàn tiền theo yêu cầu");
 
         String recipientEmail = "user+" + payload.getUserId() + "@mailpit.local";
 
-        // Dispatch via strategy dispatcher
-        NotificationContext context = NotificationContext.builder()
-                .notification(notification)
-                .emailSubject(emailSubject)
-                .emailTemplateName("email/order-payment-failed")
-                .templateVars(templateVars)
-                .recipientEmail(recipientEmail)
-                .build();
+        NotificationContext context =
+                NotificationContext.builder()
+                        .notification(notification)
+                        .emailSubject(emailSubject)
+                        .emailTemplateName("email/order-refunded")
+                        .templateVars(templateVars)
+                        .recipientEmail(recipientEmail)
+                        .build();
 
         notificationDispatcher.dispatch(context);
     }

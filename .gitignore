@@ -63,3 +63,5 @@ volumes/
 # Build / temp
 tmp/
 temp/
+
+.codex

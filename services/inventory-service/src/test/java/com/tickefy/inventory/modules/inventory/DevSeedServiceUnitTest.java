@@ -42,8 +42,8 @@ class DevSeedServiceUnitTest {
     private static final UUID C5 = UUID.fromString("22222222-0000-4000-8000-0000000000a2");
     private static final UUID C2 = UUID.fromString("22222222-0000-4000-8000-0000000000a3");
 
-    // 8 anchor ticket-types + 4 demo concerts × 5 zones = 28.
-    private static final int TOTAL_SEEDED = 28;
+    // 8 anchor + 4 demo × 5 + 2 sale-window × 5 = 38.
+    private static final int TOTAL_SEEDED = 38;
 
     private static UUID demoConcert(int c) {
         return UUID.fromString(String.format("c1c1c1c1-0000-4000-8000-00000000000%d", c));
@@ -89,12 +89,12 @@ class DevSeedServiceUnitTest {
         assertThat(byId.get(C5).getPerUserLimit()).isEqualTo(1);
         assertThat(byId.get(C2).getPerUserLimit()).isEqualTo(2);
 
-        // --- 4 demo concerts: 20 ticket-types total, fixed ids + concert binding ---
-        long demoCount = byId.values().stream()
+        // --- demo + sale-window concerts: 30 ticket-types (20 demo + 10 window), all c1c1c1c1 ---
+        long c1c1Count = byId.values().stream()
                 .filter(e -> e.getConcertId() != null
                         && e.getConcertId().toString().startsWith("c1c1c1c1-"))
                 .count();
-        assertThat(demoCount).isEqualTo(20);
+        assertThat(c1c1Count).isEqualTo(30);
 
         for (int c = 1; c <= 4; c++) {
             // SVIP (zone 1) → total-limit 1, GA (zone 5) → sold-out template, CAT2 (zone 4) → limit 2.
@@ -110,6 +110,23 @@ class DevSeedServiceUnitTest {
             TicketTypeEntity ga = byId.get(demoTicket(c, 5));
             assertThat(ga.getName()).isEqualTo("GA");
             assertThat(ga.getConcertId()).isEqualTo(demoConcert(c));
+        }
+
+        // --- 2 sale-window concerts (C3): each 5 zones, ticket-type window == concert window ---
+        java.time.Instant c5Start = java.time.Instant.parse("2026-08-01T00:00:00Z");
+        java.time.Instant c5End = java.time.Instant.parse("2027-06-30T00:00:00Z");
+        java.time.Instant c6Start = java.time.Instant.parse("2026-06-01T00:00:00Z");
+        java.time.Instant c6End = java.time.Instant.parse("2026-06-30T00:00:00Z");
+        for (int z = 1; z <= 5; z++) {
+            TicketTypeEntity t5 = byId.get(demoTicket(5, z));
+            assertThat(t5.getConcertId()).isEqualTo(demoConcert(5));
+            assertThat(t5.getSaleStartAt()).isEqualTo(c5Start);
+            assertThat(t5.getSaleEndAt()).isEqualTo(c5End);
+
+            TicketTypeEntity t6 = byId.get(demoTicket(6, z));
+            assertThat(t6.getConcertId()).isEqualTo(demoConcert(6));
+            assertThat(t6.getSaleStartAt()).isEqualTo(c6Start);
+            assertThat(t6.getSaleEndAt()).isEqualTo(c6End);
         }
 
         // --- inventory totals: anchor helpers (1,1,10) + every demo GA/SVIP total=1 present ---

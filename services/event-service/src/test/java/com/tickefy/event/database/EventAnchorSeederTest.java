@@ -6,6 +6,7 @@ import com.tickefy.event.modules.concert.Concert;
 import com.tickefy.event.modules.concert.ConcertRepository;
 import com.tickefy.event.modules.concert.ConcertStatus;
 import jakarta.persistence.EntityManager;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -92,7 +93,7 @@ class EventAnchorSeederTest {
     }
 
     @Test
-    void seeds_all_five_concerts_each_with_five_bare_zones_no_diamond_and_is_idempotent() {
+    void seeds_all_seven_concerts_each_with_five_bare_zones_no_diamond_and_is_idempotent() {
         EventAnchorSeeder seeder = new EventAnchorSeeder(em, concertRepository);
 
         seeder.run(null);
@@ -103,6 +104,7 @@ class EventAnchorSeederTest {
         List<UUID> ids = new java.util.ArrayList<>();
         ids.add(EventAnchorSeeder.ANCHOR_CONCERT_ID);
         EventAnchorSeeder.DEMO_CONCERTS.forEach(dc -> ids.add(dc.id()));
+        EventAnchorSeeder.SALE_WINDOW_CONCERTS.forEach(sw -> ids.add(sw.id()));
 
         for (UUID id : ids) {
             Concert c = concertRepository.findById(id).orElseThrow();
@@ -124,17 +126,32 @@ class EventAnchorSeederTest {
         assertThat(allZoneNames).noneMatch(n -> n.startsWith("Vé "));
         assertThat(allZoneNames).doesNotContain("DIAMOND");
 
-        // Second run — idempotent: still exactly 5 concerts and 25 zones (5 each).
+        // Sale-window concerts (C3): 0005 not open yet (future saleStart), 0006 closed (past saleEnd).
+        Instant nowRef = Instant.now();
+        UUID notStarted = UUID.fromString("c1c1c1c1-0000-4000-8000-000000000005");
+        UUID closed = UUID.fromString("c1c1c1c1-0000-4000-8000-000000000006");
+        Instant notStartedSaleStart = em.createQuery(
+                        "SELECT c.saleStartAt FROM Concert c WHERE c.id = :id", Instant.class)
+                .setParameter("id", notStarted)
+                .getSingleResult();
+        assertThat(notStartedSaleStart).isAfter(nowRef);
+        Instant closedSaleEnd = em.createQuery(
+                        "SELECT c.saleEndAt FROM Concert c WHERE c.id = :id", Instant.class)
+                .setParameter("id", closed)
+                .getSingleResult();
+        assertThat(closedSaleEnd).isBefore(nowRef);
+
+        // Second run — idempotent: still exactly 7 concerts and 35 zones (5 each).
         seeder.run(null);
         em.flush();
         em.clear();
 
         Long concertCount =
                 em.createQuery("SELECT count(c) FROM Concert c", Long.class).getSingleResult();
-        assertThat(concertCount).isEqualTo(5L);
+        assertThat(concertCount).isEqualTo(7L);
 
         Long zoneCount =
                 em.createQuery("SELECT count(z) FROM ConcertZone z", Long.class).getSingleResult();
-        assertThat(zoneCount).isEqualTo(25L);
+        assertThat(zoneCount).isEqualTo(35L);
     }
 }

@@ -82,6 +82,30 @@ public class DevSeedService {
     /** Demo-concert zone template row (zoneIndex feeds the fixed ticket-type UUID). */
     record DemoZone(int zoneIndex, String name, int price, int total, int perUserLimit) {}
 
+    /**
+     * Sale-window test concerts (C3, match EventAnchorSeeder c1c1c1c1-…-0005/0006). Full stock so the ONLY
+     * reserve blocker is the sale window — the ticket-type saleStartAt/saleEndAt below MUST equal the
+     * concert window (that is where inventory reserve enforces SALE_WINDOW_CLOSED). Absolute times.
+     */
+    static final List<SaleWindowConcert> SALE_WINDOW_CONCERTS = List.of(
+            new SaleWindowConcert(
+                    UUID.fromString("c1c1c1c1-0000-4000-8000-000000000005"), 5,
+                    Instant.parse("2026-08-01T00:00:00Z"), Instant.parse("2027-06-30T00:00:00Z")),
+            new SaleWindowConcert(
+                    UUID.fromString("c1c1c1c1-0000-4000-8000-000000000006"), 6,
+                    Instant.parse("2026-06-01T00:00:00Z"), Instant.parse("2026-06-30T00:00:00Z")));
+
+    /** Full-stock 5-zone template for the sale-window concerts (total=20, limit=4 — never the blocker). */
+    static final List<DemoZone> SALE_WINDOW_TEMPLATE = List.of(
+            new DemoZone(1, "SVIP", 3_500_000, 20, 4),
+            new DemoZone(2, "VIP", 2_300_000, 20, 4),
+            new DemoZone(3, "CAT1", 1_600_000, 20, 4),
+            new DemoZone(4, "CAT2", 980_000, 20, 4),
+            new DemoZone(5, "GA", 650_000, 20, 4));
+
+    /** Sale-window test concert (fixed id, concertNo feeds the ticket-type UUID, absolute window). */
+    record SaleWindowConcert(UUID concertId, int concertNo, Instant saleStart, Instant saleEnd) {}
+
     private final TicketTypeRepository ticketTypeRepository;
     private final TicketTypeInventoryRepository inventoryRepository;
     private final InventoryRedisService redisService;
@@ -126,6 +150,15 @@ public class DevSeedService {
                 SeedSpec spec = new SeedSpec(demoTicketTypeId(concertNo, z.zoneIndex()),
                         z.name(), z.price(), z.total(), z.perUserLimit());
                 results.add(seedOne(demoConcertId, spec, saleStartAt, saleEndAt));
+            }
+        }
+
+        // 2 sale-window test concerts (C3) — full stock, ticket-type window = concert window (deterministic).
+        for (SaleWindowConcert sw : SALE_WINDOW_CONCERTS) {
+            for (DemoZone z : SALE_WINDOW_TEMPLATE) {
+                SeedSpec spec = new SeedSpec(demoTicketTypeId(sw.concertNo(), z.zoneIndex()),
+                        z.name(), z.price(), z.total(), z.perUserLimit());
+                results.add(seedOne(sw.concertId(), spec, sw.saleStart(), sw.saleEnd()));
             }
         }
 

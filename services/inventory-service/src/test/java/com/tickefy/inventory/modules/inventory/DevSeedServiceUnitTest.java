@@ -28,17 +28,30 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Pure unit tests for DevSeedService (no Spring / Docker). Verifies the 5 core + 3 E2E helper
- * ticket-types are seeded with the correct per-type quota and per-user limit, and that re-running is
- * idempotent (existing ids re-sync, no re-create).
+ * Pure unit tests for DevSeedService (no Spring / Docker). Verifies the anchor 1111 (5 core + 3 E2E
+ * helper) AND the 4 demo concerts (each 5 bare zones, fixed ids, low-stock template) are seeded with the
+ * correct concert binding, quota and per-user limit, and that re-running is idempotent (existing ids
+ * re-sync, no re-create).
  */
 @Tag("unit")
 @ExtendWith(MockitoExtension.class)
 class DevSeedServiceUnitTest {
 
+    private static final UUID ANCHOR = UUID.fromString("11111111-1111-4111-8111-111111111111");
     private static final UUID C1 = UUID.fromString("22222222-0000-4000-8000-0000000000a1");
     private static final UUID C5 = UUID.fromString("22222222-0000-4000-8000-0000000000a2");
     private static final UUID C2 = UUID.fromString("22222222-0000-4000-8000-0000000000a3");
+
+    // 8 anchor ticket-types + 4 demo concerts × 5 zones = 28.
+    private static final int TOTAL_SEEDED = 28;
+
+    private static UUID demoConcert(int c) {
+        return UUID.fromString(String.format("c1c1c1c1-0000-4000-8000-00000000000%d", c));
+    }
+
+    private static UUID demoTicket(int c, int z) {
+        return UUID.fromString(String.format("dddd000%d-0000-4000-8000-00000000000%d", c, z));
+    }
 
     @Mock private TicketTypeRepository ticketTypeRepository;
     @Mock private TicketTypeInventoryRepository inventoryRepository;
@@ -52,7 +65,7 @@ class DevSeedServiceUnitTest {
     }
 
     @Test
-    void seedsFiveCorePlusThreeHelpers_withCorrectQuotaAndLimit() {
+    void seedsAnchorAndFourDemoConcerts_withFixedIdsConcertBindingQuotaAndLimit() {
         when(ticketTypeRepository.existsById(any())).thenReturn(false);
         when(ticketTypeRepository.save(any(TicketTypeEntity.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
@@ -60,33 +73,58 @@ class DevSeedServiceUnitTest {
         service.seedAll();
 
         ArgumentCaptor<TicketTypeEntity> ttCap = ArgumentCaptor.forClass(TicketTypeEntity.class);
-        verify(ticketTypeRepository, times(8)).save(ttCap.capture());
-        Map<String, TicketTypeEntity> byName = ttCap.getAllValues().stream()
-                .collect(Collectors.toMap(TicketTypeEntity::getName, Function.identity()));
+        verify(ticketTypeRepository, times(TOTAL_SEEDED)).save(ttCap.capture());
+        Map<UUID, TicketTypeEntity> byId = ttCap.getAllValues().stream()
+                .collect(Collectors.toMap(TicketTypeEntity::getId, Function.identity()));
 
-        assertThat(byName.keySet())
+        // --- anchor 1111: 5 core + 3 helpers, all bound to ANCHOR ---
+        List<String> anchorNames = byId.values().stream()
+                .filter(e -> ANCHOR.equals(e.getConcertId()))
+                .map(TicketTypeEntity::getName)
+                .toList();
+        assertThat(anchorNames)
                 .containsExactlyInAnyOrder(
                         "SVIP", "VIP", "CAT1", "CAT2", "GA", "LOWSTOCK-C1", "LOWSTOCK-C5", "LIMIT-C2");
+        assertThat(byId.get(C1).getPerUserLimit()).isEqualTo(2);
+        assertThat(byId.get(C5).getPerUserLimit()).isEqualTo(1);
+        assertThat(byId.get(C2).getPerUserLimit()).isEqualTo(2);
 
-        assertThat(byName.get("LOWSTOCK-C1").getId()).isEqualTo(C1);
-        assertThat(byName.get("LOWSTOCK-C1").getPerUserLimit()).isEqualTo(2);
-        assertThat(byName.get("LOWSTOCK-C5").getId()).isEqualTo(C5);
-        assertThat(byName.get("LOWSTOCK-C5").getPerUserLimit()).isEqualTo(1);
-        assertThat(byName.get("LIMIT-C2").getId()).isEqualTo(C2);
-        assertThat(byName.get("LIMIT-C2").getPerUserLimit()).isEqualTo(2);
+        // --- 4 demo concerts: 20 ticket-types total, fixed ids + concert binding ---
+        long demoCount = byId.values().stream()
+                .filter(e -> e.getConcertId() != null
+                        && e.getConcertId().toString().startsWith("c1c1c1c1-"))
+                .count();
+        assertThat(demoCount).isEqualTo(20);
 
+        for (int c = 1; c <= 4; c++) {
+            // SVIP (zone 1) → total-limit 1, GA (zone 5) → sold-out template, CAT2 (zone 4) → limit 2.
+            TicketTypeEntity svip = byId.get(demoTicket(c, 1));
+            assertThat(svip.getName()).isEqualTo("SVIP");
+            assertThat(svip.getConcertId()).isEqualTo(demoConcert(c));
+            assertThat(svip.getPerUserLimit()).isEqualTo(1);
+
+            TicketTypeEntity cat2 = byId.get(demoTicket(c, 4));
+            assertThat(cat2.getName()).isEqualTo("CAT2");
+            assertThat(cat2.getPerUserLimit()).isEqualTo(2);
+
+            TicketTypeEntity ga = byId.get(demoTicket(c, 5));
+            assertThat(ga.getName()).isEqualTo("GA");
+            assertThat(ga.getConcertId()).isEqualTo(demoConcert(c));
+        }
+
+        // --- inventory totals: anchor helpers (1,1,10) + every demo GA/SVIP total=1 present ---
         ArgumentCaptor<TicketTypeInventoryEntity> invCap =
                 ArgumentCaptor.forClass(TicketTypeInventoryEntity.class);
-        verify(inventoryRepository, times(8)).save(invCap.capture());
+        verify(inventoryRepository, times(TOTAL_SEEDED)).save(invCap.capture());
         List<Integer> totals = invCap.getAllValues().stream()
                 .map(TicketTypeInventoryEntity::getTotalQty)
                 .toList();
-        // helper totals present: C1=1, C5=1, C2=10
         assertThat(totals).contains(1, 1, 10);
 
-        verify(redisService).seedStock(eq(C1), eq(1));
-        verify(redisService).seedStock(eq(C5), eq(1));
-        verify(redisService).seedStock(eq(C2), eq(10));
+        // --- Redis stock seeded for sold-out demo zones (GA total=1) each concert ---
+        verify(redisService).seedStock(eq(demoTicket(1, 5)), eq(1)); // concert1 GA
+        verify(redisService).seedStock(eq(demoTicket(4, 5)), eq(1)); // concert4 GA
+        verify(redisService).seedStock(eq(demoTicket(2, 4)), eq(10)); // concert2 CAT2 total=10
     }
 
     @Test
@@ -96,8 +134,8 @@ class DevSeedServiceUnitTest {
 
         service.seedAll();
 
-        // Nothing re-created; Redis re-synced for all 8.
+        // Nothing re-created; Redis re-synced for all 28.
         verify(ticketTypeRepository, times(0)).save(any());
-        verify(redisService, times(8)).setStock(any(), anyInt());
+        verify(redisService, times(TOTAL_SEEDED)).setStock(any(), anyInt());
     }
 }

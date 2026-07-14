@@ -43,6 +43,9 @@ management:
         enabled: true
 
 app:
+  dev:
+    seed:
+      enabled: ${APP_DEV_SEED_ENABLED:false}  # dev-only E2E anchor seeder; prod image leaves unset -> off
   security:
     jwt:
       issuer: ${JWT_ISSUER:tickefy-auth-service}

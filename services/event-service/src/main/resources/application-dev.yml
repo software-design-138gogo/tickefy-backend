@@ -3,6 +3,11 @@ spring:
     activate:
       on-profile: dev
 
+app:
+  dev:
+    seed:
+      enabled: true  # local `mvnw spring-boot:run` (dev profile) -> seed E2E anchor concert 1111
+
 logging:
   level:
     root: ${LOG_LEVEL:INFO}

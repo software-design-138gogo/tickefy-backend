@@ -39,11 +39,22 @@ public class DevSeedService {
 
     /** Fixed ticket-type specs. Order = display order. Names exact (seat-map FE overlay matches by name). */
     static final List<SeedSpec> SPECS = List.of(
-            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000001"), "SVIP", 5_000_000, 50),
-            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000002"), "VIP", 3_000_000, 100),
-            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000003"), "CAT1", 1_500_000, 200),
-            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000004"), "CAT2", 1_000_000, 300),
-            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000005"), "GA", 500_000, 500));
+            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000001"), "SVIP", 5_000_000, 50, PER_USER_LIMIT),
+            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000002"), "VIP", 3_000_000, 100, PER_USER_LIMIT),
+            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000003"), "CAT1", 1_500_000, 200, PER_USER_LIMIT),
+            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000004"), "CAT2", 1_000_000, 300, PER_USER_LIMIT),
+            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-000000000005"), "GA", 500_000, 500, PER_USER_LIMIT));
+
+    /**
+     * E2E helper ticket-types on the SAME anchor concert. Low/limited stock so the FE E2E can exercise
+     * SOLD_OUT (C1), concurrent double-buy (C5), and per-user-limit (C2). Distinct names so they never
+     * clash with the 5 core seed names. NOTE: {@code total=1} types are consumed by a run — they only
+     * re-appear fresh after a volume reset (idempotent existsById does NOT top-up). Document, no auto-replenish.
+     */
+    static final List<SeedSpec> HELPER_SPECS = List.of(
+            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-0000000000a1"), "LOWSTOCK-C1", 500_000, 1, 2),
+            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-0000000000a2"), "LOWSTOCK-C5", 500_000, 1, 1),
+            new SeedSpec(UUID.fromString("22222222-0000-4000-8000-0000000000a3"), "LIMIT-C2", 500_000, 10, 2));
 
     private final TicketTypeRepository ticketTypeRepository;
     private final TicketTypeInventoryRepository inventoryRepository;
@@ -62,7 +73,7 @@ public class DevSeedService {
     public record SeedResult(UUID ticketTypeId, String name, int price, int total, int available) {}
 
     /** Fixed ticket-type spec. */
-    record SeedSpec(UUID id, String name, int price, int total) {}
+    record SeedSpec(UUID id, String name, int price, int total, int perUserLimit) {}
 
     @Transactional
     public List<SeedResult> seedAll() {
@@ -73,7 +84,7 @@ public class DevSeedService {
         Instant saleStartAt = now.minus(Duration.ofDays(1));
         Instant saleEndAt = now.plus(Duration.ofDays(365));
 
-        return SPECS.stream()
+        return java.util.stream.Stream.concat(SPECS.stream(), HELPER_SPECS.stream())
                 .map(spec -> seedOne(spec, saleStartAt, saleEndAt))
                 .toList();
     }
@@ -85,7 +96,7 @@ public class DevSeedService {
                     .map(inv -> inv.getTotalQty() - inv.getSoldQty() - inv.getReservedQty())
                     .orElse(spec.total());
             redisService.setStock(spec.id(), available);
-            redisService.seedMeta(spec.id(), PER_USER_LIMIT, spec.price(), saleStartAt, saleEndAt);
+            redisService.seedMeta(spec.id(), spec.perUserLimit(), spec.price(), saleStartAt, saleEndAt);
             log.info("Dev seed: ticket-type {} ({}) already exists, re-synced Redis available={}",
                     spec.id(), spec.name(), available);
             return new SeedResult(spec.id(), spec.name(), spec.price(), spec.total(), available);
@@ -96,7 +107,7 @@ public class DevSeedService {
                 .concertId(CONCERT_ID)
                 .name(spec.name())
                 .price(spec.price())
-                .perUserLimit(PER_USER_LIMIT)
+                .perUserLimit(spec.perUserLimit())
                 .saleStartAt(saleStartAt)
                 .saleEndAt(saleEndAt)
                 .build();
@@ -111,7 +122,7 @@ public class DevSeedService {
         inventoryRepository.save(inventory);
 
         redisService.seedStock(spec.id(), spec.total());
-        redisService.seedMeta(spec.id(), PER_USER_LIMIT, spec.price(), saleStartAt, saleEndAt);
+        redisService.seedMeta(spec.id(), spec.perUserLimit(), spec.price(), saleStartAt, saleEndAt);
 
         log.info("Dev seed: created ticket-type {} ({}) total={}", spec.id(), spec.name(), spec.total());
         return new SeedResult(spec.id(), spec.name(), spec.price(), spec.total(), spec.total());

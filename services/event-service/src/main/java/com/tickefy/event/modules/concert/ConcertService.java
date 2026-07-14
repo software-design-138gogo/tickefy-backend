@@ -1,23 +1,23 @@
 package com.tickefy.event.modules.concert;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickefy.event.common.exception.ApiException;
 import com.tickefy.event.common.exception.ErrorCode;
 import com.tickefy.event.modules.artist.Artist;
 import com.tickefy.event.modules.artist.ArtistRepository;
-import com.tickefy.event.modules.venue.Venue;
-import com.tickefy.event.modules.venue.VenueRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickefy.event.modules.outbox.OutboxEvent;
 import com.tickefy.event.modules.outbox.OutboxEventRepository;
 import com.tickefy.event.modules.outbox.ProcessedMessage;
 import com.tickefy.event.modules.outbox.ProcessedMessageRepository;
+import com.tickefy.event.modules.venue.Venue;
+import com.tickefy.event.modules.venue.VenueRepository;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.time.Instant;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -169,6 +169,34 @@ public class ConcertService {
         concert.setSaleStartAt(request.getSaleStartAt());
         concert.setSaleEndAt(request.getSaleEndAt());
 
+        // Merge zone seat-map metadata (svgElementId/seatMapUrl) by ticketTypeName.
+        // ticketTypeName is immutable (synced with inventory-service ticket_types.name) — never changed here.
+        // No add/remove/clear of zones (orphanRemoval=true would DELETE) — only mutate matched zones in place.
+        // null-skip: a null field in the request does NOT clobber the existing value.
+        if (request.getZones() != null) {
+            Map<String, ConcertZone> existingByName = concert.getZones().stream()
+                    .collect(Collectors.toMap(
+                            ConcertZone::getTicketTypeName, z -> z, (a, b) -> a));
+            for (ConcertRequest.ZoneRequest zr : request.getZones()) {
+                ConcertZone zone = existingByName.get(zr.getTicketTypeName());
+                if (zone == null) {
+                    throw new ApiException(
+                            ErrorCode.VALIDATION_ERROR,
+                            "Unknown ticketTypeName: " + zr.getTicketTypeName(),
+                            HttpStatus.BAD_REQUEST,
+                            Map.of(
+                                    "concertId", id.toString(),
+                                    "ticketTypeName", String.valueOf(zr.getTicketTypeName())));
+                }
+                if (zr.getSvgElementId() != null) {
+                    zone.setSvgElementId(zr.getSvgElementId());
+                }
+                if (zr.getSeatMapUrl() != null) {
+                    zone.setSeatMapUrl(zr.getSeatMapUrl());
+                }
+            }
+        }
+
         Concert saved = concertRepository.save(concert);
         concertCacheService.evict(id);
         concertCacheService.evictList();
@@ -187,7 +215,7 @@ public class ConcertService {
         }
         concert.setStatus(ConcertStatus.PUBLISHED);
         Concert saved = concertRepository.save(concert);
-        
+
         try {
             OutboxEvent outboxEvent = OutboxEvent.builder()
                 .id(UUID.randomUUID())
@@ -201,7 +229,7 @@ public class ConcertService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to serialize outbox event", e);
         }
-        
+
         concertCacheService.evict(id);
         concertCacheService.evictList();
         return ConcertResponse.from(saved);
@@ -221,7 +249,7 @@ public class ConcertService {
         }
         concert.setStatus(ConcertStatus.CANCELLED);
         Concert saved = concertRepository.save(concert);
-        
+
         try {
             OutboxEvent outboxEvent = OutboxEvent.builder()
                 .id(UUID.randomUUID())
@@ -239,7 +267,7 @@ public class ConcertService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to serialize outbox event", e);
         }
-        
+
         concertCacheService.evict(id);
         concertCacheService.evictList();
         return ConcertResponse.from(saved);

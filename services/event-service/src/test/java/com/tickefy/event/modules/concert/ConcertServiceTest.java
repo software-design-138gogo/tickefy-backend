@@ -1,11 +1,14 @@
 package com.tickefy.event.modules.concert;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tickefy.event.common.exception.ApiException;
 import com.tickefy.event.modules.artist.ArtistRepository;
 import com.tickefy.event.modules.outbox.OutboxEvent;
 import com.tickefy.event.modules.outbox.OutboxEventRepository;
@@ -73,8 +76,9 @@ class ConcertServiceTest {
 
         Venue mockVenue = new Venue();
         ReflectionTestUtils.setField(mockVenue, "id", request.getVenueId());
-        
-        when(concertRepository.save(any(Concert.class))).thenReturn(mockConcert);
+
+        // lenient: the unknown-ticketTypeName test throws before save() is reached.
+        lenient().when(concertRepository.save(any(Concert.class))).thenReturn(mockConcert);
     }
 
     @Test
@@ -131,5 +135,106 @@ class ConcertServiceTest {
         verify(outboxEventRepository).save(any(OutboxEvent.class));
         verify(concertCacheService).evict(concertId);
         verify(concertCacheService).evictList();
+    }
+
+    // ── Zone seat-map merge (updateConcert) ──────────────────────────────────
+
+    private ConcertZone zone(String ticketTypeName, String zoneName, String svg, String url) {
+        ConcertZone z = new ConcertZone();
+        z.setTicketTypeName(ticketTypeName);
+        z.setZoneName(zoneName);
+        z.setSvgElementId(svg);
+        z.setSeatMapUrl(url);
+        return z;
+    }
+
+    private ConcertRequest.ZoneRequest reqZone(String ticketTypeName, String svg, String url) {
+        ConcertRequest.ZoneRequest zr = new ConcertRequest.ZoneRequest();
+        zr.setTicketTypeName(ticketTypeName);
+        zr.setSvgElementId(svg);
+        zr.setSeatMapUrl(url);
+        return zr;
+    }
+
+    private void stubUpdate() {
+        Venue v = new Venue();
+        ReflectionTestUtils.setField(v, "id", request.getVenueId());
+        when(venueRepository.findById(request.getVenueId())).thenReturn(Optional.of(v));
+        when(concertRepository.findByIdWithDetails(concertId)).thenReturn(Optional.of(mockConcert));
+    }
+
+    private ConcertZone zoneNamed(String ticketTypeName) {
+        return mockConcert.getZones().stream()
+                .filter(z -> z.getTicketTypeName().equals(ticketTypeName))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    @Test
+    void updateConcert_appliesZoneSeatmapByName() {
+        stubUpdate();
+        mockConcert.getZones().add(zone("SVIP", "SVIP Zone", null, null));
+        mockConcert.getZones().add(zone("GA", "General Admission", null, null));
+        request.setZones(List.of(reqZone("SVIP", "zone-svip", "http://mnio/svip.svg")));
+
+        concertService.updateConcert(concertId, request, userId, false);
+
+        assertThat(zoneNamed("SVIP").getSvgElementId()).isEqualTo("zone-svip");
+        assertThat(zoneNamed("SVIP").getSeatMapUrl()).isEqualTo("http://mnio/svip.svg");
+        assertThat(zoneNamed("SVIP").getTicketTypeName()).isEqualTo("SVIP"); // immutable
+        // Zone not in request untouched.
+        assertThat(zoneNamed("GA").getSvgElementId()).isNull();
+        assertThat(zoneNamed("GA").getSeatMapUrl()).isNull();
+    }
+
+    @Test
+    void updateConcert_unknownTicketTypeName_throwsBadRequest() {
+        stubUpdate();
+        mockConcert.getZones().add(zone("SVIP", "SVIP Zone", null, null));
+        request.setZones(List.of(reqZone("NOPE", "x", "y")));
+
+        assertThatThrownBy(() -> concertService.updateConcert(concertId, request, userId, false))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("Unknown ticketTypeName");
+        verify(concertRepository, org.mockito.Mockito.never()).save(any(Concert.class));
+    }
+
+    @Test
+    void updateConcert_partialZones_keepsOthers() {
+        stubUpdate();
+        mockConcert.getZones().add(zone("SVIP", "SVIP Zone", null, null));
+        mockConcert.getZones().add(zone("VIP", "VIP Zone", null, null));
+        mockConcert.getZones().add(zone("GA", "General Admission", null, null));
+        request.setZones(List.of(reqZone("SVIP", "svip", "url")));
+
+        concertService.updateConcert(concertId, request, userId, false);
+
+        assertThat(mockConcert.getZones()).hasSize(3); // orphanRemoval NOT triggered
+        assertThat(zoneNamed("VIP").getSvgElementId()).isNull();
+        assertThat(zoneNamed("GA").getSvgElementId()).isNull();
+    }
+
+    @Test
+    void updateConcert_nullSeatmapFields_doesNotClobber() {
+        stubUpdate();
+        mockConcert.getZones().add(zone("SVIP", "SVIP Zone", "old-svg", "http://old"));
+        request.setZones(List.of(reqZone("SVIP", null, null))); // null-skip
+
+        concertService.updateConcert(concertId, request, userId, false);
+
+        assertThat(zoneNamed("SVIP").getSvgElementId()).isEqualTo("old-svg");
+        assertThat(zoneNamed("SVIP").getSeatMapUrl()).isEqualTo("http://old");
+    }
+
+    @Test
+    void updateConcert_nullZones_keepsExisting() {
+        stubUpdate();
+        mockConcert.getZones().add(zone("SVIP", "SVIP Zone", "svg", "url"));
+        request.setZones(null);
+
+        concertService.updateConcert(concertId, request, userId, false);
+
+        assertThat(mockConcert.getZones()).hasSize(1);
+        assertThat(zoneNamed("SVIP").getSvgElementId()).isEqualTo("svg");
     }
 }

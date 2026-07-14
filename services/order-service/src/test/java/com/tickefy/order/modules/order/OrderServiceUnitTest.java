@@ -10,13 +10,12 @@ import static org.mockito.Mockito.when;
 
 import com.tickefy.order.common.exception.ApiException;
 import com.tickefy.order.common.exception.ErrorCode;
+import com.tickefy.order.modules.order.client.CreatePaymentCommand;
 import com.tickefy.order.modules.order.client.InventoryBusinessException;
 import com.tickefy.order.modules.order.client.InventoryClient;
 import com.tickefy.order.modules.order.client.InventoryUnavailableException;
-import com.tickefy.order.modules.order.client.CreatePaymentCommand;
 import com.tickefy.order.modules.order.client.PaymentClient;
 import com.tickefy.order.modules.order.client.PaymentResult;
-import com.tickefy.order.modules.order.client.PaymentUnavailableException;
 import com.tickefy.order.modules.order.client.ReservationResult;
 import com.tickefy.order.modules.order.client.ReserveClientRequest;
 import com.tickefy.order.modules.order.dto.CreateOrderRequest;
@@ -222,7 +221,7 @@ class OrderServiceUnitTest {
         when(orderRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.of(pendingOrder));
 
         OrderResponse expectedResponse = new OrderResponse(
-                pendingOrder.getId(), OrderStatus.PAYMENT_PENDING.name(), 50000L, "https://pay.stub", null, List.of());
+                pendingOrder.getId(), CONCERT_ID, OrderStatus.PAYMENT_PENDING.name(), 50000L, "https://pay.stub", null, List.of());
         when(orderPersistence.loadResponseAfterCreate(pendingOrder.getId())).thenReturn(expectedResponse);
 
         OrderResponse result = orderService.createOrder(req, USER_ID, BEARER);
@@ -254,7 +253,7 @@ class OrderServiceUnitTest {
         when(orderRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.of(paidOrder));
 
         OrderResponse expectedResponse = new OrderResponse(
-                paidOrder.getId(), OrderStatus.PAID.name(), 50000L, null, null, List.of());
+                paidOrder.getId(), CONCERT_ID, OrderStatus.PAID.name(), 50000L, null, null, List.of());
         when(orderPersistence.loadResponseAfterCreate(paidOrder.getId())).thenReturn(expectedResponse);
 
         OrderResponse result = orderService.createOrder(req, USER_ID, BEARER);
@@ -325,7 +324,7 @@ class OrderServiceUnitTest {
                 .thenReturn(pendingEntity);
 
         OrderResponse expectedResponse = new OrderResponse(
-                existingOrderId, OrderStatus.PAYMENT_PENDING.name(), 50000L, "https://pay.stub/tx-123", null, List.of());
+                existingOrderId, CONCERT_ID, OrderStatus.PAYMENT_PENDING.name(), 50000L, "https://pay.stub/tx-123", null, List.of());
         when(orderPersistence.loadResponseAfterCreate(existingOrderId)).thenReturn(expectedResponse);
 
         OrderResponse result = orderService.createOrder(req, USER_ID, BEARER);
@@ -383,7 +382,7 @@ class OrderServiceUnitTest {
                 .thenReturn(pendingEntity);
 
         OrderResponse expectedResponse = new OrderResponse(
-                existingOrderId, OrderStatus.PAYMENT_PENDING.name(), 50000L, "https://pay.stub/tx-456", null, List.of());
+                existingOrderId, CONCERT_ID, OrderStatus.PAYMENT_PENDING.name(), 50000L, "https://pay.stub/tx-456", null, List.of());
         when(orderPersistence.loadResponseAfterCreate(existingOrderId)).thenReturn(expectedResponse);
 
         OrderResponse result = orderService.createOrder(req, USER_ID, BEARER);

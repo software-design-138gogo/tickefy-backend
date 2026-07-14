@@ -16,8 +16,6 @@ import com.tickefy.order.modules.order.client.InventoryClient;
 import com.tickefy.order.modules.order.client.PaymentClient;
 import com.tickefy.order.modules.order.client.PaymentResult;
 import com.tickefy.order.modules.order.client.PaymentUnavailableException;
-import com.tickefy.order.modules.order.client.ReservationResult;
-import com.tickefy.order.modules.order.client.ReserveClientRequest;
 import com.tickefy.order.modules.order.dto.CreateOrderRequest;
 import com.tickefy.order.modules.order.dto.OrderResponse;
 import com.tickefy.order.modules.order.entity.OrderEntity;
@@ -151,7 +149,7 @@ class OrderServicePaymentUnitTest {
                 .thenReturn(pendingEntity);
 
         OrderResponse expectedResponse = new OrderResponse(
-                ORDER_ID, OrderStatus.PAYMENT_PENDING.name(), TOTAL_AMOUNT,
+                ORDER_ID, CONCERT_ID, OrderStatus.PAYMENT_PENDING.name(), TOTAL_AMOUNT,
                 "https://pay.example.com/txn-happy-001", null, List.of());
         when(orderPersistence.loadResponseAfterCreate(ORDER_ID)).thenReturn(expectedResponse);
 
@@ -194,7 +192,7 @@ class OrderServicePaymentUnitTest {
                 .build();
         when(orderPersistence.markPaymentPending(any(), any(), any())).thenReturn(pendingEntity);
         when(orderPersistence.loadResponseAfterCreate(ORDER_ID)).thenReturn(
-                new OrderResponse(ORDER_ID, OrderStatus.PAYMENT_PENDING.name(), TOTAL_AMOUNT, null, null, List.of()));
+                new OrderResponse(ORDER_ID, CONCERT_ID, OrderStatus.PAYMENT_PENDING.name(), TOTAL_AMOUNT, null, null, List.of()));
 
         orderService.createOrder(req, USER_ID, BEARER);
 

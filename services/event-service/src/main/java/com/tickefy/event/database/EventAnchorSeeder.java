@@ -98,6 +98,28 @@ public class EventAnchorSeeder implements ApplicationRunner {
     /** Demo concert spec (fixed id, title, description, venue, eventDate offset in days from now). */
     record DemoConcert(UUID id, String title, String description, UUID venueId, int eventDaysAhead) {}
 
+    /**
+     * Sale-window test concerts (C3 SALE_WINDOW_CLOSED). PUBLISHED with full stock so the ONLY blocker is
+     * the sale window: 0005 has a FUTURE saleStart (not open yet), 0006 has a PAST saleEnd (already
+     * closed). Windows are ABSOLUTE (not now-relative) so open/closed stays deterministic across runs.
+     */
+    static final List<SaleWindowConcert> SALE_WINDOW_CONCERTS = List.of(
+            new SaleWindowConcert(
+                    UUID.fromString("c1c1c1c1-0000-4000-8000-000000000005"),
+                    "E2E Sale-NotStarted Concert",
+                    Instant.parse("2026-08-01T00:00:00Z"),
+                    Instant.parse("2027-06-30T00:00:00Z"),
+                    Instant.parse("2026-09-15T12:00:00Z")),
+            new SaleWindowConcert(
+                    UUID.fromString("c1c1c1c1-0000-4000-8000-000000000006"),
+                    "E2E Sale-Closed Concert",
+                    Instant.parse("2026-06-01T00:00:00Z"),
+                    Instant.parse("2026-06-30T00:00:00Z"),
+                    Instant.parse("2026-09-01T12:00:00Z")));
+
+    /** Sale-window test concert with absolute sale window + event date. Reuses venue {@link #VENUE_QK7}. */
+    record SaleWindowConcert(UUID id, String title, Instant saleStart, Instant saleEnd, Instant eventDate) {}
+
     private final EntityManager em;
     private final ConcertRepository concertRepository;
 
@@ -141,6 +163,19 @@ public class EventAnchorSeeder implements ApplicationRunner {
             OffsetDateTime eventDate = now.plusDays(dc.eventDaysAhead());
             insertConcertWithZonesIfMissing(
                     dc.id(), dc.title(), dc.description(), saleStart, demoSaleEnd, eventDate, dc.venueId(), now);
+        }
+
+        // 2 sale-window test concerts (C3) — full stock, only blocker is the window. Absolute times.
+        for (SaleWindowConcert sw : SALE_WINDOW_CONCERTS) {
+            insertConcertWithZonesIfMissing(
+                    sw.id(),
+                    sw.title(),
+                    "E2E sale-window test concert (dev seed).",
+                    OffsetDateTime.ofInstant(sw.saleStart(), ZoneOffset.UTC),
+                    OffsetDateTime.ofInstant(sw.saleEnd(), ZoneOffset.UTC),
+                    OffsetDateTime.ofInstant(sw.eventDate(), ZoneOffset.UTC),
+                    VENUE_QK7,
+                    now);
         }
     }
 

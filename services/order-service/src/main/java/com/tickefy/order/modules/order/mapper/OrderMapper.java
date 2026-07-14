@@ -17,6 +17,7 @@ public class OrderMapper {
                 .toList();
         return new OrderResponse(
                 order.getId(),
+                order.getConcertId(),
                 order.getStatus(),
                 order.getTotalAmount(),
                 order.getPaymentUrl(),
@@ -43,6 +44,7 @@ public class OrderMapper {
     public OrderItemResponse toItemResponse(OrderItemEntity item) {
         return new OrderItemResponse(
                 item.getTicketTypeId(),
+                item.getTicketTypeName(),
                 item.getQuantity(),
                 item.getUnitPrice());
     }

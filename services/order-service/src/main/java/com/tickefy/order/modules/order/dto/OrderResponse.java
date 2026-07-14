@@ -6,6 +6,7 @@ import java.util.UUID;
 
 public record OrderResponse(
         UUID orderId,
+        UUID concertId,
         String status,
         long totalAmount,
         String paymentUrl,

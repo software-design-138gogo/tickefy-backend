@@ -14,36 +14,54 @@ import org.springframework.test.context.TestPropertySource;
 
 /**
  * TestCustomerSeeder is dev-gated (app.dev.seed.enabled). This test enables it so the seeder auto-runs
- * at context startup, then verifies the 2 fixed AUDIENCE customers exist with a real bcrypt hash and
- * that re-running is idempotent (no duplicate).
+ * at context startup, then verifies all 4 fixed accounts (2 E2E AUDIENCE customers + 2 personal dev
+ * accounts, one AUDIENCE + one ADMIN) exist with real bcrypt hashes, correct roles, and that
+ * re-running is idempotent (no duplicate).
  */
 @TestPropertySource(properties = "app.dev.seed.enabled=true")
 class TestCustomerSeederTest extends BaseIntegrationTest {
 
-    private static final String EMAIL1 = "e2e.customer1@tickefy.local";
-    private static final String EMAIL2 = "e2e.customer2@tickefy.local";
-    private static final String PASSWORD = "Customer@12345";
+    private static final String CUSTOMER1 = "e2e.customer1@tickefy.local";
+    private static final String CUSTOMER2 = "e2e.customer2@tickefy.local";
+    private static final String PERSONAL_AUDIENCE = "tanhiep24135@gmail.com";
+    private static final String PERSONAL_ADMIN = "hiepvip22@gmail.com";
+    private static final String CUSTOMER_PASSWORD = "Customer@12345";
+    private static final String PERSONAL_PASSWORD = "Hiep@12345";
 
     @Autowired private TestCustomerSeeder seeder;
     @Autowired private UserRepository userRepository;
     @Autowired private PasswordEncoder passwordEncoder;
 
     @Test
-    void seedsTwoAudienceCustomers_realHash_idempotent() {
-        // Seeder already auto-ran at startup. Verify both accounts.
-        assertThat(userRepository.existsByEmail(EMAIL1)).isTrue();
-        assertThat(userRepository.existsByEmail(EMAIL2)).isTrue();
+    void seedsAllFourAccounts_correctRoles_realHash_idempotent() {
+        // Seeder already auto-ran at startup. All 4 accounts present.
+        for (String email : new String[] {CUSTOMER1, CUSTOMER2, PERSONAL_AUDIENCE, PERSONAL_ADMIN}) {
+            assertThat(userRepository.existsByEmail(email)).as("account %s", email).isTrue();
+        }
 
-        UserEntity c1 = userRepository.findByEmail(EMAIL1).orElseThrow();
+        // Generic customer: AUDIENCE + real hash.
+        UserEntity c1 = userRepository.findByEmail(CUSTOMER1).orElseThrow();
         assertThat(c1.getRoles()).extracting(RoleEntity::getCode).contains("AUDIENCE");
-        assertThat(c1.getPasswordHash()).isNotEqualTo(PASSWORD); // stored hashed, not raw
-        assertThat(passwordEncoder.matches(PASSWORD, c1.getPasswordHash())).isTrue();
+        assertThat(passwordEncoder.matches(CUSTOMER_PASSWORD, c1.getPasswordHash())).isTrue();
 
-        // Re-run — idempotent guard, no second row.
+        // Personal AUDIENCE account.
+        UserEntity pa = userRepository.findByEmail(PERSONAL_AUDIENCE).orElseThrow();
+        assertThat(pa.getRoles()).extracting(RoleEntity::getCode).containsExactly("AUDIENCE");
+        assertThat(pa.getPasswordHash()).isNotEqualTo(PERSONAL_PASSWORD); // stored hashed, not raw
+        assertThat(passwordEncoder.matches(PERSONAL_PASSWORD, pa.getPasswordHash())).isTrue();
+
+        // Personal ADMIN account — role must be ADMIN.
+        UserEntity admin = userRepository.findByEmail(PERSONAL_ADMIN).orElseThrow();
+        assertThat(admin.getRoles()).extracting(RoleEntity::getCode).contains("ADMIN");
+        assertThat(passwordEncoder.matches(PERSONAL_PASSWORD, admin.getPasswordHash())).isTrue();
+
+        // Re-run — idempotent guard, no duplicates for any account.
         seeder.run(null);
-        long c1Count = userRepository.findAll().stream()
-                .filter(u -> EMAIL1.equals(u.getEmail()))
-                .count();
-        assertThat(c1Count).isEqualTo(1L);
+        for (String email : new String[] {CUSTOMER1, CUSTOMER2, PERSONAL_AUDIENCE, PERSONAL_ADMIN}) {
+            long count = userRepository.findAll().stream()
+                    .filter(u -> email.equals(u.getEmail()))
+                    .count();
+            assertThat(count).as("no duplicate for %s", email).isEqualTo(1L);
+        }
     }
 }

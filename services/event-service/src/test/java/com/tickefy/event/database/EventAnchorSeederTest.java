@@ -7,6 +7,7 @@ import com.tickefy.event.modules.concert.ConcertRepository;
 import com.tickefy.event.modules.concert.ConcertStatus;
 import jakarta.persistence.EntityManager;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -88,5 +89,52 @@ class EventAnchorSeederTest {
                 .setParameter("cid", EventAnchorSeeder.ANCHOR_CONCERT_ID)
                 .getSingleResult();
         assertThat(zoneCount).isEqualTo(5L);
+    }
+
+    @Test
+    void seeds_all_five_concerts_each_with_five_bare_zones_no_diamond_and_is_idempotent() {
+        EventAnchorSeeder seeder = new EventAnchorSeeder(em, concertRepository);
+
+        seeder.run(null);
+        em.flush();
+        em.clear();
+
+        // Every fixed concert id present, PUBLISHED, venue linked, exactly the 5 bare zones.
+        List<UUID> ids = new java.util.ArrayList<>();
+        ids.add(EventAnchorSeeder.ANCHOR_CONCERT_ID);
+        EventAnchorSeeder.DEMO_CONCERTS.forEach(dc -> ids.add(dc.id()));
+
+        for (UUID id : ids) {
+            Concert c = concertRepository.findById(id).orElseThrow();
+            assertThat(c.getStatus()).isEqualTo(ConcertStatus.PUBLISHED);
+            assertThat(c.getVenue()).isNotNull();
+
+            List<String> zoneNames = em.createQuery(
+                            "SELECT z.ticketTypeName FROM ConcertZone z WHERE z.concert.id = :cid",
+                            String.class)
+                    .setParameter("cid", id)
+                    .getResultList();
+            assertThat(zoneNames).containsExactlyInAnyOrder("SVIP", "VIP", "CAT1", "CAT2", "GA");
+        }
+
+        // No "Vé " prefix and no DIAMOND anywhere.
+        List<String> allZoneNames = em.createQuery(
+                        "SELECT z.ticketTypeName FROM ConcertZone z", String.class)
+                .getResultList();
+        assertThat(allZoneNames).noneMatch(n -> n.startsWith("Vé "));
+        assertThat(allZoneNames).doesNotContain("DIAMOND");
+
+        // Second run — idempotent: still exactly 5 concerts and 25 zones (5 each).
+        seeder.run(null);
+        em.flush();
+        em.clear();
+
+        Long concertCount =
+                em.createQuery("SELECT count(c) FROM Concert c", Long.class).getSingleResult();
+        assertThat(concertCount).isEqualTo(5L);
+
+        Long zoneCount =
+                em.createQuery("SELECT count(z) FROM ConcertZone z", Long.class).getSingleResult();
+        assertThat(zoneCount).isEqualTo(25L);
     }
 }

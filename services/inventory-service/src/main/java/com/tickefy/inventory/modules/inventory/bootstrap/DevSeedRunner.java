@@ -39,14 +39,13 @@ public class DevSeedRunner implements ApplicationRunner {
 
     private void printSummary(List<SeedResult> results) {
         StringBuilder sb = new StringBuilder();
-        sb.append("\n========== DEV INVENTORY SEED (FE anchor) ==========\n");
-        sb.append("concertId = ").append(DevSeedService.CONCERT_ID).append('\n');
-        sb.append(String.format("%-38s | %-5s | %9s | %5s | %9s%n",
-                "ticketTypeId", "name", "price", "total", "available"));
-        sb.append("-".repeat(80)).append('\n');
+        sb.append("\n========== DEV INVENTORY SEED (FE anchors) ==========\n");
+        sb.append(String.format("%-38s | %-38s | %-12s | %9s | %5s | %9s%n",
+                "concertId", "ticketTypeId", "name", "price", "total", "available"));
+        sb.append("-".repeat(122)).append('\n');
         for (SeedResult r : results) {
-            sb.append(String.format("%-38s | %-5s | %9d | %5d | %9d%n",
-                    r.ticketTypeId(), r.name(), r.price(), r.total(), r.available()));
+            sb.append(String.format("%-38s | %-38s | %-12s | %9d | %5d | %9d%n",
+                    r.concertId(), r.ticketTypeId(), r.name(), r.price(), r.total(), r.available()));
         }
         sb.append("====================================================");
         log.info(sb.toString());

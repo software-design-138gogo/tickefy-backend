@@ -72,7 +72,8 @@ public class TicketTypeService {
         redisService.seedMeta(ttId, req.perUserLimit(), req.price(), req.saleStartAt(), req.saleEndAt());
 
         log.info("Created ticket type id={} concertId={} totalQty={}", ttId, concertId, totalQty);
-        return mapper.toResponse(entity, totalQty);
+        // Fresh ticket type: nothing sold/reserved yet, so available == total.
+        return mapper.toResponse(entity, totalQty, totalQty, 0, 0);
     }
 
     /**
@@ -95,7 +96,13 @@ public class TicketTypeService {
         return entities.stream()
                 .map(e -> {
                     Integer available = resolveAvailable(e.getId());
-                    return mapper.toResponse(e, available);
+                    // total/sold/reserved from Postgres (ticket_type_inventory). null-safe if row missing.
+                    TicketTypeInventoryEntity inv =
+                            inventoryRepository.findByTicketTypeId(e.getId()).orElse(null);
+                    Integer total = inv != null ? inv.getTotalQty() : null;
+                    Integer sold = inv != null ? inv.getSoldQty() : null;
+                    Integer reserved = inv != null ? inv.getReservedQty() : null;
+                    return mapper.toResponse(e, available, total, sold, reserved);
                 })
                 .toList();
     }

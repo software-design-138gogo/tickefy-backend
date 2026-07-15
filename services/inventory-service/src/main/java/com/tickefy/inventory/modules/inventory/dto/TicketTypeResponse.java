@@ -10,6 +10,9 @@ public record TicketTypeResponse(
         Integer price,
         Integer perUserLimit,
         Integer available,
+        Integer total,
+        Integer sold,
+        Integer reserved,
         Instant saleStartAt,
         Instant saleEndAt,
         String status) {}

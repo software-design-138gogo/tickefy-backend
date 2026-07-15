@@ -21,7 +21,14 @@ public class TicketTypeMapper {
         return "ON_SALE";
     }
 
-    public TicketTypeResponse toResponse(TicketTypeEntity entity, Integer available) {
+    /**
+     * @param available live count from Redis (unchanged source of truth for realtime stock)
+     * @param total/sold/reserved Postgres counters from ticket_type_inventory (may be null if the
+     *     inventory row is missing). NOTE mixed source: available=Redis, total/sold/reserved=Postgres —
+     *     transient drift is possible (see REPORT). sold_qty is authoritative for "đã bán".
+     */
+    public TicketTypeResponse toResponse(
+            TicketTypeEntity entity, Integer available, Integer total, Integer sold, Integer reserved) {
         return new TicketTypeResponse(
                 entity.getId(),
                 entity.getConcertId(),
@@ -29,6 +36,9 @@ public class TicketTypeMapper {
                 entity.getPrice(),
                 entity.getPerUserLimit(),
                 available,
+                total,
+                sold,
+                reserved,
                 entity.getSaleStartAt(),
                 entity.getSaleEndAt(),
                 computeStatus(entity.getSaleStartAt(), entity.getSaleEndAt()));

@@ -12,8 +12,9 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickefy.order.modules.order.client.CreatePaymentCommand;
-import com.tickefy.order.modules.order.client.PaymentResult;
+import com.tickefy.order.modules.order.client.PaymentDefinitivelyUnavailableException;
 import com.tickefy.order.modules.order.client.PaymentRefundException;
+import com.tickefy.order.modules.order.client.PaymentResult;
 import com.tickefy.order.modules.order.client.PaymentUnavailableException;
 import com.tickefy.order.modules.order.client.RealPaymentClient;
 import com.tickefy.order.modules.order.client.RefundRequest;
@@ -227,8 +228,10 @@ class RealPaymentClientUnitTest {
         CreatePaymentCommand cmd = new CreatePaymentCommand(
                 ORDER_ID, USER_ID, AMOUNT, "VND", "order-" + ORDER_ID);
 
+        // 5xx is AMBIGUOUS (request reached the server) → plain, NOT the definitive subclass.
         assertThatThrownBy(() -> client.createTransaction(cmd, BEARER_TOKEN))
-                .isInstanceOf(PaymentUnavailableException.class);
+                .isInstanceOf(PaymentUnavailableException.class)
+                .isNotInstanceOf(PaymentDefinitivelyUnavailableException.class);
 
         mockServer.verify();
     }
@@ -247,8 +250,10 @@ class RealPaymentClientUnitTest {
         CreatePaymentCommand cmd = new CreatePaymentCommand(
                 ORDER_ID, USER_ID, AMOUNT, "VND", "order-" + ORDER_ID);
 
+        // 4xx is AMBIGUOUS at this layer (request reached the server) → plain, NOT definitive.
         assertThatThrownBy(() -> client.createTransaction(cmd, BEARER_TOKEN))
                 .isInstanceOf(PaymentUnavailableException.class)
+                .isNotInstanceOf(PaymentDefinitivelyUnavailableException.class)
                 .as("4xx from payment must throw PaymentUnavailableException, not a business exception");
 
         mockServer.verify();
@@ -309,8 +314,9 @@ class RealPaymentClientUnitTest {
         CreatePaymentCommand cmd = new CreatePaymentCommand(
                 ORDER_ID, USER_ID, AMOUNT, "VND", "order-" + ORDER_ID);
 
+        // Connection refused = DEFINITIVE (request never reached the server, no payment created).
         assertThatThrownBy(() -> deadClient.createTransaction(cmd, BEARER_TOKEN))
-                .isInstanceOf(PaymentUnavailableException.class);
+                .isInstanceOf(PaymentDefinitivelyUnavailableException.class);
     }
 
     // -----------------------------------------------------------------------

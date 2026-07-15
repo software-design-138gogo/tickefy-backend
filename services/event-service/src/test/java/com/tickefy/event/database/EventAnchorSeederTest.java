@@ -55,7 +55,8 @@ class EventAnchorSeederTest {
 
     @Test
     void seeds_anchor_concert_with_bare_zone_names_and_is_idempotent() {
-        EventAnchorSeeder seeder = new EventAnchorSeeder(em, concertRepository);
+        EventAnchorSeeder seeder =
+                new EventAnchorSeeder(em, concertRepository, EventAnchorSeeder.DEFAULT_SEED_ORGANIZER_ID);
 
         seeder.run(null);
         em.flush();
@@ -94,7 +95,8 @@ class EventAnchorSeederTest {
 
     @Test
     void seeds_all_seven_concerts_each_with_five_bare_zones_no_diamond_and_is_idempotent() {
-        EventAnchorSeeder seeder = new EventAnchorSeeder(em, concertRepository);
+        EventAnchorSeeder seeder =
+                new EventAnchorSeeder(em, concertRepository, EventAnchorSeeder.DEFAULT_SEED_ORGANIZER_ID);
 
         seeder.run(null);
         em.flush();
@@ -106,10 +108,13 @@ class EventAnchorSeederTest {
         EventAnchorSeeder.DEMO_CONCERTS.forEach(dc -> ids.add(dc.id()));
         EventAnchorSeeder.SALE_WINDOW_CONCERTS.forEach(sw -> ids.add(sw.id()));
 
+        UUID expectedOrganizer = UUID.fromString(EventAnchorSeeder.DEFAULT_SEED_ORGANIZER_ID);
         for (UUID id : ids) {
             Concert c = concertRepository.findById(id).orElseThrow();
             assertThat(c.getStatus()).isEqualTo(ConcertStatus.PUBLISHED);
             assertThat(c.getVenue()).isNotNull();
+            // created_by must be the configured organizer (non-null) — else ai-bio rejects with 503.
+            assertThat(c.getCreatedBy()).isEqualTo(expectedOrganizer);
 
             List<String> zoneNames = em.createQuery(
                             "SELECT z.ticketTypeName FROM ConcertZone z WHERE z.concert.id = :cid",

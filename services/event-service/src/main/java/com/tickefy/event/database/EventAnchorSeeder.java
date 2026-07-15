@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -120,12 +121,29 @@ public class EventAnchorSeeder implements ApplicationRunner {
     /** Sale-window test concert with absolute sale window + event date. Reuses venue {@link #VENUE_QK7}. */
     record SaleWindowConcert(UUID id, String title, Instant saleStart, Instant saleEnd, Instant eventDate) {}
 
+    /**
+     * Organizer id stamped as {@code created_by} on every seeded concert (else it stays NULL and ai-bio's
+     * event-context contract rejects the concert with 503 — organizerId is a required non-null UUID).
+     *
+     * <p>Configurable via {@code app.seed.organizer-id}; the default is the current bootstrap admin id
+     * ({@code admin@tickefy.com}). ⚠ That admin id is generated at persist time and CAN change on a volume
+     * reset (auth-service assigns it, no fixed id), so the default is only correct until the next reset —
+     * set {@code APP_SEED_ORGANIZER_ID} to keep it reset-safe. Functionally any non-null UUID works:
+     * ai-bio admin-token calls bypass the organizer-match check, they only need organizerId != null.
+     */
+    static final String DEFAULT_SEED_ORGANIZER_ID = "b58f2300-2eb7-4d24-bcac-c60e67259aca";
+
     private final EntityManager em;
     private final ConcertRepository concertRepository;
+    private final UUID seedOrganizerId;
 
-    public EventAnchorSeeder(EntityManager em, ConcertRepository concertRepository) {
+    public EventAnchorSeeder(
+            EntityManager em,
+            ConcertRepository concertRepository,
+            @Value("${app.seed.organizer-id:" + DEFAULT_SEED_ORGANIZER_ID + "}") String seedOrganizerId) {
         this.em = em;
         this.concertRepository = concertRepository;
+        this.seedOrganizerId = UUID.fromString(seedOrganizerId);
     }
 
     @Override
@@ -200,9 +218,9 @@ public class EventAnchorSeeder implements ApplicationRunner {
         em.createNativeQuery(
                         "INSERT INTO concerts "
                                 + "(id, title, description, status, sale_start_at, sale_end_at, "
-                                + "event_date, venue_id, reminder_sent, created_at, updated_at) "
+                                + "event_date, venue_id, created_by, reminder_sent, created_at, updated_at) "
                                 + "VALUES (:id, :title, :description, :status, :saleStart, :saleEnd, "
-                                + ":eventDate, :venueId, :reminderSent, :createdAt, :updatedAt)")
+                                + ":eventDate, :venueId, :createdBy, :reminderSent, :createdAt, :updatedAt)")
                 .setParameter("id", concertId)
                 .setParameter("title", title)
                 .setParameter("description", description)
@@ -211,6 +229,7 @@ public class EventAnchorSeeder implements ApplicationRunner {
                 .setParameter("saleEnd", saleEnd)
                 .setParameter("eventDate", eventDate)
                 .setParameter("venueId", venueId)
+                .setParameter("createdBy", seedOrganizerId)
                 .setParameter("reminderSent", false)
                 .setParameter("createdAt", now)
                 .setParameter("updatedAt", now)

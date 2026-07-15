@@ -2,7 +2,21 @@ spring:
   config:
     activate:
       on-profile: dev
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+app:
+  dev:
+    seed:
+      enabled: true  # local `mvnw spring-boot:run` (dev profile) -> seed E2E test customers
+
+server:
+  port: 8081
 
 logging:
   level:
     root: ${LOG_LEVEL:INFO}
+    com.tickefy.auth.modules.auth: DEBUG
+    org.springframework.security: INFO

@@ -4,7 +4,7 @@ spring:
   profiles:
     default: dev
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy_payment}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -14,15 +14,25 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        default_schema: ${DB_SCHEMA:public}
+        default_schema: ${DB_SCHEMA:payment_service}
         format_sql: true
         jdbc:
           time_zone: ${APP_TIMEZONE:UTC}
   flyway:
     enabled: true
-    schemas: ${DB_SCHEMA:public}
-    default-schema: ${DB_SCHEMA:public}
+    schemas: ${DB_SCHEMA:payment_service}
+    default-schema: ${DB_SCHEMA:payment_service}
     locations: classpath:db/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
 
 server:
   port: ${SERVER_PORT:8085}
@@ -31,15 +41,85 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,circuitbreakers,circuitbreakerevents
   endpoint:
     health:
       probes:
         enabled: true
 
+resilience4j:
+  circuitbreaker:
+    instances:
+      sepay:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - com.tickefy.payment.modules.payment.gateway.PaymentGatewayException
+      sepayRefund:                                  # MỚI (G6) — refund CB riêng, refund-fail KHÔNG trip create-payment CB
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:                          # CHỈ PaymentGatewayException (REJECTED là return value, KHÔNG mở CB — R1)
+          - com.tickefy.payment.modules.payment.gateway.PaymentGatewayException
+  ratelimiter:
+    instances:
+      sepayRefund:                                  # MỚI (G5) — outbound throttle cổng refund
+        limit-for-period: 10                        # 10 req / refresh-period
+        limit-refresh-period: 1s
+        timeout-duration: 5s                        # chờ slot rồi mới fail (block thay vì reject ngay)
+
 app:
   database:
-    schema: ${DB_SCHEMA:public}
+    schema: ${DB_SCHEMA:payment_service}
+  internal:
+    token: ${PAYMENT_INTERNAL_TOKEN:}
+  payment:
+    expiry: ${PAYMENT_EXPIRY:PT15M}
+    provider: ${APP_PAYMENT_PROVIDER:MOCK_SEPAY}
+    callback:
+      secret: ${SEPAY_WEBHOOK_SECRET:}
+      require-signature: ${PAYMENT_CALLBACK_REQUIRE_SIGNATURE:false}
+    idempotency:
+      cache-ttl: ${PAYMENT_IDEMPOTENCY_TTL:PT24H}
+    reconcile:
+      enabled: ${PAYMENT_RECONCILE_ENABLED:true}
+      delay: ${PAYMENT_RECONCILE_DELAY:PT5M}
+      stale-after: ${PAYMENT_RECONCILE_STALE_AFTER:PT10M}
+      batch-size: ${PAYMENT_RECONCILE_BATCH:50}
+  messaging:
+    exchange: ${APP_MESSAGING_EXCHANGE:tickefy.exchange}
+    outbox-poll-delay: ${OUTBOX_POLL_DELAY:3000}
+    outbox:
+      enabled: true
+  sepay:
+    mode: ${APP_SEPAY_MODE:mock}
+    base-url: ${SEPAY_BASE_URL:https://userapi.sepay.vn}
+    api-token: ${SEPAY_API_KEY:}
+    account-number: ${SEPAY_ACCOUNT_NUMBER:}
+    bank-code: ${SEPAY_BANK_CODE:}
+    account-name: ${SEPAY_ACCOUNT_NAME:}
+    qr-base-url: ${SEPAY_QR_BASE_URL:https://qr.sepay.vn/img}
+    qr-template: ${SEPAY_QR_TEMPLATE:compact}
+    connect-timeout: ${SEPAY_CONNECT_TIMEOUT:PT2S}
+    read-timeout: ${SEPAY_READ_TIMEOUT:PT10S}
+    mock:
+      fail-mode: ${SEPAY_MOCK_FAIL_MODE:NONE}
+      query-result: ${SEPAY_MOCK_QUERY_RESULT:NONE}
+      refund-mode: ${SEPAY_MOCK_REFUND_MODE:NONE}
+  dev:
+    payment-sim:
+      enabled: ${DEV_PAYMENT_SIM_ENABLED:false}
 
 logging:
   level:

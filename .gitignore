@@ -5,10 +5,37 @@ target/
 *.war
 *.ear
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
 # Environment
 .env
 .env.*
 !.env.example
+
+# Secrets — prod private keys never committed (dev throwaway keys are OK)
+*-prod*.pem
 
 # Logs
 *.log
@@ -22,6 +49,11 @@ run.out.log
 
 # OS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
 
 # Docker / local volumes
@@ -31,3 +63,5 @@ volumes/
 # Build / temp
 tmp/
 temp/
+
+.codex

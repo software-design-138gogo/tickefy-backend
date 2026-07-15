@@ -23,6 +23,12 @@ spring:
     schemas: ${DB_SCHEMA:public}
     default-schema: ${DB_SCHEMA:public}
     locations: classpath:db/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
 
 server:
   port: ${SERVER_PORT:8084}
@@ -40,8 +46,47 @@ management:
 app:
   database:
     schema: ${DB_SCHEMA:public}
+  jwt:
+    issuer: ${JWT_ISSUER:tickefy-auth-service}
+    public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
+  inventory:
+    base-url: ${INVENTORY_SERVICE_URL:http://localhost:8083}
+    reservations-path: /api/inventory/reservations
+  payment:
+    base-url: ${PAYMENT_SERVICE_URL:http://localhost:8085}
+    internal-path: ${PAYMENT_INTERNAL_PATH:/internal/payments}
+    refund-path: ${PAYMENT_REFUND_PATH:/internal/payments/refund}
+    connect-timeout: ${PAYMENT_CONNECT_TIMEOUT:PT2S}
+    read-timeout: ${PAYMENT_READ_TIMEOUT:PT30S}
+    internal-token: ${PAYMENT_INTERNAL_TOKEN:}
+    stub: ${PAYMENT_STUB:true}
+  refund:
+    worker:
+      enabled: ${REFUND_WORKER_ENABLED:true}
+      fixed-delay-ms: ${REFUND_WORKER_FIXED_DELAY_MS:60000}
+  order:
+    expiry-ttl: ${ORDER_EXPIRY_TTL:PT15M}
+  messaging:
+    exchange: ${MESSAGING_EXCHANGE:tickefy.exchange}
+    dlx: ${MESSAGING_DLX:tickefy.dlx}
+    outbox-poll-delay: ${OUTBOX_POLL_DELAY_MS:3000}
+  dev:
+    payment-sim:
+      enabled: ${DEV_PAYMENT_SIM_ENABLED:false}
 
 logging:
   level:
     root: ${LOG_LEVEL:INFO}
     com.tickefy.order: ${LOG_LEVEL:INFO}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      paymentRefund:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        record-exceptions:
+          - com.tickefy.order.modules.order.client.PaymentUnavailableException

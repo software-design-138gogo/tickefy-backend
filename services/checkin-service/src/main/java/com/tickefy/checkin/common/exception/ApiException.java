@@ -19,15 +19,7 @@ public class ApiException extends RuntimeException {
         this.details = details;
     }
 
-    public ErrorCode getErrorCode() {
-        return errorCode;
-    }
-
-    public HttpStatus getStatus() {
-        return status;
-    }
-
-    public Object getDetails() {
-        return details;
-    }
+    public ErrorCode getErrorCode() { return errorCode; }
+    public HttpStatus getStatus() { return status; }
+    public Object getDetails() { return details; }
 }

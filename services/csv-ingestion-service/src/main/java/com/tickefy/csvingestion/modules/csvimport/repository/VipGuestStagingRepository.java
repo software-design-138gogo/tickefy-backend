@@ -1,0 +1,14 @@
+package com.tickefy.csvingestion.modules.csvimport.repository;
+
+import com.tickefy.csvingestion.modules.csvimport.entity.VipGuestStagingEntity;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface VipGuestStagingRepository
+        extends JpaRepository<VipGuestStagingEntity, UUID> {
+
+    List<VipGuestStagingEntity> findByImportJobId(UUID importJobId);
+
+    void deleteByImportJobId(UUID importJobId);
+}

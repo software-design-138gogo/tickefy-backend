@@ -23,6 +23,11 @@ spring:
     schemas: ${DB_SCHEMA:public}
     default-schema: ${DB_SCHEMA:public}
     locations: classpath:db/migration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
 
 server:
   port: ${SERVER_PORT:8081}
@@ -38,8 +43,33 @@ management:
         enabled: true
 
 app:
+  dev:
+    seed:
+      enabled: ${APP_DEV_SEED_ENABLED:false}  # dev-only test-customer seeder; prod image leaves unset -> off
   database:
     schema: ${DB_SCHEMA:public}
+  jwt:
+    issuer: ${JWT_ISSUER:tickefy-auth-service}
+    audience: ${JWT_AUDIENCE:tickefy-api}
+    private-key: ${JWT_PRIVATE_KEY_PATH:classpath:keys/jwt-dev-private.pem}
+    public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
+    access-ttl: ${JWT_ACCESS_TTL:PT15M}
+    refresh-ttl: ${JWT_REFRESH_TTL:P7D}
+  redis:
+    blacklist-prefix: "tickefy:auth:token:blacklist:"
+  cookie:
+    access-name: ${COOKIE_ACCESS_NAME:access_token}
+    refresh-name: ${COOKIE_REFRESH_NAME:refresh_token}
+    refresh-path: ${COOKIE_REFRESH_PATH:/auth}
+    secure: ${COOKIE_SECURE:false}
+    same-site: ${COOKIE_SAMESITE:Lax}
+  security:
+    bcrypt-strength: ${BCRYPT_STRENGTH:10}
+  bootstrap:
+    admin:
+      email: ${BOOTSTRAP_ADMIN_EMAIL:}
+      password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+      full-name: ${BOOTSTRAP_ADMIN_NAME:System Admin}
 
 logging:
   level:

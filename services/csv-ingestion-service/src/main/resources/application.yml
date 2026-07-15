@@ -3,8 +3,12 @@ spring:
     name: ${SERVICE_NAME:csv-ingestion-service}
   profiles:
     default: dev
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy_csv_ingestion}?options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:tickefy}?currentSchema=${DB_SCHEMA:csv_ingestion_service}&options=-c%20TimeZone%3D${APP_TIMEZONE:UTC}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -14,15 +18,20 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        default_schema: ${DB_SCHEMA:public}
+        default_schema: ${DB_SCHEMA:csv_ingestion_service}
         format_sql: true
         jdbc:
           time_zone: ${APP_TIMEZONE:UTC}
   flyway:
     enabled: true
-    schemas: ${DB_SCHEMA:public}
-    default-schema: ${DB_SCHEMA:public}
+    schemas: ${DB_SCHEMA:csv_ingestion_service}
+    default-schema: ${DB_SCHEMA:csv_ingestion_service}
     locations: classpath:db/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
 server:
   port: ${SERVER_PORT:8090}
@@ -31,15 +40,67 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,circuitbreakers,circuitbreakerevents
   endpoint:
     health:
       probes:
         enabled: true
 
+resilience4j:
+  circuitbreaker:
+    instances:
+      event-service:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 1
+        record-exceptions:
+          - com.tickefy.csvingestion.modules.csvimport.client.EventUnavailableException
+      inventory-service:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 1
+        record-exceptions:
+          - com.tickefy.csvingestion.modules.csvimport.client.InventoryUnavailableException
+
 app:
   database:
-    schema: ${DB_SCHEMA:public}
+    schema: ${DB_SCHEMA:csv_ingestion_service}
+  messaging:
+    exchange: ${RABBITMQ_EXCHANGE:tickefy.exchange}
+    outbox:
+      enabled: ${APP_MESSAGING_OUTBOX_ENABLED:true}
+      poll-ms: ${APP_OUTBOX_POLL_MS:5000}
+  jwt:
+    issuer: ${JWT_ISSUER:tickefy-auth-service}
+    public-key: ${JWT_PUBLIC_KEY_PATH:classpath:keys/jwt-dev-public.pem}
+  event:
+    base-url: ${EVENT_SERVICE_BASE_URL:http://event-service:8080}
+  inventory:
+    base-url: ${INVENTORY_SERVICE_BASE_URL:http://inventory-service:8080}
+  csv:
+    batch-size: ${CSV_BATCH_SIZE:1000}
+    error-threshold: ${CSV_ERROR_THRESHOLD:0.5}
+    worker:
+      auto-trigger: ${CSV_WORKER_AUTO_TRIGGER:true}
+    reaper:
+      enabled: ${CSV_REAPER_ENABLED:true}
+      stuck-threshold-min: ${CSV_STUCK_THRESHOLD_MIN:10}
+      poll-ms: ${CSV_REAPER_POLL_MS:60000}
+    scan:
+      enabled: ${CSV_SCAN_ENABLED:true}
+      cron: ${CSV_IMPORT_CRON:0 0 1 * * *}
+  object-storage:
+    endpoint: ${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}
+    access-key: ${OBJECT_STORAGE_ACCESS_KEY:minioadmin}
+    secret-key: ${OBJECT_STORAGE_SECRET_KEY:minioadmin}
+    region: ${OBJECT_STORAGE_REGION:us-east-1}
+    bucket: ${OBJECT_STORAGE_BUCKET:tickefy-csv}
 
 logging:
   level:

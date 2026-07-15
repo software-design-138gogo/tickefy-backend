@@ -13,3 +13,18 @@ spring:
 app:
   database:
     schema: public
+  csv:
+    worker:
+      auto-trigger: false
+    reaper:
+      enabled: false   # §6.12: stuck-reaper @Scheduled OFF in tests (reaper IT calls reapStuck() directly)
+    scan:
+      enabled: false   # §6.12: cron-scan @Scheduled OFF in tests (cron IT calls scan() directly)
+  messaging:
+    outbox:
+      enabled: false   # §6.12: drainer OFF in tests (publisher IT overrides to true)
+
+management:
+  health:
+    rabbit:
+      enabled: false   # no broker in profile-test context (amqp dep added in 5b) -> avoid /health 503

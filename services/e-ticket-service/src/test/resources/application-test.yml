@@ -6,10 +6,22 @@ spring:
     password:
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: create-drop
   flyway:
     enabled: false
+  rabbitmq:
+    host: localhost
+    port: 5672
 
 app:
   database:
     schema: public
+  jwt:
+    public-key: classpath:keys/jwt-dev-public.pem
+    issuer: tickefy-auth-service
+    audience: tickefy-api
+  messaging:
+    exchange: tickefy.exchange
+    listener-auto-startup: false
+    queue:
+      order-paid: ticket-service.order-paid.queue

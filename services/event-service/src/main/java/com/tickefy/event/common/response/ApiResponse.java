@@ -1,6 +1,7 @@
 package com.tickefy.event.common.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApiResponse<T> {
@@ -9,12 +10,14 @@ public class ApiResponse<T> {
     private final T data;
     private final ErrorResponse error;
     private final String requestId;
+    private final Instant timestamp;
 
     private ApiResponse(boolean success, T data, ErrorResponse error, String requestId) {
         this.success = success;
         this.data = data;
         this.error = error;
         this.requestId = requestId;
+        this.timestamp = Instant.now();
     }
 
     public static <T> ApiResponse<T> success(T data, String requestId) {
@@ -39,5 +42,9 @@ public class ApiResponse<T> {
 
     public String getRequestId() {
         return requestId;
+    }
+
+    public Instant getTimestamp() {
+        return timestamp;
     }
 }

@@ -1,15 +1,47 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:order_service_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    # URL is overridden at runtime by @DynamicPropertySource in BaseIntegrationTest
+    url: jdbc:postgresql://localhost:5432/order_test
+    username: order_test
+    password: order_test
+    driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: public
+        format_sql: false
   flyway:
-    enabled: false
+    enabled: true
+    schemas: public
+    default-schema: public
+    locations: classpath:db/migration
 
 app:
+  jwt:
+    issuer: tickefy-auth-service
+    public-key: classpath:keys/jwt-dev-public.pem
+  inventory:
+    base-url: http://localhost:9999
+  payment:
+    stub: true
+  refund:
+    worker:
+      enabled: false
   database:
     schema: public
+  messaging:
+    listener-auto-startup: false
+    outbox:
+      enabled: false
+
+management:
+  health:
+    rabbit:
+      enabled: false   # §6.12: no broker connection in IT (listener-auto-startup off) -> avoid /health ACCESS_REFUSED
+
+logging:
+  level:
+    root: WARN
+    com.tickefy.order: DEBUG

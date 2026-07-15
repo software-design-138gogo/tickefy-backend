@@ -1,16 +1,18 @@
 # syntax=docker/dockerfile:1.7
 
-FROM maven:3.9.9-eclipse-temurin-25 AS build
+FROM maven:3.9.11-eclipse-temurin-25 AS build
 WORKDIR /app
 
 COPY .mvn .mvn
 COPY mvnw mvnw
 COPY mvnw.cmd mvnw.cmd
 COPY pom.xml pom.xml
-RUN chmod +x mvnw && ./mvnw -q -DskipTests dependency:go-offline
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -q -DskipTests dependency:go-offline
 
 COPY src src
-RUN ./mvnw -q clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -q clean package -DskipTests
 
 FROM eclipse-temurin:25-jre
 WORKDIR /app
@@ -22,7 +24,8 @@ COPY --from=build /app/target/*.jar app.jar
 ENV SPRING_PROFILES_ACTIVE=prod
 ENV TZ=UTC
 ENV JAVA_TOOL_OPTIONS="-Duser.timezone=UTC"
-EXPOSE 8088
+ENV SERVER_PORT=8080
+EXPOSE 8080
 
 USER spring
 ENTRYPOINT ["java", "-jar", "app.jar"]

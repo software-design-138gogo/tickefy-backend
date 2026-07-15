@@ -1,101 +1,79 @@
-# Tickefy Event Service
+# Event Service
 
-Tickefy Event Service for the Tickefy backend system.
+> **Owner:** Dương  
+> **Port:** 8082  
+> **API Gateway paths:** `/api/concerts/**` → `/concerts/**`, `/api/admin/**` → `/admin/**`
 
-## 1. Responsibilities
+## Trách nhiệm
 
-Responsible for concerts, artists, venues, event status, publish/cancel lifecycle, and seat map metadata.
+Quản lý thông tin concert, artist, venue. Cung cấp API cho BTC tạo/sửa/cancel concert, và cho user xem danh sách/chi tiết concert.
 
-Current status:
+## Endpoints
 
-- Spring Boot service skeleton is ready.
-- Real business logic is not implemented yet.
+| Method | Path | Mô tả | Auth |
+|--------|------|-------|------|
+| GET | `/concerts` | Danh sách concert (pageable, filter by status) | Public |
+| GET | `/concerts/{id}` | Chi tiết concert (venue, artists, ticketTypes) | Public |
+| POST | `/admin/concerts` | Tạo concert mới | `ORGANIZER`, `ADMIN`; identity từ JWT `sub` |
+| PUT | `/admin/concerts/{id}` | Cập nhật concert của organizer | `ORGANIZER`, `ADMIN` |
+| POST | `/admin/concerts/{id}/publish` | Chuyển trạng thái → PUBLISHED | `ORGANIZER`, `ADMIN` |
+| POST | `/admin/concerts/{id}/cancel` | Chuyển trạng thái → CANCELLED | `ORGANIZER`, `ADMIN` |
+| GET | `/internal/concerts/{id}/ai-context` | AI context cho AI Bio | Bearer JWT |
+| GET | `/actuator/health` | Health check | Public |
 
-## 2. Tech Stack
+## Status Lifecycle
 
-- Java 25 LTS
-- Spring Boot 3.x
-- Maven Wrapper
-- PostgreSQL
-- Spring Data JPA / Hibernate
-- Flyway
-- Swagger/OpenAPI
-- Spring Boot Actuator
-- Global exception handler
-- Request ID logging
-- Docker multi-stage build
-- Spotless formatting
-
-## 3. Service Metadata
-
-| Item | Value |
-|---|---|
-| Service name | event-service |
-| Spring application name | event-service |
-| Default port | 8082 |
-| Database name | tickefy_event |
-| Java package | com.tickefy.event |
-| Docker image | tickefy/event-service |
-
-## 4. Local Development
-
-Linux/macOS:
-
-```bash
-cp .env.example .env
-./mvnw test
-./mvnw clean package
-./mvnw spring-boot:run
+```
+DRAFT → PUBLISHED → COMPLETED
+            ↓
+        CANCELLED
 ```
 
-Windows PowerShell:
+## Events (RabbitMQ)
 
+- **Exchange:** `tickefy.exchange`
+- **Publish:** `ConcertPublished`, `ConcertCancelled`
+- **Consume:** `ConcertIntroductionGenerated`
+- **Queue:** `event-service.concert-introduction-generated.queue`
+
+## Database
+
+- **DB name:** `tickefy`
+- **Schema:** `event_service`
+- **Tables:** `venues`, `artists`, `concerts`, `concert_artists`, `concert_zones`, `outbox_events`, `processed_messages`
+- **Migration tool:** Flyway (`db/migration/`)
+
+## Khởi động local
+
+```bash
+cd tickefy-infrastructure/local
+./scripts/up.sh dev
+# Service available at: http://localhost:8082
+# Swagger UI: http://localhost:8082/swagger-ui.html
+```
+
+## Cấu trúc package
+
+```
+com.tickefy.event/
+├── EventServiceApplication.java
+├── common/          # exception, response, logging (DO NOT MODIFY)
+├── config/          # OpenAPI, WebConfig
+├── database/        # DatabaseConfig
+├── modules/
+│   ├── concert/     # Concert, ConcertZone, ConcertService, ConcertController
+│   ├── artist/      # Artist, ArtistRepository
+│   └── venue/       # Venue, VenueRepository
+└── shared/
+```
+
+## Tự động hóa việc chạy Service ở local để test thử API bằng Swagger (Không cần gõ biến thủ công)
+
+Để không phải vất vả gõ dòng lệnh `$env:DB_HOST=...` mỗi lần khởi động Service, tôi đã viết sẵn một script PowerShell tên là **`run-local.ps1`** nằm ngay trong thư mục `event-service`.
+
+Từ nay về sau, ở Bước 2, bạn chỉ cần gõ đúng 1 lệnh ngắn gọn này trong PowerShell:
 ```powershell
-Copy-Item .env.example .env
-.\mvnw.cmd test
-.\mvnw.cmd clean package
-.\mvnw.cmd spring-boot:run
+cd d:\Course_IT_HCMUS\Nam_3\SoftwareDes\Project-TicketBox\tickefy-backend\services\event-service
+.\run-local.ps1
 ```
-
-## 5. Useful Endpoints
-
-```http
-GET /actuator/health
-GET /health
-GET /swagger-ui/index.html
-GET /v3/api-docs
-```
-
-## 6. Environment Variables
-
-See `.env.example`.
-
-Local PostgreSQL/Redis/RabbitMQ are managed by the external `tickefy-infrastructure` repository. When running services with Maven on the host machine, use localhost-based values from `.env.example`.
-
-Important values:
-
-```env
-SERVICE_NAME=event-service
-DB_NAME=tickefy
-DB_SCHEMA=event_service
-```
-
-## 7. Docker
-
-```bash
-docker build -t tickefy/event-service .
-docker run --rm -p 8082:8082 --env-file .env tickefy/event-service
-```
-
-## 8. Development Rule
-
-No spec, no code.
-
-Before implementing real service logic, update or confirm the related spec and contract.
-
-## 9. TODO
-
-- Confirm service API contract.
-- Add service-specific database migrations.
-- Add OpenAPI contract for service APIs.
-- Implement service business logic after spec approval.
+*Script này sẽ tự động tìm file `.env`, bóc tách toàn bộ biến môi trường đưa vào bộ nhớ của terminal, rồi tự động gọi `.\mvnw spring-boot:run` cho bạn!*

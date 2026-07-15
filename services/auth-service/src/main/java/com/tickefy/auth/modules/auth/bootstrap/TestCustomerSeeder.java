@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
  * <p>Two kinds of accounts, all created the same way:
  * <ul>
  *   <li>generic E2E customers ({@code e2e.customer1/2@tickefy.local}, AUDIENCE);</li>
+ *   <li>one mobile demo account ({@code demo.staff@tickefy.local}, CHECKIN_STAFF);</li>
  *   <li>personal dev accounts for the team ({@code tanhiep24135@gmail.com} AUDIENCE,
  *       {@code hiepvip22@gmail.com} ADMIN) — convenience logins for manual dev/testing.</li>
  * </ul>
@@ -42,12 +43,14 @@ public class TestCustomerSeeder implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(TestCustomerSeeder.class);
 
     private static final String CUSTOMER_PASSWORD = "Customer@12345";
+    private static final String DEMO_STAFF_PASSWORD = "123";
     private static final String PERSONAL_PASSWORD = "Hiep@12345";
 
     /** Fixed dev accounts. Role resolved per-account via {@link RoleRepository#findByCode}. */
     private static final List<SeedAccount> ACCOUNTS = List.of(
             new SeedAccount("e2e.customer1@tickefy.local", "E2E Customer 1", RoleName.AUDIENCE.name(), CUSTOMER_PASSWORD),
             new SeedAccount("e2e.customer2@tickefy.local", "E2E Customer 2", RoleName.AUDIENCE.name(), CUSTOMER_PASSWORD),
+            new SeedAccount("demo.staff@tickefy.local", "Demo Check-in Staff", RoleName.CHECKIN_STAFF.name(), DEMO_STAFF_PASSWORD),
             new SeedAccount("tanhiep24135@gmail.com", "Tan Hiep Le", RoleName.AUDIENCE.name(), PERSONAL_PASSWORD),
             new SeedAccount("hiepvip22@gmail.com", "Hiep Admin", RoleName.ADMIN.name(), PERSONAL_PASSWORD));
 

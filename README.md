@@ -2,7 +2,28 @@
 
 Backend monorepo for the Tickefy concert ticketing system.
 
-This repository contains Spring Boot backend service skeletons for the Tickefy microservice architecture. It is organized as a monorepo so the team can bootstrap, review, and integrate backend services with a consistent structure.
+This repository contains the Spring Boot backend services (plus one Python/FastAPI service) for the Tickefy microservice architecture, organized as a monorepo.
+
+---
+
+## ▶ Chạy toàn bộ hệ thống (cho người chấm / clone về chạy)
+
+**Không cần cài Java/Maven** — toàn bộ 11 service + hạ tầng chạy bằng Docker Compose từ repo hạ tầng `tickefy-infrastructure`.
+
+⚠ Clone **cả 2 repo `tickefy-backend` và `tickefy-infrastructure` vào cùng một thư mục cha** (cạnh nhau) — compose build từ `../../tickefy-backend`.
+
+```bash
+cd tickefy-infrastructure/local
+cp .env.example .env
+./scripts/up.sh dev        # Windows: chạy trong Git Bash
+```
+
+Cổng vào: **`http://localhost:8080`**. Admin seed sẵn: `admin@tickefy.com` / `Admin@123456`.
+Hướng dẫn đầy đủ (yêu cầu máy, verify, seed, troubleshooting): **[`tickefy-infrastructure/README.md`](../tickefy-infrastructure/README.md)**.
+
+Phần README bên dưới mô tả cấu trúc monorepo + cách build/chạy **một** service riêng lẻ bằng Maven (dành cho lập trình viên, không bắt buộc để chạy hệ thống).
+
+---
 
 ## Repository Structure
 
@@ -29,14 +50,12 @@ tickefy-backend/
 
 ## Current Status
 
-All 10 Spring Boot service skeletons have been bootstrapped.
+All services are implemented and run together as a working system via `tickefy-infrastructure` (Docker Compose).
 
-Current scope:
-
-- Common Spring Boot structure is ready for each service.
-- Real business logic is not implemented yet.
-- Service-specific specs and contracts must be confirmed before implementation.
-- Redis, RabbitMQ, and service-specific database entities will be added later only when needed.
+- Business logic is implemented (auth, concerts, inventory/reservations, orders, payment (mock), e-tickets, check-in, AI bio (mock), CSV import).
+- PostgreSQL, Redis, RabbitMQ, and MinIO are wired per service as needed.
+- Dev data (admin account + sample concerts + inventory) is seeded automatically on startup.
+- The whole stack is started with `tickefy-infrastructure/local/scripts/up.sh dev` (see `tickefy-infrastructure/README.md`).
 
 ## Services
 

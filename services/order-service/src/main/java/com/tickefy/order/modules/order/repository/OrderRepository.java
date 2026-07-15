@@ -3,6 +3,7 @@ package com.tickefy.order.modules.order.repository;
 import com.tickefy.order.modules.order.entity.OrderEntity;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,8 +29,12 @@ public interface OrderRepository extends JpaRepository<OrderEntity, UUID> {
     @Query("SELECT o FROM OrderEntity o WHERE o.id = :id")
     Optional<OrderEntity> findByIdForUpdate(@Param("id") UUID id);
 
-    /** Expire worker: PAYMENT_PENDING orders past their expiry. */
-    List<OrderEntity> findByStatusAndExpiresAtBefore(String status, Instant cutoff);
+    /**
+     * Expire worker: orders in any of the given non-terminal statuses past their expiry. Covers both
+     * PAYMENT_PENDING (payment abandoned) and RESERVED (stuck when payment never started, e.g. payment
+     * service down) so neither leaks as an orphan. Terminal statuses (PAID, EXPIRED, …) are never passed.
+     */
+    List<OrderEntity> findByStatusInAndExpiresAtBefore(Collection<String> statuses, Instant cutoff);
 
     /**
      * Refund leg (ConcertCancelled consumer): flip every PAID order of a cancelled concert to

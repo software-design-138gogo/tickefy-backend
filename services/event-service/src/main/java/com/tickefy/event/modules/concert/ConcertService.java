@@ -197,6 +197,17 @@ public class ConcertService {
             }
         }
 
+        // Apply artists (mirror createConcert). Semantics:
+        //   null        -> keep existing artists (null-skip, same as zone svg/seatMapUrl above)
+        //   [] (empty)  -> clear all artists (explicit client intent)
+        //   [id, ...]   -> replace with exactly these artists
+        // Concert is the owning side of @ManyToMany(concert_artists), so save() syncs the join table
+        // (adds new rows, removes gone ones). Unknown ids are silently dropped by findAllById — same
+        // behaviour as createConcert (no new validation introduced here).
+        if (request.getArtistIds() != null) {
+            concert.setArtists(new HashSet<>(artistRepository.findAllById(request.getArtistIds())));
+        }
+
         Concert saved = concertRepository.save(concert);
         concertCacheService.evict(id);
         concertCacheService.evictList();

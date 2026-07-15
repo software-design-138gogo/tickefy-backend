@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tickefy.event.common.exception.ApiException;
+import com.tickefy.event.modules.artist.Artist;
 import com.tickefy.event.modules.artist.ArtistRepository;
 import com.tickefy.event.modules.outbox.OutboxEvent;
 import com.tickefy.event.modules.outbox.OutboxEventRepository;
@@ -236,5 +237,59 @@ class ConcertServiceTest {
 
         assertThat(mockConcert.getZones()).hasSize(1);
         assertThat(zoneNamed("SVIP").getSvgElementId()).isEqualTo("svg");
+    }
+
+    // ── Artist assignment (updateConcert) ────────────────────────────────────
+
+    private Artist artist(UUID id, String name) {
+        Artist a = new Artist();
+        ReflectionTestUtils.setField(a, "id", id);
+        a.setName(name);
+        return a;
+    }
+
+    @Test
+    void updateConcert_appliesArtistIds_replacesExistingNotAccumulate() {
+        stubUpdate();
+        UUID oldId = UUID.randomUUID();
+        mockConcert.getArtists().add(artist(oldId, "Old Artist"));
+        UUID a1 = UUID.randomUUID();
+        UUID a2 = UUID.randomUUID();
+        request.setArtistIds(List.of(a1, a2));
+        when(artistRepository.findAllById(any()))
+                .thenReturn(List.of(artist(a1, "A1"), artist(a2, "A2")));
+
+        concertService.updateConcert(concertId, request, userId, false);
+
+        assertThat(mockConcert.getArtists()).extracting(Artist::getId)
+                .containsExactlyInAnyOrder(a1, a2);
+        // Old artist removed — replaced, not accumulated.
+        assertThat(mockConcert.getArtists()).extracting(Artist::getId).doesNotContain(oldId);
+        verify(concertRepository).save(any(Concert.class));
+    }
+
+    @Test
+    void updateConcert_nullArtistIds_keepsExisting() {
+        stubUpdate();
+        UUID oldId = UUID.randomUUID();
+        mockConcert.getArtists().add(artist(oldId, "Keep Me"));
+        request.setArtistIds(null);
+
+        concertService.updateConcert(concertId, request, userId, false);
+
+        assertThat(mockConcert.getArtists()).extracting(Artist::getId).containsExactly(oldId);
+        verify(artistRepository, org.mockito.Mockito.never()).findAllById(any());
+    }
+
+    @Test
+    void updateConcert_emptyArtistIds_clearsAll() {
+        stubUpdate();
+        mockConcert.getArtists().add(artist(UUID.randomUUID(), "Bye"));
+        request.setArtistIds(List.of());
+        when(artistRepository.findAllById(any())).thenReturn(List.of());
+
+        concertService.updateConcert(concertId, request, userId, false);
+
+        assertThat(mockConcert.getArtists()).isEmpty();
     }
 }

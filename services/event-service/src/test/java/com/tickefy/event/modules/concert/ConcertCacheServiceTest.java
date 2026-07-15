@@ -67,7 +67,7 @@ class ConcertCacheServiceTest {
         ReflectionTestUtils.setField(concert, "id", concertId);
         concert.setTitle("Test");
         concert.setStatus(ConcertStatus.DRAFT);
-        
+
         mockResponse = ConcertResponse.from(concert);
         mockJson = objectMapper.writeValueAsString(mockResponse);
     }
@@ -103,9 +103,9 @@ class ConcertCacheServiceTest {
         when(concertL1Cache.getIfPresent(l1Key)).thenReturn(null);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(l1Key)).thenReturn(null); // initial L2 check
-        
+
         when(redissonClient.getLock("lock:events:" + concertId)).thenReturn(rLock);
-        when(rLock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(rLock.tryLock(anyLong(), any(TimeUnit.class))).thenReturn(true);
         when(rLock.isHeldByCurrentThread()).thenReturn(true);
 
         Concert concert = new Concert();
@@ -126,9 +126,9 @@ class ConcertCacheServiceTest {
         when(concertL1Cache.getIfPresent(l1Key)).thenReturn(null);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(l1Key)).thenReturn(null);
-        
+
         when(redissonClient.getLock("lock:events:" + concertId)).thenReturn(rLock);
-        when(rLock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(rLock.tryLock(anyLong(), any(TimeUnit.class))).thenReturn(true);
         when(rLock.isHeldByCurrentThread()).thenReturn(true);
 
         when(concertRepository.findByIdWithDetails(concertId)).thenReturn(Optional.empty());

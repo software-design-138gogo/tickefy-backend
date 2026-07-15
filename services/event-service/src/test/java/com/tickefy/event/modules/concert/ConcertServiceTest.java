@@ -25,6 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -83,6 +85,18 @@ class ConcertServiceTest {
     }
 
     @Test
+    void listConcerts_ShouldUseCacheService() {
+        PageRequest pageable = PageRequest.of(0, 10);
+        PageImpl<ConcertResponse> cached = new PageImpl<>(List.of());
+        when(concertCacheService.getConcertList(null, pageable)).thenReturn(cached);
+
+        assertThat(concertService.listConcerts(null, pageable)).isSameAs(cached);
+
+        verify(concertCacheService).getConcertList(null, pageable);
+        org.mockito.Mockito.verifyNoInteractions(concertRepository);
+    }
+
+    @Test
     void createConcert_ShouldSaveAndEvictCache() {
         Venue mockVenue = new Venue();
         ReflectionTestUtils.setField(mockVenue, "id", request.getVenueId());
@@ -92,8 +106,7 @@ class ConcertServiceTest {
 
         assertThat(response.getId()).isEqualTo(concertId);
         verify(concertRepository).save(any(Concert.class));
-        verify(concertCacheService).evict(concertId);
-        verify(concertCacheService).evictList();
+        verify(concertCacheService).evictAfterCommit(concertId, true);
     }
 
     @Test
@@ -107,8 +120,7 @@ class ConcertServiceTest {
 
         assertThat(response.getId()).isEqualTo(concertId);
         verify(concertRepository).save(any(Concert.class));
-        verify(concertCacheService).evict(concertId);
-        verify(concertCacheService).evictList();
+        verify(concertCacheService).evictAfterCommit(concertId, true);
     }
 
     @Test
@@ -120,8 +132,7 @@ class ConcertServiceTest {
         assertThat(response.getStatus()).isEqualTo(ConcertStatus.PUBLISHED);
         verify(concertRepository).save(mockConcert);
         verify(outboxEventRepository).save(any(OutboxEvent.class));
-        verify(concertCacheService).evict(concertId);
-        verify(concertCacheService).evictList();
+        verify(concertCacheService).evictAfterCommit(concertId, true);
     }
 
     @Test
@@ -134,8 +145,7 @@ class ConcertServiceTest {
         assertThat(response.getStatus()).isEqualTo(ConcertStatus.CANCELLED);
         verify(concertRepository).save(mockConcert);
         verify(outboxEventRepository).save(any(OutboxEvent.class));
-        verify(concertCacheService).evict(concertId);
-        verify(concertCacheService).evictList();
+        verify(concertCacheService).evictAfterCommit(concertId, true);
     }
 
     // ── Zone seat-map merge (updateConcert) ──────────────────────────────────

@@ -47,13 +47,10 @@ public class CacheProperties {
 
     public static class StampedeProps {
         private long lockWaitMs = 50;
-        private long lockLeaseMs = 2000;
         private int maxRetries = 40;
 
         public long getLockWaitMs() { return lockWaitMs; }
         public void setLockWaitMs(long lockWaitMs) { this.lockWaitMs = lockWaitMs; }
-        public long getLockLeaseMs() { return lockLeaseMs; }
-        public void setLockLeaseMs(long lockLeaseMs) { this.lockLeaseMs = lockLeaseMs; }
         public int getMaxRetries() { return maxRetries; }
         public void setMaxRetries(int maxRetries) { this.maxRetries = maxRetries; }
     }

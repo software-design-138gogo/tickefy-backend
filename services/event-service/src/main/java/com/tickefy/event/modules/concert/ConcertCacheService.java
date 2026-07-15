@@ -2,41 +2,45 @@ package com.tickefy.event.modules.concert;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
+import com.tickefy.event.common.exception.ApiException;
+import com.tickefy.event.common.exception.ErrorCode;
 import com.tickefy.event.config.CacheProperties;
+import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.time.Duration;
-import java.util.Optional;
-import java.util.Random;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-
-/**
- * Two-Tier Cache Service for concert data.
- *
- * Implements the Cache-aside pattern described in caching.md with protection against:
- *  - Stampede  : Redisson Mutex Lock + Spin-lock (50ms sleep, max 40 retries)
- *  - Penetration: SENTINEL_NULL stored in L2 with short TTL (60s)
- *  - Avalanche : TTL jitter applied on all L2 writes
- *  - L1 Stale  : Redis Pub/Sub broadcast triggers L1 eviction on all instances
- *
- * NOTE: This service injects ConcertRepository directly (NOT ConcertService)
- * to avoid circular dependency. ConcertService calls this class for eviction.
- */
+/** Two-tier cache-aside for public concert reads. */
 @Slf4j
 @Service
 public class ConcertCacheService {
 
-    /** Sentinel value stored in Redis to represent "entity does not exist" (Penetration guard). */
     private static final String SENTINEL_NULL = "__NULL__";
-
     private static final String KEY_PREFIX_CONCERT = "cache:events:";
+    private static final String KEY_PREFIX_LIST = "cache:events:list:";
     private static final String LOCK_PREFIX = "lock:events:";
+    private static final long REDIS_RETRY_COOLDOWN_NANOS = Duration.ofSeconds(1).toNanos();
 
     private final Cache<String, String> concertL1Cache;
     private final StringRedisTemplate redisTemplate;
@@ -44,7 +48,12 @@ public class ConcertCacheService {
     private final ConcertRepository concertRepository;
     private final ObjectMapper objectMapper;
     private final CacheProperties cacheProperties;
-    private final Random random = new Random();
+
+    private final ConcurrentMap<String, CompletableFuture<ConcertResponse>> localDetailLoads =
+            new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CompletableFuture<Page<ConcertResponse>>> localListLoads =
+            new ConcurrentHashMap<>();
+    private final AtomicLong redisUnavailableUntilNanos = new AtomicLong();
 
     public ConcertCacheService(
             @Qualifier("concertL1Cache") Cache<String, String> concertL1Cache,
@@ -61,211 +70,463 @@ public class ConcertCacheService {
         this.cacheProperties = cacheProperties;
     }
 
-    // =========================================================================
-    // READ — Two-Tier Cache-aside
-    // =========================================================================
-
-    /**
-     * Get a concert by ID using Two-Tier Cache-aside:
-     *   L1 (Caffeine) → L2 (Redis) → DB (with Mutex Lock)
-     *
-     * Returns null if the concert genuinely does not exist.
-     */
+    /** L1 (Caffeine) -> L2 (Redis) -> DB protected by a distributed mutex. */
     public ConcertResponse getConcertById(UUID id) {
-        String l1Key = KEY_PREFIX_CONCERT + id;
+        String cacheKey = KEY_PREFIX_CONCERT + id;
 
-        // --- Step 1: Check L1 (Caffeine) ---
-        String cachedJson = concertL1Cache.getIfPresent(l1Key);
-        if (cachedJson != null) {
-            if (SENTINEL_NULL.equals(cachedJson)) {
-                log.debug("[Cache] L1 HIT (null sentinel) for concert: {}", id);
-                return null;
+        String l1Value = concertL1Cache.getIfPresent(cacheKey);
+        if (l1Value != null) {
+            ConcertResponse cached = readDetailValue(cacheKey, l1Value, "L1", id);
+            if (SENTINEL_NULL.equals(l1Value) || cached != null) {
+                return cached;
             }
-            log.debug("[Cache] L1 HIT for concert: {}", id);
-            return deserialize(cachedJson);
         }
 
-        // --- Step 2: Check L2 (Redis) ---
-        String l2Value = redisTemplate.opsForValue().get(l1Key);
-        if (l2Value != null) {
-            if (SENTINEL_NULL.equals(l2Value)) {
-                log.debug("[Cache] L2 HIT (null sentinel) for concert: {}", id);
-                // Populate L1 with sentinel to avoid repeated Redis calls
-                concertL1Cache.put(l1Key, SENTINEL_NULL);
-                return null;
+        RedisRead l2Read = readRedis(cacheKey);
+        if (!l2Read.available()) {
+            return loadDetailLocally(id, cacheKey);
+        }
+        if (l2Read.value() != null) {
+            ConcertResponse cached = readDetailValue(cacheKey, l2Read.value(), "L2", id);
+            if (SENTINEL_NULL.equals(l2Read.value()) || cached != null) {
+                concertL1Cache.put(cacheKey, l2Read.value());
+                return cached;
             }
-            log.debug("[Cache] L2 HIT for concert: {}", id);
-            concertL1Cache.put(l1Key, l2Value);
-            return deserialize(l2Value);
         }
 
-        // --- Step 3: Cache MISS → Acquire Mutex Lock (Stampede protection) ---
-        return acquireAndLoad(id, l1Key);
+        return loadDetailWithDistributedLock(id, cacheKey);
     }
 
-    // =========================================================================
-    // EVICT — Cache Invalidation
-    // =========================================================================
+    /** Redis L2 cache for pageable concert lists. */
+    public Page<ConcertResponse> getConcertList(ConcertStatus status, Pageable pageable) {
+        String cacheKey = listCacheKey(status, pageable);
+        RedisRead cacheRead = readRedis(cacheKey);
 
-    /**
-     * Evicts a concert from all cache tiers and notifies other instances via Pub/Sub.
-     * Called after any write operation (update, publish, cancel, AI bio update).
-     *
-     * Constraint from caching.md: use DEL (not Update) for transactional data.
-     */
+        if (!cacheRead.available()) {
+            return loadListLocally(status, pageable, cacheKey);
+        }
+        if (cacheRead.value() != null) {
+            Page<ConcertResponse> cached = deserializePage(cacheKey, cacheRead.value(), pageable);
+            if (cached != null) {
+                log.debug("[Cache] L2 HIT for concert list: {}", cacheKey);
+                return cached;
+            }
+        }
+
+        return loadListWithDistributedLock(status, pageable, cacheKey);
+    }
+
+    /** Evicts detail and optionally list caches only after the surrounding transaction commits. */
+    public void evictAfterCommit(UUID concertId, boolean includeList) {
+        Runnable eviction =
+                () -> {
+                    evict(concertId);
+                    if (includeList) {
+                        evictList();
+                    }
+                };
+
+        if (TransactionSynchronizationManager.isActualTransactionActive()
+                && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            eviction.run();
+                        }
+                    });
+            return;
+        }
+
+        eviction.run();
+    }
+
+    /** Immediate eviction for callers that are already outside a transaction. */
     public void evict(UUID concertId) {
-        String l1Key = KEY_PREFIX_CONCERT + concertId;
-
-        // 1. Evict from L2 (Redis)
-        redisTemplate.delete(l1Key);
-
-        // 2. Evict from local L1 (Caffeine)
-        concertL1Cache.invalidate(l1Key);
-
-        // 3. Broadcast Pub/Sub → all other instances evict their L1
-        redisTemplate.convertAndSend(
-                cacheProperties.getInvalidationChannel(),
-                concertId.toString());
-
+        String cacheKey = KEY_PREFIX_CONCERT + concertId;
+        concertL1Cache.invalidate(cacheKey);
+        deleteRedis(cacheKey);
+        publishInvalidation(concertId.toString());
         log.info("[Cache] Evicted cache for concert: {}", concertId);
     }
 
-    /**
-     * Evict list cache when concerts are added, published, or status changes.
-     */
+    /** Evicts every pageable list variant after a concert write. */
     public void evictList() {
         try {
-            // Find all list keys
-            java.util.Set<String> keys = redisTemplate.keys("cache:events:list:*");
+            java.util.Set<String> keys = redisTemplate.keys(KEY_PREFIX_LIST + "*");
             if (keys != null && !keys.isEmpty()) {
                 redisTemplate.delete(keys);
             }
-            // Broadcast so other instances can clear local lists if they have them
-            redisTemplate.convertAndSend(
-                    cacheProperties.getInvalidationChannel(),
-                    "LIST_CHANGED");
-            log.info("[Cache] Evicted list cache");
-        } catch (Exception e) {
-            log.error("[Cache] Failed to evict list cache", e);
+        } catch (Exception exception) {
+            log.warn("[Cache] Redis unavailable while evicting concert list cache", exception);
+        }
+        publishInvalidation("LIST_CHANGED");
+        log.info("[Cache] Evicted list cache");
+    }
+
+    private ConcertResponse loadDetailWithDistributedLock(UUID id, String cacheKey) {
+        RLock lock;
+        boolean locked;
+        try {
+            lock = redissonClient.getLock(LOCK_PREFIX + id);
+            locked = lock.tryLock(lockAcquireTimeoutMs(), TimeUnit.MILLISECONDS);
+        } catch (Exception exception) {
+            log.warn(
+                    "[Cache] Distributed lock unavailable for concert {}; using local single-flight",
+                    id,
+                    exception);
+            return loadDetailLocally(id, cacheKey);
+        }
+
+        if (!locked) {
+            ConcertResponse completed = readDetailAfterLockWait(id, cacheKey);
+            if (completed != null || SENTINEL_NULL.equals(concertL1Cache.getIfPresent(cacheKey))) {
+                return completed;
+            }
+            RedisRead finalRead = readRedis(cacheKey);
+            if (!finalRead.available()) {
+                return loadDetailLocally(id, cacheKey);
+            }
+            throw cacheLoadTimeout("concert " + id);
+        }
+
+        try {
+            ConcertResponse completed = readDetailAfterLockWait(id, cacheKey);
+            if (completed != null || SENTINEL_NULL.equals(concertL1Cache.getIfPresent(cacheKey))) {
+                return completed;
+            }
+            return loadDetailFromDatabase(id, cacheKey);
+        } finally {
+            unlockSafely(lock, "concert " + id);
         }
     }
 
-    // =========================================================================
-    // PRIVATE — Mutex Lock + DB load
-    // =========================================================================
-
-    /**
-     * Acquires a Redisson distributed lock for the concert ID, then loads from DB.
-     * If the lock is not immediately available, uses Spin-lock (sleep 50ms, retry up to 40 times).
-     * Lock auto-releases after 2s to prevent deadlocks on crash.
-     */
-    private ConcertResponse acquireAndLoad(UUID id, String l1Key) {
-        String lockKey = LOCK_PREFIX + id;
-        RLock lock = redissonClient.getLock(lockKey);
-
-        CacheProperties.StampedeProps sp = cacheProperties.getStampede();
-        int maxRetries = sp.getMaxRetries();
-
-        for (int attempt = 0; attempt <= maxRetries; attempt++) {
-            boolean locked = false;
-            try {
-                // Try-lock: non-blocking attempt
-                locked = lock.tryLock(0, sp.getLockLeaseMs(), TimeUnit.MILLISECONDS);
-
-                if (locked) {
-                    // Double-check L2 (another thread may have already loaded)
-                    String doubleCheck = redisTemplate.opsForValue().get(l1Key);
-                    if (doubleCheck != null) {
-                        if (SENTINEL_NULL.equals(doubleCheck)) {
-                            concertL1Cache.put(l1Key, SENTINEL_NULL);
-                            return null;
-                        }
-                        concertL1Cache.put(l1Key, doubleCheck);
-                        return deserialize(doubleCheck);
-                    }
-
-                    // Load from DB
-                    Optional<Concert> concertOpt = concertRepository.findByIdWithDetails(id);
-
-                    if (concertOpt.isEmpty()) {
-                        // Cache null sentinel (Penetration protection)
-                        redisTemplate.opsForValue().set(l1Key, SENTINEL_NULL,
-                                Duration.ofSeconds(cacheProperties.getNullResultTtlSeconds()));
-                        concertL1Cache.put(l1Key, SENTINEL_NULL);
-                        log.info("[Cache] DB miss — cached null sentinel for concert: {}", id);
-                        return null;
-                    }
-
-                    // Serialize and populate caches
-                    ConcertResponse response = ConcertResponse.from(concertOpt.get());
-                    String json = serialize(response);
-
-                    // TTL = base + random jitter (Avalanche protection)
-                    long ttlMinutes = TimeUnit.HOURS.toMinutes(cacheProperties.getConcertDetail().getL2TtlHours())
-                            + random.nextInt(cacheProperties.getConcertDetail().getL2JitterMinutes());
-                    redisTemplate.opsForValue().set(l1Key, json, Duration.ofMinutes(ttlMinutes));
-                    concertL1Cache.put(l1Key, json);
-
-                    log.info("[Cache] DB hit — cached concert: {} (TTL={}m)", id, ttlMinutes);
-                    return response;
-
-                } else {
-                    // Spin-lock: sleep and retry
-                    if (attempt < maxRetries) {
-                        log.debug("[Cache] Lock busy for concert: {}, spinning (attempt {}/{})", id, attempt + 1, maxRetries);
-                        Thread.sleep(sp.getLockWaitMs());
-
-                        // Re-check L2 after sleeping (another thread may have loaded)
-                        String spinCheck = redisTemplate.opsForValue().get(l1Key);
-                        if (spinCheck != null) {
-                            if (SENTINEL_NULL.equals(spinCheck)) {
-                                concertL1Cache.put(l1Key, SENTINEL_NULL);
-                                return null;
-                            }
-                            concertL1Cache.put(l1Key, spinCheck);
-                            return deserialize(spinCheck);
-                        }
-                    }
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("[Cache] Interrupted while waiting for lock on concert: {}", id);
-                break;
-            } catch (Exception e) {
-                log.error("[Cache] Error loading concert from DB: {}", id, e);
-                break;
-            } finally {
-                if (locked && lock.isHeldByCurrentThread()) {
-                    lock.unlock();
-                }
+    private ConcertResponse readDetailAfterLockWait(UUID id, String cacheKey) {
+        String l1Value = concertL1Cache.getIfPresent(cacheKey);
+        if (l1Value != null) {
+            ConcertResponse cached = readDetailValue(cacheKey, l1Value, "L1", id);
+            if (SENTINEL_NULL.equals(l1Value) || cached != null) {
+                return cached;
             }
         }
 
-        // Fallback: lock timeout exhausted — query DB directly (degrade gracefully)
-        log.warn("[Cache] Lock timeout exhausted for concert: {} — falling back to direct DB query", id);
-        return concertRepository.findByIdWithDetails(id)
-                .map(ConcertResponse::from)
-                .orElse(null);
+        RedisRead redisRead = readRedis(cacheKey);
+        if (redisRead.available() && redisRead.value() != null) {
+            ConcertResponse cached = readDetailValue(cacheKey, redisRead.value(), "L2", id);
+            if (SENTINEL_NULL.equals(redisRead.value()) || cached != null) {
+                concertL1Cache.put(cacheKey, redisRead.value());
+                return cached;
+            }
+        }
+        return null;
     }
 
-    // =========================================================================
-    // PRIVATE — Serialization helpers
-    // =========================================================================
+    private ConcertResponse loadDetailLocally(UUID id, String cacheKey) {
+        return singleFlight(
+                cacheKey,
+                localDetailLoads,
+                () -> {
+                    String l1Value = concertL1Cache.getIfPresent(cacheKey);
+                    if (l1Value != null) {
+                        ConcertResponse cached = readDetailValue(cacheKey, l1Value, "L1", id);
+                        if (SENTINEL_NULL.equals(l1Value) || cached != null) {
+                            return cached;
+                        }
+                    }
+                    return loadDetailFromDatabase(id, cacheKey);
+                });
+    }
 
-    private String serialize(ConcertResponse response) {
+    private ConcertResponse loadDetailFromDatabase(UUID id, String cacheKey) {
+        Optional<Concert> concert = concertRepository.findByIdWithDetails(id);
+        if (concert.isEmpty()) {
+            writeRedis(
+                    cacheKey,
+                    SENTINEL_NULL,
+                    Duration.ofSeconds(cacheProperties.getNullResultTtlSeconds()));
+            concertL1Cache.put(cacheKey, SENTINEL_NULL);
+            log.info("[Cache] DB miss - cached null sentinel for concert: {}", id);
+            return null;
+        }
+
+        ConcertResponse response = ConcertResponse.from(concert.get());
+        String json = serialize(response);
+        long ttlMinutes =
+                TimeUnit.HOURS.toMinutes(cacheProperties.getConcertDetail().getL2TtlHours())
+                        + jitter(cacheProperties.getConcertDetail().getL2JitterMinutes());
+        writeRedis(cacheKey, json, Duration.ofMinutes(ttlMinutes));
+        concertL1Cache.put(cacheKey, json);
+        log.info("[Cache] DB hit - cached concert: {} (TTL={}m)", id, ttlMinutes);
+        return response;
+    }
+
+    private Page<ConcertResponse> loadListWithDistributedLock(
+            ConcertStatus status, Pageable pageable, String cacheKey) {
+        RLock lock;
+        boolean locked;
         try {
-            return objectMapper.writeValueAsString(response);
-        } catch (Exception e) {
-            throw new RuntimeException("[Cache] Failed to serialize ConcertResponse", e);
+            String lockKey = LOCK_PREFIX + "list:" + cacheKey.substring(KEY_PREFIX_LIST.length());
+            lock = redissonClient.getLock(lockKey);
+            locked = lock.tryLock(lockAcquireTimeoutMs(), TimeUnit.MILLISECONDS);
+        } catch (Exception exception) {
+            log.warn(
+                    "[Cache] Distributed lock unavailable for concert list {}; using local single-flight",
+                    cacheKey,
+                    exception);
+            return loadListLocally(status, pageable, cacheKey);
+        }
+
+        if (!locked) {
+            RedisRead finalRead = readRedis(cacheKey);
+            if (!finalRead.available()) {
+                return loadListLocally(status, pageable, cacheKey);
+            }
+            if (finalRead.value() != null) {
+                Page<ConcertResponse> cached =
+                        deserializePage(cacheKey, finalRead.value(), pageable);
+                if (cached != null) {
+                    return cached;
+                }
+            }
+            throw cacheLoadTimeout("concert list");
+        }
+
+        try {
+            RedisRead secondRead = readRedis(cacheKey);
+            if (secondRead.available() && secondRead.value() != null) {
+                Page<ConcertResponse> cached =
+                        deserializePage(cacheKey, secondRead.value(), pageable);
+                if (cached != null) {
+                    return cached;
+                }
+            }
+            return loadListFromDatabase(status, pageable, cacheKey);
+        } finally {
+            unlockSafely(lock, "concert list");
         }
     }
 
-    private ConcertResponse deserialize(String json) {
+    private Page<ConcertResponse> loadListLocally(
+            ConcertStatus status, Pageable pageable, String cacheKey) {
+        return singleFlight(
+                cacheKey,
+                localListLoads,
+                () -> {
+                    RedisRead retry = readRedis(cacheKey);
+                    if (retry.available() && retry.value() != null) {
+                        Page<ConcertResponse> cached =
+                                deserializePage(cacheKey, retry.value(), pageable);
+                        if (cached != null) {
+                            return cached;
+                        }
+                    }
+                    return loadListFromDatabase(status, pageable, cacheKey);
+                });
+    }
+
+    private Page<ConcertResponse> loadListFromDatabase(
+            ConcertStatus status, Pageable pageable, String cacheKey) {
+        Page<Concert> concerts =
+                status != null
+                        ? concertRepository.findByStatus(status, pageable)
+                        : concertRepository.findByStatusIn(
+                                List.of(ConcertStatus.PUBLISHED, ConcertStatus.COMPLETED), pageable);
+        Page<ConcertResponse> response = concerts.map(ConcertResponse::summary);
+
+        CachedConcertPage cachedPage =
+                new CachedConcertPage(response.getContent(), response.getTotalElements());
+        long ttlMinutes =
+                cacheProperties.getConcertList().getL2TtlMinutes()
+                        + jitter(cacheProperties.getConcertList().getL2JitterMinutes());
+        writeRedis(cacheKey, serialize(cachedPage), Duration.ofMinutes(ttlMinutes));
+        log.info("[Cache] DB hit - cached concert list {} (TTL={}m)", cacheKey, ttlMinutes);
+        return response;
+    }
+
+    private ConcertResponse readDetailValue(
+            String cacheKey, String value, String tier, UUID concertId) {
+        if (SENTINEL_NULL.equals(value)) {
+            log.debug("[Cache] {} HIT (null sentinel) for concert: {}", tier, concertId);
+            return null;
+        }
         try {
-            return objectMapper.readValue(json, ConcertResponse.class);
-        } catch (Exception e) {
-            log.error("[Cache] Failed to deserialize ConcertResponse, treating as miss: {}", e.getMessage());
+            ConcertResponse response = objectMapper.readValue(value, ConcertResponse.class);
+            log.debug("[Cache] {} HIT for concert: {}", tier, concertId);
+            return response;
+        } catch (Exception exception) {
+            log.warn("[Cache] Invalid {} value for {}; evicting it", tier, cacheKey, exception);
+            concertL1Cache.invalidate(cacheKey);
+            deleteRedis(cacheKey);
             return null;
         }
     }
+
+    private Page<ConcertResponse> deserializePage(
+            String cacheKey, String json, Pageable pageable) {
+        try {
+            CachedConcertPage cached = objectMapper.readValue(json, CachedConcertPage.class);
+            return new PageImpl<>(cached.content(), pageable, cached.totalElements());
+        } catch (Exception exception) {
+            log.warn("[Cache] Invalid concert list value for {}; evicting it", cacheKey, exception);
+            deleteRedis(cacheKey);
+            return null;
+        }
+    }
+
+    private String listCacheKey(ConcertStatus status, Pageable pageable) {
+        String statusKey = status == null ? "PUBLIC" : status.name();
+        String sortKey =
+                pageable.getSort().stream()
+                        .map(order -> order.getProperty() + "-" + order.getDirection().name())
+                        .collect(Collectors.joining(","));
+        if (sortKey.isBlank()) {
+            sortKey = "UNSORTED";
+        }
+        return KEY_PREFIX_LIST
+                + statusKey
+                + ":page:"
+                + pageable.getPageNumber()
+                + ":size:"
+                + pageable.getPageSize()
+                + ":sort:"
+                + sortKey;
+    }
+
+    private long lockAcquireTimeoutMs() {
+        CacheProperties.StampedeProps stampede = cacheProperties.getStampede();
+        try {
+            return Math.max(
+                    stampede.getLockWaitMs(),
+                    Math.multiplyExact(
+                            stampede.getLockWaitMs(), (long) stampede.getMaxRetries()));
+        } catch (ArithmeticException exception) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private int jitter(int upperExclusive) {
+        return upperExclusive > 0 ? ThreadLocalRandom.current().nextInt(upperExclusive) : 0;
+    }
+
+    private RedisRead readRedis(String key) {
+        if (redisUnavailableUntilNanos.get() > System.nanoTime()) {
+            return new RedisRead(false, null);
+        }
+        try {
+            String value = redisTemplate.opsForValue().get(key);
+            redisUnavailableUntilNanos.set(0);
+            return new RedisRead(true, value);
+        } catch (Exception exception) {
+            markRedisUnavailable("reading", key, exception);
+            return new RedisRead(false, null);
+        }
+    }
+
+    private void writeRedis(String key, String value, Duration ttl) {
+        if (redisUnavailableUntilNanos.get() > System.nanoTime()) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(key, value, ttl);
+            redisUnavailableUntilNanos.set(0);
+        } catch (Exception exception) {
+            markRedisUnavailable("writing", key, exception);
+        }
+    }
+
+    private void deleteRedis(String key) {
+        try {
+            redisTemplate.delete(key);
+        } catch (Exception exception) {
+            log.warn("[Cache] Redis unavailable while deleting key={}", key, exception);
+        }
+    }
+
+    private void publishInvalidation(String payload) {
+        try {
+            redisTemplate.convertAndSend(cacheProperties.getInvalidationChannel(), payload);
+        } catch (Exception exception) {
+            log.warn("[Cache] Redis unavailable while publishing invalidation={}", payload, exception);
+        }
+    }
+
+    private void markRedisUnavailable(String operation, String key, Exception exception) {
+        long now = System.nanoTime();
+        long unavailableUntil = now + REDIS_RETRY_COOLDOWN_NANOS;
+        long previous =
+                redisUnavailableUntilNanos.getAndUpdate(
+                        current -> Math.max(current, unavailableUntil));
+        if (previous <= now) {
+            log.warn(
+                    "[Cache] Redis unavailable while {} key={}; using local fallback: {}",
+                    operation,
+                    key,
+                    exception.toString());
+        }
+    }
+
+    private void unlockSafely(RLock lock, String resource) {
+        try {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        } catch (Exception exception) {
+            log.warn("[Cache] Failed to release distributed lock for {}", resource, exception);
+        }
+    }
+
+    private ApiException cacheLoadTimeout(String resource) {
+        return new ApiException(
+                ErrorCode.SERVICE_UNAVAILABLE,
+                "Timed out waiting for cache load: " + resource,
+                HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    private <T> T singleFlight(
+            String key,
+            ConcurrentMap<String, CompletableFuture<T>> inFlightLoads,
+            Supplier<T> loader) {
+        CompletableFuture<T> newLoad = new CompletableFuture<>();
+        CompletableFuture<T> activeLoad = inFlightLoads.putIfAbsent(key, newLoad);
+        if (activeLoad != null) {
+            return await(activeLoad);
+        }
+
+        try {
+            T value = loader.get();
+            newLoad.complete(value);
+            return value;
+        } catch (Throwable throwable) {
+            newLoad.completeExceptionally(throwable);
+            if (throwable instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new RuntimeException(throwable);
+        } finally {
+            inFlightLoads.remove(key, newLoad);
+        }
+    }
+
+    private <T> T await(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (CompletionException exception) {
+            if (exception.getCause() instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw exception;
+        }
+    }
+
+    private String serialize(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception exception) {
+            throw new IllegalStateException("[Cache] Failed to serialize cache value", exception);
+        }
+    }
+
+    private record RedisRead(boolean available, String value) {}
+
+    private record CachedConcertPage(List<ConcertResponse> content, long totalElements) {}
 }

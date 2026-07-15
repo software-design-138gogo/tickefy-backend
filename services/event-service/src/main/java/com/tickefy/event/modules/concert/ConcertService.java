@@ -13,7 +13,6 @@ import com.tickefy.event.modules.venue.Venue;
 import com.tickefy.event.modules.venue.VenueRepository;
 import java.time.Instant;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -57,15 +56,7 @@ public class ConcertService {
     // --- LIST ---
     @Transactional(readOnly = true)
     public Page<ConcertResponse> listConcerts(ConcertStatus status, Pageable pageable) {
-        Page<Concert> page;
-        if (status != null) {
-            page = concertRepository.findByStatus(status, pageable);
-        } else {
-            // Default: show only PUBLISHED for public
-            page = concertRepository.findByStatusIn(
-                List.of(ConcertStatus.PUBLISHED, ConcertStatus.COMPLETED), pageable);
-        }
-        return page.map(ConcertResponse::summary);
+        return concertCacheService.getConcertList(status, pageable);
     }
 
     // --- GET DETAIL ---
@@ -124,8 +115,7 @@ public class ConcertService {
         }
 
         Concert saved = concertRepository.save(concert);
-        concertCacheService.evict(saved.getId());
-        concertCacheService.evictList();
+        concertCacheService.evictAfterCommit(saved.getId(), true);
         return ConcertResponse.from(saved);
     }
 
@@ -209,8 +199,7 @@ public class ConcertService {
         }
 
         Concert saved = concertRepository.save(concert);
-        concertCacheService.evict(id);
-        concertCacheService.evictList();
+        concertCacheService.evictAfterCommit(id, true);
         return ConcertResponse.from(saved);
     }
 
@@ -241,8 +230,7 @@ public class ConcertService {
             throw new RuntimeException("Failed to serialize outbox event", e);
         }
 
-        concertCacheService.evict(id);
-        concertCacheService.evictList();
+        concertCacheService.evictAfterCommit(id, true);
         return ConcertResponse.from(saved);
     }
 
@@ -279,8 +267,7 @@ public class ConcertService {
             throw new RuntimeException("Failed to serialize outbox event", e);
         }
 
-        concertCacheService.evict(id);
-        concertCacheService.evictList();
+        concertCacheService.evictAfterCommit(id, true);
         return ConcertResponse.from(saved);
     }
 
@@ -367,8 +354,7 @@ public class ConcertService {
         concert.setManualIntroductionUpdatedAt(now);
 
         Concert saved = concertRepository.save(concert);
-        concertCacheService.evict(id);
-        concertCacheService.evictList();
+        concertCacheService.evictAfterCommit(id, true);
         return ConcertResponse.from(saved);
     }
 

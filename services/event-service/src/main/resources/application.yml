@@ -85,6 +85,5 @@ app.cache.concert-list.l2-ttl-minutes: 60
 app.cache.concert-list.l2-jitter-minutes: 10
 app.cache.null-result-ttl-seconds: 60
 app.cache.stampede.lock-wait-ms: 50
-app.cache.stampede.lock-lease-ms: 2000
 app.cache.stampede.max-retries: 40
 app.cache.invalidation-channel: cache:invalidation:concerts

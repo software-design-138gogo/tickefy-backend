@@ -185,11 +185,14 @@ public class RealPaymentClient implements PaymentClient {
     }
 
     private PaymentUnavailableException unavailable(String message, RestClientException e) {
+        // Connection refused = DEFINITIVE: the request never reached the payment service, so no payment
+        // was created → safe for OrderService to release the reservation immediately. Every other
+        // transport error (read timeout, etc.) is AMBIGUOUS (a payment may have been created) → plain.
         if (e.getCause() instanceof ConnectException) {
-            log.warn("Payment connect failed: {}", e.getMessage());
-        } else {
-            log.warn("{}: {}", message, e.getMessage());
+            log.warn("Payment connect refused (definitive, no payment created): {}", e.getMessage());
+            return new PaymentDefinitivelyUnavailableException(message, e);
         }
+        log.warn("{}: {}", message, e.getMessage());
         return new PaymentUnavailableException(message, e);
     }
 

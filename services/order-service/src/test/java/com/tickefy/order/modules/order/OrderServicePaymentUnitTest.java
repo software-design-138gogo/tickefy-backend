@@ -14,6 +14,7 @@ import com.tickefy.order.common.exception.ErrorCode;
 import com.tickefy.order.modules.order.client.CreatePaymentCommand;
 import com.tickefy.order.modules.order.client.InventoryClient;
 import com.tickefy.order.modules.order.client.PaymentClient;
+import com.tickefy.order.modules.order.client.PaymentDefinitivelyUnavailableException;
 import com.tickefy.order.modules.order.client.PaymentResult;
 import com.tickefy.order.modules.order.client.PaymentUnavailableException;
 import com.tickefy.order.modules.order.dto.CreateOrderRequest;
@@ -99,15 +100,16 @@ class OrderServicePaymentUnitTest {
     // -----------------------------------------------------------------------
 
     /**
-     * AC-os-payment-down: paymentClient throws PaymentUnavailableException
+     * AC-os-payment-down (AMBIGUOUS): paymentClient throws a plain PaymentUnavailableException
+     * (timeout / 5xx — a payment MAY have been created)
      * → OrderService throws ApiException SERVICE_UNAVAILABLE (503)
      * → markPaymentPending is NOT called (order NOT advanced)
-     * → markCancelled is NOT called (order stays RESERVED, per M2 design for infra errors)
+     * → order is NOT released: markCancelled AND markExpired NOT called (stays RESERVED, worker reconciles)
      */
     @Test
-    void acOsPaymentDown_paymentUnavailable_throws503AndNeverCallsMarkPaymentPending() {
+    void acOsPaymentDown_ambiguousUnavailable_throws503AndKeepsReserved() {
         when(paymentClient.createTransaction(any(CreatePaymentCommand.class), eq(BEARER)))
-                .thenThrow(new PaymentUnavailableException("Payment service down"));
+                .thenThrow(new PaymentUnavailableException("Payment read timeout"));
 
         assertThatThrownBy(() -> orderService.createOrder(req, USER_ID, BEARER))
                 .isInstanceOf(ApiException.class)
@@ -120,8 +122,36 @@ class OrderServicePaymentUnitTest {
 
         // markPaymentPending MUST NOT be called — order was not advanced
         verify(orderPersistence, never()).markPaymentPending(any(), any(), any());
-        // markCancelled MUST NOT be called — infra error, order stays RESERVED
+        // AMBIGUOUS → order must stay RESERVED: neither release path fires (money-loss guard).
         verify(orderPersistence, never()).markCancelled(any());
+        verify(orderPersistence, never()).markExpired(any());
+    }
+
+    /**
+     * DEFINITIVE failure (connection refused): paymentClient throws
+     * PaymentDefinitivelyUnavailableException — no payment was ever created
+     * → OrderService releases the reservation NOW via markExpired (RESERVED → EXPIRED + order.expired)
+     * → still throws 503 (FE response unchanged)
+     * → markPaymentPending NOT called.
+     */
+    @Test
+    void paymentDefinitivelyUnavailable_releasesReservationImmediatelyAndThrows503() {
+        when(paymentClient.createTransaction(any(CreatePaymentCommand.class), eq(BEARER)))
+                .thenThrow(new PaymentDefinitivelyUnavailableException(
+                        "Payment service error", new java.net.ConnectException("Connection refused")));
+
+        assertThatThrownBy(() -> orderService.createOrder(req, USER_ID, BEARER))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException api = (ApiException) ex;
+                    assertThat(api.getErrorCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE);
+                    assertThat(api.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+                });
+
+        // DEFINITIVE → release the held seats immediately (reuse markExpired release path).
+        verify(orderPersistence).markExpired(ORDER_ID);
+        // Order was never advanced to PAYMENT_PENDING.
+        verify(orderPersistence, never()).markPaymentPending(any(), any(), any());
     }
 
     // -----------------------------------------------------------------------

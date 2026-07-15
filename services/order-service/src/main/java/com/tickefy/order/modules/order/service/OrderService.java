@@ -2,11 +2,12 @@ package com.tickefy.order.modules.order.service;
 
 import com.tickefy.order.common.exception.ApiException;
 import com.tickefy.order.common.exception.ErrorCode;
+import com.tickefy.order.modules.order.client.CreatePaymentCommand;
 import com.tickefy.order.modules.order.client.InventoryBusinessException;
 import com.tickefy.order.modules.order.client.InventoryClient;
 import com.tickefy.order.modules.order.client.InventoryUnavailableException;
-import com.tickefy.order.modules.order.client.CreatePaymentCommand;
 import com.tickefy.order.modules.order.client.PaymentClient;
+import com.tickefy.order.modules.order.client.PaymentDefinitivelyUnavailableException;
 import com.tickefy.order.modules.order.client.PaymentResult;
 import com.tickefy.order.modules.order.client.PaymentUnavailableException;
 import com.tickefy.order.modules.order.client.ReservationResult;
@@ -142,8 +143,21 @@ public class OrderService {
             PaymentResult payment;
             try {
                 payment = paymentClient.createTransaction(cmd, bearerToken);
+            } catch (PaymentDefinitivelyUnavailableException e) {
+                // Definitive failure (connection refused): the request never reached payment-service, so
+                // no payment was created. Release the held seats NOW (RESERVED → EXPIRED + order.expired
+                // outbox → inventory release) instead of holding them until the 15' expire worker.
+                // Idempotent: markExpired guards on state, inventory release() guards on reservation status.
+                log.warn("Payment definitively unavailable for orderId={} — releasing reservation now: {}",
+                        order.getId(), e.getMessage());
+                orderPersistence.markExpired(order.getId());
+                throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, "Payment service unavailable", HttpStatus.SERVICE_UNAVAILABLE);
             } catch (PaymentUnavailableException e) {
-                log.warn("Payment unavailable for orderId={}: {}", order.getId(), e.getMessage());
+                // Ambiguous failure (read timeout / 5xx / parse): a payment MAY have been created.
+                // Do NOT release — releasing while a real payment lands means money paid with no ticket.
+                // Leave the order RESERVED; the expire worker reconciles after the reservation TTL.
+                log.warn("Payment unavailable (ambiguous) for orderId={} — keeping RESERVED: {}",
+                        order.getId(), e.getMessage());
                 throw new ApiException(ErrorCode.SERVICE_UNAVAILABLE, "Payment service unavailable", HttpStatus.SERVICE_UNAVAILABLE);
             }
             // TX3: RESERVED → PAYMENT_PENDING
